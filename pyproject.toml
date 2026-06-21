@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "minimal-cli-agent"
+version = "0.1.0"
+description = "A minimal terminal AI agent inspired by minimal-agent.com."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "minimal-cli-agent contributors" }]
+dependencies = [
+  "httpx[socks]>=0.27.0",
+]
+
+[project.scripts]
+minimal-agent = "minimal_cli_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
