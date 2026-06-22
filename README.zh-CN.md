@@ -153,6 +153,7 @@ src/minimal_cli_agent/
 ## 扩展计划
 
 更完整的架构说明见 [docs/architecture.md](docs/architecture.md)。
+更细的 harness 差距分析和路线图见 [docs/harness-gap-analysis.zh-CN.md](docs/harness-gap-analysis.zh-CN.md)。
 
 - 基于模型总结的上下文压缩。
 - explorer、worker、verifier 等 SubAgent。
