@@ -94,6 +94,8 @@ Not implemented yet:
 
 ## Roadmap
 
+See [Harness Gap Analysis](harness-gap-analysis.zh-CN.md) for a more detailed comparison between the current implementation and production-grade agent harness requirements.
+
 ### Context Compression
 
 The current `compact_messages` function trims older messages and inserts a local note. The next version should add model-based summarization:

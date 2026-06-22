@@ -153,6 +153,7 @@ src/minimal_cli_agent/
 ## Planned Extensions
 
 See [docs/architecture.md](docs/architecture.md) for the larger design.
+See [docs/harness-gap-analysis.zh-CN.md](docs/harness-gap-analysis.zh-CN.md) for a detailed harness gap analysis and roadmap.
 
 - Context compression with model-generated summaries.
 - SubAgent execution for explorer, worker, and verifier roles.
