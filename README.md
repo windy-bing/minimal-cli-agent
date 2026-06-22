@@ -11,6 +11,7 @@ The project starts intentionally small, but the code is split into replaceable m
 ## What It Does Now
 
 - Runs as a terminal CLI.
+- Supports multi-turn interactive sessions with `--interactive`; running without a task starts the same REPL.
 - Supports local Ollama chat models by default.
 - Supports Ollama, Codex CLI login, Claude/Anthropic, and Gemini profiles.
 - Supports OpenAI-compatible `/chat/completions` endpoints directly.
@@ -71,6 +72,22 @@ python -m minimal_cli_agent.cli --permission default "List the files in this pro
 minimal-agent --permission plan "Inspect this repository structure"
 ```
 
+## Interactive Session
+
+Start a multi-turn CLI session:
+
+```bash
+minimal-agent --profile codex --permission plan --interactive
+```
+
+You can also pass the first message and then continue chatting:
+
+```bash
+minimal-agent --profile codex --permission plan --interactive "Analyze this project"
+```
+
+Type `/exit` or `/quit` to stop. If `--session path/to/session.json` is provided, messages are saved after each turn and loaded again on the next run.
+
 ## OpenAI-Compatible Endpoint
 
 ```bash
@@ -110,6 +127,7 @@ Profile behavior:
 --cwd            working directory for commands
 --max-steps      maximum agent loop iterations
 --timeout        command timeout in seconds
+--interactive    start a multi-turn interactive CLI session
 --permission     default, autoEdit, plan, or yolo
 --session        JSON file for persisted messages
 ```
