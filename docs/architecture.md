@@ -65,6 +65,7 @@ Implemented:
 - Stateless `Agent.chat_stream(message, context)` entry point.
 - `ChatContext` carries session id, messages, and metadata from the caller.
 - `LoopEvent` / `LoopResult` for stream-style UI integration.
+- Multi-turn CLI REPL that reuses one `ChatContext` across turns.
 - `ToolRegistry` for tool discovery.
 - `ToolExecutionPipeline` with the full stage shape:
 

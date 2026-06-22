@@ -11,6 +11,7 @@
 ## 当前能力
 
 - 作为终端 CLI 运行。
+- 支持 `--interactive` 多轮交互会话；不传 task 时也会进入同一个 REPL。
 - 默认支持本地 Ollama chat 模型。
 - 支持 Ollama、Codex CLI 登录态、Claude/Anthropic、Gemini profile。
 - 支持直接指定 OpenAI-compatible `/chat/completions` 接口。
@@ -71,6 +72,22 @@ python -m minimal_cli_agent.cli --permission default "List the files in this pro
 minimal-agent --permission plan "Inspect this repository structure"
 ```
 
+## 多轮交互会话
+
+启动一个多轮 CLI 会话：
+
+```bash
+minimal-agent --profile codex --permission plan --interactive
+```
+
+也可以先传入第一句话，然后继续对话：
+
+```bash
+minimal-agent --profile codex --permission plan --interactive "Analyze this project"
+```
+
+输入 `/exit` 或 `/quit` 退出。如果传入 `--session path/to/session.json`，每轮结束后会保存 messages，下次运行时继续加载。
+
 ## OpenAI-Compatible 接口
 
 ```bash
@@ -110,6 +127,7 @@ Profile 行为：
 --cwd            命令执行目录
 --max-steps      Agent loop 最大迭代次数
 --timeout        命令超时时间，单位秒
+--interactive    启动多轮交互 CLI 会话
 --permission     default、autoEdit、plan 或 yolo
 --session        用于持久化 messages 的 JSON 文件
 ```
