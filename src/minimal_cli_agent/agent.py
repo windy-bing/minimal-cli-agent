@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
+from minimal_cli_agent.constants import Tools
 from minimal_cli_agent.exceptions import AgentFinished, NonTerminatingAgentError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.parser import parse_action
@@ -30,7 +31,7 @@ class Agent:
 
             try:
                 command = parse_action(output)
-                yield LoopEvent(type="tool_call_start", data={"tool": "shell", "payload": command})
+                yield LoopEvent(type="tool_call_start", data={"tool": Tools.SHELL, "payload": command})
                 observation = self.harness.execute_shell(command).to_message().content
             except AgentFinished as exc:
                 yield LoopEvent(type="done", data={"reason": str(exc)})

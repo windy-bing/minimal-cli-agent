@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from minimal_cli_agent.constants import Defaults, PermissionModes, Providers
+
 Role = Literal["system", "user", "assistant"]
 Provider = Literal["ollama", "openai-compatible", "anthropic", "gemini", "codex"]
 ProfileName = Literal["ollama", "codex", "claude", "gemini"]
@@ -41,14 +43,14 @@ class LoopResult:
 
 @dataclass
 class AgentConfig:
-    provider: Provider = "ollama"
-    model: str = "qwen3:4b"
-    base_url: str = "http://localhost:11434"
+    provider: Provider = Providers.OLLAMA
+    model: str = Defaults.MODEL
+    base_url: str = Defaults.BASE_URL
     api_key: str | None = None
     cwd: Path = field(default_factory=Path.cwd)
     max_steps: int = 20
     command_timeout: int = 30
-    permission_mode: PermissionMode = "default"
+    permission_mode: PermissionMode = PermissionModes.DEFAULT
     max_output_chars: int = 12000
     max_context_chars: int = 60000
 

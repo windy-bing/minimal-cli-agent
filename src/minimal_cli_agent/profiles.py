@@ -5,6 +5,7 @@ import os
 import tomllib
 from pathlib import Path
 
+from minimal_cli_agent.constants import Providers, Profiles
 from minimal_cli_agent.exceptions import ConfigurationError
 from minimal_cli_agent.types import AgentConfig, ProfileName
 
@@ -12,19 +13,19 @@ from minimal_cli_agent.types import AgentConfig, ProfileName
 def resolve_profile(config: AgentConfig, profile: ProfileName | None) -> AgentConfig:
     if profile is None:
         return config
-    if profile == "ollama":
+    if profile == Profiles.OLLAMA:
         return resolve_ollama(config)
-    if profile == "codex":
+    if profile == Profiles.CODEX:
         return resolve_codex(config)
-    if profile == "claude":
+    if profile == Profiles.CLAUDE:
         return resolve_claude(config)
-    if profile == "gemini":
+    if profile == Profiles.GEMINI:
         return resolve_gemini(config)
     return config
 
 
 def resolve_ollama(config: AgentConfig) -> AgentConfig:
-    config.provider = "ollama"
+    config.provider = Providers.OLLAMA
     config.model = os.getenv("OLLAMA_MODEL", config.model)
     config.base_url = os.getenv("OLLAMA_BASE_URL", config.base_url)
     return config
@@ -41,14 +42,14 @@ def resolve_codex(config: AgentConfig) -> AgentConfig:
     user_openai_key = os.getenv("OPENAI_API_KEY") or config.api_key or auth.get("OPENAI_API_KEY")
     user_openai_base_url = os.getenv("OPENAI_BASE_URL")
     if user_openai_key or user_openai_base_url:
-        config.provider = "openai-compatible"
+        config.provider = Providers.OPENAI_COMPATIBLE
         config.base_url = user_openai_base_url or "https://api.openai.com/v1"
         config.api_key = user_openai_key
         return config
 
     codex_access_token = nested_get(auth, ["tokens", "access_token"])
     if codex_access_token:
-        config.provider = "codex"
+        config.provider = Providers.CODEX
         config.base_url = "codex-cli"
         config.api_key = None
         return config
@@ -66,7 +67,7 @@ def resolve_claude(config: AgentConfig) -> AgentConfig:
     settings = read_json(Path.home() / ".claude" / "settings.json")
     env = settings.get("env", {}) if isinstance(settings.get("env"), dict) else {}
 
-    config.provider = "anthropic"
+    config.provider = Providers.ANTHROPIC
     config.model = os.getenv("ANTHROPIC_MODEL") or str(settings.get("model") or "claude-sonnet-4-5")
     config.base_url = os.getenv("ANTHROPIC_BASE_URL") or str(env.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com")
     config.api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN") or str(env.get("ANTHROPIC_AUTH_TOKEN") or "")
@@ -74,7 +75,7 @@ def resolve_claude(config: AgentConfig) -> AgentConfig:
 
 
 def resolve_gemini(config: AgentConfig) -> AgentConfig:
-    config.provider = "gemini"
+    config.provider = Providers.GEMINI
     config.model = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
     config.base_url = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
     config.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or config.api_key

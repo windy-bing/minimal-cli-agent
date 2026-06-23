@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from minimal_cli_agent.agent import Agent, print_event
+from minimal_cli_agent.constants import Defaults, InteractiveCommands, PermissionModes, Profiles, Providers
 from minimal_cli_agent.exceptions import AgentError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import JsonSessionStore
@@ -16,19 +17,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="minimal-agent", description="Run a minimal terminal AI agent.")
     parser.add_argument("task", nargs="*", help="Task for the agent.")
     parser.add_argument("-i", "--interactive", action="store_true", help="Start a multi-turn interactive CLI session.")
-    parser.add_argument("--profile", choices=["ollama", "codex", "claude", "gemini"], default=os.getenv("AGENT_PROFILE"))
-    parser.add_argument("--provider", choices=["ollama", "openai-compatible", "anthropic", "gemini", "codex"], default=os.getenv("AGENT_PROVIDER", "ollama"))
-    parser.add_argument("--model", default=os.getenv("AGENT_MODEL", "qwen3:4b"))
-    parser.add_argument("--base-url", default=os.getenv("AGENT_BASE_URL", "http://localhost:11434"))
+    parser.add_argument("--profile", choices=Profiles.ALL, default=os.getenv("AGENT_PROFILE"))
+    parser.add_argument("--provider", choices=Providers.ALL, default=os.getenv("AGENT_PROVIDER", Providers.OLLAMA))
+    parser.add_argument("--model", default=os.getenv("AGENT_MODEL", Defaults.MODEL))
+    parser.add_argument("--base-url", default=os.getenv("AGENT_BASE_URL", Defaults.BASE_URL))
     parser.add_argument("--api-key", default=os.getenv("AGENT_API_KEY"))
     parser.add_argument("--cwd", type=Path, default=Path(os.getenv("AGENT_CWD", ".")))
-    parser.add_argument("--max-steps", type=int, default=int(os.getenv("AGENT_MAX_STEPS", "20")))
-    parser.add_argument("--timeout", type=int, default=int(os.getenv("AGENT_COMMAND_TIMEOUT", "30")))
+    parser.add_argument("--max-steps", type=int, default=int(os.getenv("AGENT_MAX_STEPS", Defaults.MAX_STEPS)))
+    parser.add_argument("--timeout", type=int, default=int(os.getenv("AGENT_COMMAND_TIMEOUT", Defaults.COMMAND_TIMEOUT)))
     parser.add_argument("--show-config", action="store_true", help="Print resolved provider/model/base URL without secrets.")
     parser.add_argument(
         "--permission",
-        choices=["default", "autoEdit", "plan", "yolo"],
-        default=os.getenv("AGENT_PERMISSION", "default"),
+        choices=PermissionModes.ALL,
+        default=os.getenv("AGENT_PERMISSION", PermissionModes.DEFAULT),
     )
     parser.add_argument("--session", type=Path, help="Persist messages to this JSON session file.")
     return parser
@@ -95,7 +96,7 @@ def run_interactive(
     session_store: JsonSessionStore | None = None,
     first_message: str | None = None,
 ) -> int:
-    print("minimal-agent interactive mode. Type /exit or /quit to stop.")
+    print("minimal-agent interactive mode. Type /help for commands, /exit to stop.")
     pending = first_message
     while True:
         if pending is None:
@@ -105,11 +106,28 @@ def run_interactive(
                 print()
                 return 0
 
-        if pending in {"/exit", "/quit"}:
+        if pending in InteractiveCommands.EXIT_COMMANDS:
             return 0
-        if pending:
+        if pending == InteractiveCommands.QUICK_HINT:
+            print_quick_command_hint()
+        elif pending == InteractiveCommands.HELP:
+            print_interactive_help()
+        elif pending.startswith("/") and pending not in InteractiveCommands.DESCRIPTIONS:
+            print(f"Unknown command: {pending}")
+            print_quick_command_hint()
+        elif pending:
             run_turn(agent, pending, context, session_store)
         pending = None
+
+
+def print_quick_command_hint() -> None:
+    print("Commands: /help, /exit, /quit")
+
+
+def print_interactive_help() -> None:
+    print("Interactive commands:")
+    for command, description in InteractiveCommands.DESCRIPTIONS.items():
+        print(f"  {command:<8} {description}")
 
 
 if __name__ == "__main__":

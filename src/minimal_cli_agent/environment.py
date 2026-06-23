@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 
+from minimal_cli_agent.constants import PermissionModes, Tools
 from minimal_cli_agent.exceptions import CommandTimeout
 from minimal_cli_agent.interfaces import PermissionPolicy
 from minimal_cli_agent.types import AgentConfig, CommandResult
@@ -22,9 +23,9 @@ class LocalEnvironment:
 
     def execute(self, command: str) -> CommandResult:
         if self.permission_policy:
-            self.permission_policy.check("shell", command)
+            self.permission_policy.check(Tools.SHELL, command)
 
-        if self.config.permission_mode == "plan":
+        if self.config.permission_mode == PermissionModes.PLAN:
             return CommandResult(command=command, exit_code=0, output="plan mode: command not executed.", skipped=True)
 
         env = os.environ.copy() | NON_INTERACTIVE_ENV

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from minimal_cli_agent.constants import PermissionModes, Tools
 from minimal_cli_agent.exceptions import PermissionDenied
 from minimal_cli_agent.types import AgentConfig, ToolDecision
 
@@ -17,20 +18,20 @@ class ShellPermissionPolicy:
         self.config = config
 
     def decide(self, action: str, payload: str) -> ToolDecision:
-        if action != "shell":
+        if action != Tools.SHELL:
             return ToolDecision(kind="deny", reason=f"Unknown action type: {action}")
 
         lowered = payload.lower()
         if any(token in lowered for token in DANGEROUS_TOKENS):
             return ToolDecision(kind="deny", reason=f"Blocked dangerous command: {payload}")
 
-        if self.config.permission_mode == "yolo":
+        if self.config.permission_mode == PermissionModes.YOLO:
             return ToolDecision(kind="allow", reason="yolo mode")
 
-        if self.config.permission_mode == "plan":
+        if self.config.permission_mode == PermissionModes.PLAN:
             return ToolDecision(kind="skip", reason="plan mode does not execute shell commands")
 
-        if self.config.permission_mode in {"default", "autoEdit"}:
+        if self.config.permission_mode in {PermissionModes.DEFAULT, PermissionModes.AUTO_EDIT}:
             return ToolDecision(kind="ask", reason=f"{self.config.permission_mode} mode requires shell confirmation")
 
         return ToolDecision(kind="ask", reason="confirmation required")
