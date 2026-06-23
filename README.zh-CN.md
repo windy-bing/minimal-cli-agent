@@ -28,6 +28,7 @@ ls -la
 - 传入 `--session` 时，可以把 session messages 持久化到 JSON。
 - transcript 变大时，会应用一个简单的本地上下文压缩保护。
 - 暴露无状态 API：`Agent.chat_stream(message, context)`，以事件流形式产出 loop event。
+- 工具发现和参数校验失败时返回可恢复 observation，而不是直接把原始异常抛给用户。
 - Agent loop 运行在 `AgentHarness` 边界后面，tools、memory、policy、context、environment 可以独立演进。
 
 ## 为什么这样开始

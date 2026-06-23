@@ -26,8 +26,8 @@
 
 | 主题 | 风险 | 建议 |
 | --- | --- | --- |
-| 结构化 tool schema 和错误恢复 | 模型输出格式错时，只靠 parser 提醒；未来 JSON 工具会更容易失败 | 引入 typed `ToolCall` 参数 schema，错误时返回机器可读 validation observation 和正确格式示例 |
-| 工具别名和模糊识别 | 用户或模型轻微写错工具名时只能失败 | 在 Discovery 阶段增加 alias map 和安全的 fuzzy suggestion，但不自动执行高风险猜测 |
+| 完整 JSON Schema | 当前已有最小 validator，但还不是 JSON Schema | 引入 typed `ToolCall` 参数 schema，支持字段级错误和正确格式示例 |
+| 工具模糊识别 | 当前已有显式 alias，但没有 fuzzy suggestion | 在 Discovery 阶段增加安全的 fuzzy suggestion，但不自动执行高风险猜测 |
 | 文件读取工具性能 | 未来实现 `readTail/readForward` 时，如果整文件读入会在大文件上退化 | 文件工具必须流式实现：tail 使用 seek/window，forward 支持 byte/line limit 和分页 |
 | grep/search top-k | 巨型项目中无界搜索会比推理更慢 | 搜索工具需要 max results、head query、top-k、ignore rules、超时和渐进输出 |
 | 结构化文本编辑校验 | JSON/XML/YAML 被模型写坏后，后端如果无校验会沉默失败 | 写入后按文件类型 parse/format/validate；失败时阻断并把错误返回给模型 |
@@ -54,7 +54,7 @@
 
 | 能力 | 为什么优先 |
 | --- | --- |
-| 完整 schema validation + repair observation | 这是工具系统可靠性的基础。没有它，JSON 工具越多，错误越难恢复 |
+| 完整 schema validation + repair observation | 当前已有最小 repair observation，下一步要支持 JSON Schema 和字段级错误 |
 | Plan/Execute 双上下文 | Coding agent 的计划噪音和执行历史应该隔离，否则长任务会持续污染上下文 |
 | 文件工具流式读取和搜索 top-k | 这是进入真实大型仓库前必须补的性能底线 |
 | 结构化编辑校验 | 能直接减少模型幻觉导致的坏 JSON/XML/YAML/配置文件 |
@@ -68,8 +68,8 @@
 
 目标是让工具错误可恢复、可审计、可验证。
 
-- 为 `ToolSpec` 增加参数 schema、别名、风险等级、输出 schema。
-- `Validation` 阶段返回结构化错误 observation，不直接把异常抛给用户。
+- 为 `ToolSpec` 增加 JSON Schema、风险等级、输出 schema。
+- `Validation` 阶段已经返回可恢复 observation，下一步补字段级错误和 JSON 格式示例。
 - `Formatting` 阶段统一 observation 格式，避免模型收到散乱异常文本。
 - 为 `ToolExecutionPipeline` 增加 hook 仲裁和测试覆盖。
 

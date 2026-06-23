@@ -67,6 +67,7 @@ Implemented:
 - `LoopEvent` / `LoopResult` for stream-style UI integration.
 - Multi-turn CLI REPL that reuses one `ChatContext` across turns.
 - `ToolRegistry` for tool discovery.
+- Tool aliases plus recoverable discovery and validation observations.
 - `ToolExecutionPipeline` with the full stage shape:
 
 ```text
@@ -82,6 +83,7 @@ Reserved:
 - `ResolveDecision` is currently a pass-through stage. It exists so hooks, session approvals, and policy decisions can be arbitrated later.
 - `Confirmation` is currently CLI `input()`. A UI client can replace the policy/harness boundary later.
 - `autoEdit` is present, but with only a shell tool it currently asks for confirmation like `default`.
+- Tool schema validation is intentionally minimal. It currently supports per-tool expected format and validator callbacks, not full JSON Schema.
 
 Not implemented yet:
 
