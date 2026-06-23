@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from minimal_cli_agent.context import CompactingContextManager
+from minimal_cli_agent.constants import Tools
 from minimal_cli_agent.environment import LocalEnvironment
 from minimal_cli_agent.interfaces import ContextManager, Model, SessionStore
 from minimal_cli_agent.model import ChatModel
@@ -40,11 +41,11 @@ class AgentHarness:
         self.tool_registry = tool_registry or ToolRegistry()
         self.tool_registry.register(
             ToolSpec(
-                name="shell",
+                name=Tools.SHELL,
                 description="Execute a non-interactive shell command in the configured workspace.",
                 handler=self.environment.execute,
-                expected_format="A non-empty shell command string, for example: ls -la",
-                aliases=("bash", "sh", "command"),
+                expected_format=Tools.SHELL_EXPECTED_FORMAT,
+                aliases=Tools.SHELL_ALIASES,
             )
         )
         self.tool_pipeline = ToolExecutionPipeline(registry=self.tool_registry, permission_policy=self.policy)
@@ -63,5 +64,5 @@ class AgentHarness:
         return self.model.complete(messages)
 
     def execute_shell(self, command: str) -> Observation:
-        call = ToolCall(name="shell", payload=command)
-        return Observation(action="shell", payload=command, result=self.tool_pipeline.execute(call))
+        call = ToolCall(name=Tools.SHELL, payload=command)
+        return Observation(action=Tools.SHELL, payload=command, result=self.tool_pipeline.execute(call))

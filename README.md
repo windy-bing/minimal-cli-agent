@@ -87,7 +87,7 @@ You can also pass the first message and then continue chatting:
 minimal-agent --profile codex --permission plan --interactive "Analyze this project"
 ```
 
-Type `/exit` or `/quit` to stop. If `--session path/to/session.json` is provided, messages are saved after each turn and loaded again on the next run.
+Type `/help` to list interactive commands. Type `/`, `/exit`, `/quit`, `exit`, or `quit` for quick command handling. If `--session path/to/session.json` is provided, messages are saved after each turn and loaded again on the next run.
 
 ## OpenAI-Compatible Endpoint
 

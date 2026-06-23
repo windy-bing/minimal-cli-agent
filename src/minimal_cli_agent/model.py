@@ -11,6 +11,7 @@ from pathlib import Path
 
 import httpx
 
+from minimal_cli_agent.constants import Providers
 from minimal_cli_agent.exceptions import ConfigurationError, ModelRequestError
 from minimal_cli_agent.types import AgentConfig, Message
 
@@ -20,13 +21,13 @@ class ChatModel:
         self.config = config
 
     def complete(self, messages: list[Message]) -> str:
-        if self.config.provider == "ollama":
+        if self.config.provider == Providers.OLLAMA:
             return self._complete_ollama(messages)
-        if self.config.provider == "anthropic":
+        if self.config.provider == Providers.ANTHROPIC:
             return self._complete_anthropic(messages)
-        if self.config.provider == "gemini":
+        if self.config.provider == Providers.GEMINI:
             return self._complete_gemini(messages)
-        if self.config.provider == "codex":
+        if self.config.provider == Providers.CODEX:
             return self._complete_codex(messages)
         return self._complete_openai_compatible(messages)
 

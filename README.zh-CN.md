@@ -87,7 +87,7 @@ minimal-agent --profile codex --permission plan --interactive
 minimal-agent --profile codex --permission plan --interactive "Analyze this project"
 ```
 
-输入 `/exit` 或 `/quit` 退出。如果传入 `--session path/to/session.json`，每轮结束后会保存 messages，下次运行时继续加载。
+输入 `/help` 查看交互命令。输入 `/` 会快速展示常用命令；输入 `/exit`、`/quit`、`exit` 或 `quit` 退出。如果传入 `--session path/to/session.json`，每轮结束后会保存 messages，下次运行时继续加载。
 
 ## OpenAI-Compatible 接口
 

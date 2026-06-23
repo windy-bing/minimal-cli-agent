@@ -46,6 +46,44 @@ class CliTest(unittest.TestCase):
         self.assertIn("first task", user_messages)
         self.assertIn("second task", user_messages)
 
+    def test_run_interactive_supports_plain_exit(self) -> None:
+        model = CountingModel()
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+
+        with patch("builtins.input", side_effect=["exit"]), patch("builtins.print"):
+            exit_code = run_interactive(agent, ChatContext())
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(model.calls, 0)
+
+    def test_run_interactive_shows_help_without_model_call(self) -> None:
+        model = CountingModel()
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+
+        with patch("builtins.input", side_effect=["/help", "/quit"]), patch("builtins.print") as print_mock:
+            exit_code = run_interactive(agent, ChatContext())
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(model.calls, 0)
+        self.assertIn("Interactive commands:", printed)
+        self.assertIn("/exit", printed)
+
+    def test_run_interactive_slash_shows_quick_hint(self) -> None:
+        model = CountingModel()
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+
+        with patch("builtins.input", side_effect=["/", "/quit"]), patch("builtins.print") as print_mock:
+            exit_code = run_interactive(agent, ChatContext())
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(model.calls, 0)
+        self.assertIn("Commands: /help, /exit, /quit", printed)
+
 
 if __name__ == "__main__":
     unittest.main()
