@@ -60,6 +60,38 @@ class ToolCall:
 
 
 @dataclass(frozen=True)
+class ToolValidationError:
+    tool_name: str
+    message: str
+    expected_format: str
+    received: str
+
+    def as_observation(self) -> str:
+        return (
+            "Tool validation failed.\n"
+            f"tool: {self.tool_name}\n"
+            f"error: {self.message}\n"
+            f"expected:\n{self.expected_format}\n"
+            f"received:\n{self.received}"
+        )
+
+
+@dataclass(frozen=True)
+class ToolDiscoveryError:
+    tool_name: str
+    available_tools: tuple[str, ...]
+
+    def as_observation(self) -> str:
+        available = ", ".join(self.available_tools) if self.available_tools else "<none>"
+        return (
+            "Tool discovery failed.\n"
+            f"tool: {self.tool_name}\n"
+            f"available_tools: {available}\n"
+            "Use one of the available tool names or aliases."
+        )
+
+
+@dataclass(frozen=True)
 class ToolDecision:
     kind: DecisionKind
     reason: str = ""

@@ -43,6 +43,8 @@ class AgentHarness:
                 name="shell",
                 description="Execute a non-interactive shell command in the configured workspace.",
                 handler=self.environment.execute,
+                expected_format="A non-empty shell command string, for example: ls -la",
+                aliases=("bash", "sh", "command"),
             )
         )
         self.tool_pipeline = ToolExecutionPipeline(registry=self.tool_registry, permission_policy=self.policy)

@@ -6,7 +6,7 @@ from typing import Callable
 from minimal_cli_agent.interfaces import PermissionPolicy
 from minimal_cli_agent.tool_registry import ToolRegistry
 from minimal_cli_agent.exceptions import PermissionDenied
-from minimal_cli_agent.types import CommandResult, ToolCall, ToolDecision
+from minimal_cli_agent.types import CommandResult, ToolCall, ToolDecision, ToolDiscoveryError
 
 Hook = Callable[[ToolCall], None]
 PostHook = Callable[[ToolCall, CommandResult], None]
@@ -32,27 +32,33 @@ class ToolExecutionPipeline:
         self.hooks = hooks or ToolPipelineHooks()
 
     def execute(self, call: ToolCall) -> CommandResult:
-        self._discovery(call)
-        self._validation(call)
-        decision = self._permission(call)
-        self._pre_hook(call)
-        decision = self._resolve_decision(call, decision)
-        decision = self._confirmation(call, decision)
+        try:
+            spec = self._discovery(call)
+        except KeyError:
+            discovery_error = ToolDiscoveryError(tool_name=call.name, available_tools=self.registry.available_names())
+            return CommandResult(command=call.payload, exit_code=127, output=discovery_error.as_observation(), skipped=True)
+        canonical_call = ToolCall(name=spec.name, payload=call.payload)
+        validation_error = self._validation(canonical_call)
+        if validation_error is not None:
+            return CommandResult(command=call.payload, exit_code=2, output=validation_error.as_observation(), skipped=True)
+        decision = self._permission(canonical_call)
+        self._pre_hook(canonical_call)
+        decision = self._resolve_decision(canonical_call, decision)
+        decision = self._confirmation(canonical_call, decision)
         if decision.kind == "skip":
             return CommandResult(command=call.payload, exit_code=0, output=decision.reason or "tool skipped", skipped=True)
         if decision.kind == "deny":
             raise PermissionDenied(decision.reason or f"Denied tool call: {call.name}")
-        result = self._execution(call)
-        self._post_hook(call, result)
-        self._auto_verify(call, result)
+        result = self._execution(canonical_call)
+        self._post_hook(canonical_call, result)
+        self._auto_verify(canonical_call, result)
         return self._formatting(result)
 
-    def _discovery(self, call: ToolCall) -> None:
-        self.registry.require(call.name)
+    def _discovery(self, call: ToolCall):
+        return self.registry.require(call.name)
 
-    def _validation(self, call: ToolCall) -> None:
-        if not call.payload.strip():
-            raise ValueError(f"Tool payload for {call.name} is empty.")
+    def _validation(self, call: ToolCall):
+        return self.registry.require(call.name).validate(call.payload)
 
     def _permission(self, call: ToolCall) -> ToolDecision:
         return self.permission_policy.decide(call.name, call.payload)

@@ -28,6 +28,7 @@ ls -la
 - Persists session messages to JSON when `--session` is provided.
 - Applies a simple context compaction guard when the transcript gets large.
 - Exposes a stateless `Agent.chat_stream(message, context)` API that yields loop events.
+- Returns recoverable tool discovery and validation observations instead of surfacing raw exceptions.
 - Keeps the agent loop behind an `AgentHarness` boundary so tools, memory, policy, context, and environments can evolve independently.
 
 ## Why Start This Way
