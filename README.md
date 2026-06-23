@@ -89,6 +89,8 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 
 Type `/help` to list interactive commands. Type `/`, `/exit`, `/quit`, `exit`, or `quit` for quick command handling. If `--session path/to/session.json` is provided, messages are saved after each turn and loaded again on the next run.
 
+In interactive mode, normal conversation can be answered directly. The model only needs a `bash-action` block when it wants to inspect files or run a command.
+
 ## OpenAI-Compatible Endpoint
 
 ```bash

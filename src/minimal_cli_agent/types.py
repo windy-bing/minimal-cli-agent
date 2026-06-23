@@ -41,6 +41,12 @@ class LoopResult:
     final_messages: list[Message]
 
 
+@dataclass(frozen=True)
+class LoopOptions:
+    allow_final_text: bool = False
+    system_prompt: str | None = None
+
+
 @dataclass
 class AgentConfig:
     provider: Provider = Providers.OLLAMA

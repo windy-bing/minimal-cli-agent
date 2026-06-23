@@ -9,8 +9,9 @@ from minimal_cli_agent.constants import Defaults, InteractiveCommands, Permissio
 from minimal_cli_agent.exceptions import AgentError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import JsonSessionStore
+from minimal_cli_agent.prompts import INTERACTIVE_SYSTEM_PROMPT
 from minimal_cli_agent.profiles import resolve_profile
-from minimal_cli_agent.types import AgentConfig, ChatContext
+from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -76,8 +77,9 @@ def run_turn(
     message: str,
     context: ChatContext,
     session_store: JsonSessionStore | None = None,
+    options: LoopOptions | None = None,
 ) -> int:
-    stream = agent.chat_stream(message, context)
+    stream = agent.chat_stream(message, context, options)
     while True:
         try:
             event = next(stream)
@@ -116,7 +118,13 @@ def run_interactive(
             print(f"Unknown command: {pending}")
             print_quick_command_hint()
         elif pending:
-            run_turn(agent, pending, context, session_store)
+            run_turn(
+                agent,
+                pending,
+                context,
+                session_store,
+                LoopOptions(allow_final_text=True, system_prompt=INTERACTIVE_SYSTEM_PROMPT),
+            )
         pending = None
 
 
