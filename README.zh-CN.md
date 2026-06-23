@@ -89,6 +89,8 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 
 输入 `/help` 查看交互命令。输入 `/` 会快速展示常用命令；输入 `/exit`、`/quit`、`exit` 或 `quit` 退出。如果传入 `--session path/to/session.json`，每轮结束后会保存 messages，下次运行时继续加载。
 
+在交互模式下，普通对话可以直接自然语言回复；只有需要查看文件或运行命令时，模型才需要输出 `bash-action`。
+
 ## OpenAI-Compatible 接口
 
 ```bash

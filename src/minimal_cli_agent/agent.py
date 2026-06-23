@@ -3,11 +3,11 @@ from __future__ import annotations
 from collections.abc import Generator
 
 from minimal_cli_agent.constants import Tools
-from minimal_cli_agent.exceptions import AgentFinished, NonTerminatingAgentError
+from minimal_cli_agent.exceptions import AgentFinished, FormatError, NonTerminatingAgentError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.parser import parse_action
 from minimal_cli_agent.prompts import SYSTEM_PROMPT
-from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopResult, Message
+from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, LoopResult, Message
 
 
 class Agent:
@@ -15,11 +15,17 @@ class Agent:
         self.config = config
         self.harness = harness or AgentHarness(config)
 
-    def chat_stream(self, message: str, context: ChatContext | None = None) -> Generator[LoopEvent, None, LoopResult]:
+    def chat_stream(
+        self,
+        message: str,
+        context: ChatContext | None = None,
+        options: LoopOptions | None = None,
+    ) -> Generator[LoopEvent, None, LoopResult]:
+        options = options or LoopOptions()
         context = context or ChatContext()
         messages = list(context.messages)
         if not messages:
-            messages.append(Message(role="system", content=SYSTEM_PROMPT))
+            messages.append(Message(role="system", content=options.system_prompt or SYSTEM_PROMPT))
         messages.append(Message(role="user", content=message))
 
         for step in range(1, self.config.max_steps + 1):
@@ -36,6 +42,11 @@ class Agent:
             except AgentFinished as exc:
                 yield LoopEvent(type="done", data={"reason": str(exc)})
                 return LoopResult(success=True, final_messages=messages)
+            except FormatError as exc:
+                if options.allow_final_text:
+                    yield LoopEvent(type="turn_complete", data={"reason": "final text"})
+                    return LoopResult(success=True, final_messages=messages)
+                observation = str(exc)
             except NonTerminatingAgentError as exc:
                 observation = str(exc)
 
@@ -46,8 +57,13 @@ class Agent:
         yield LoopEvent(type="max_steps", data={"max_steps": self.config.max_steps})
         return LoopResult(success=False, final_messages=messages)
 
-    def chat(self, message: str, context: ChatContext | None = None) -> LoopResult:
-        stream = self.chat_stream(message, context)
+    def chat(
+        self,
+        message: str,
+        context: ChatContext | None = None,
+        options: LoopOptions | None = None,
+    ) -> LoopResult:
+        stream = self.chat_stream(message, context, options)
         while True:
             try:
                 next(stream)
@@ -78,5 +94,7 @@ def print_event(event: LoopEvent) -> None:
         print(f"\n[observation]\n{event.data['observation']}")
     elif event.type == "done":
         print(f"\n[done] {event.data['reason']}")
+    elif event.type == "turn_complete":
+        return
     elif event.type == "max_steps":
         print(f"\n[max_steps] {event.data['max_steps']}")
