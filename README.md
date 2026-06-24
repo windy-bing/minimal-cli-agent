@@ -24,6 +24,7 @@ ls -la
 ````
 
 - Executes commands with timeout and non-interactive environment variables.
+- Redacts common API keys, bearer tokens, and secret-looking values from command observations.
 - Supports product permission modes: `default`, `autoEdit`, `plan`, and `yolo`.
 - Persists session messages to JSON when `--session` is provided.
 - Applies a simple context compaction guard when the transcript gets large.
