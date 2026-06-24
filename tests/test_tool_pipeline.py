@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.types import AgentConfig, ToolCall
@@ -51,6 +52,17 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertIn("Tool discovery failed.", result.output)
         self.assertIn("available_tools:", result.output)
         self.assertIn("shell", result.output)
+
+    def test_default_mode_remembers_approved_shell_command_in_session(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="default"))
+
+        with patch("builtins.input", side_effect=["y"]) as input_mock:
+            first = harness.execute_shell("printf hello")
+            second = harness.execute_shell("printf hello")
+
+        self.assertEqual(input_mock.call_count, 1)
+        self.assertEqual(first.result.output, "hello")
+        self.assertEqual(second.result.output, "hello")
 
 
 if __name__ == "__main__":
