@@ -68,6 +68,7 @@ Implemented:
 - Multi-turn CLI REPL that reuses one `ChatContext` across turns.
 - `ToolRegistry` for tool discovery.
 - Tool aliases plus recoverable discovery and validation observations.
+- Secret redaction for command output and observations.
 - `ToolExecutionPipeline` with the full stage shape:
 
 ```text
@@ -157,7 +158,6 @@ A production version should add:
 - Write scope restrictions.
 - Destructive command detection.
 - Network access policy.
-- Secret redaction in observations.
 - Approval records in the session log.
 
 ### Skills, MCP, and Plugins

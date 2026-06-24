@@ -24,6 +24,7 @@ ls -la
 ````
 
 - 执行命令时带超时控制和非交互环境变量。
+- 会从命令 observation 中清洗常见 API key、bearer token 和疑似密钥值。
 - 支持产品化权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - 传入 `--session` 时，可以把 session messages 持久化到 JSON。
 - transcript 变大时，会应用一个简单的本地上下文压缩保护。

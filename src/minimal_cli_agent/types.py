@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from minimal_cli_agent.constants import Defaults, PermissionModes, Providers
+from minimal_cli_agent.redaction import redact_text
 
 Role = Literal["system", "user", "assistant"]
 Provider = Literal["ollama", "openai-compatible", "anthropic", "gemini", "codex"]
@@ -113,9 +114,11 @@ class CommandResult:
     skipped: bool = False
 
     def as_observation(self) -> str:
+        command = redact_text(self.command)
+        output = redact_text(self.output)
         if self.skipped:
-            return f"Command skipped:\n{self.command}\n\n{self.output}"
+            return f"Command skipped:\n{command}\n\n{output}"
         return (
             f"Command finished with exit code {self.exit_code}:\n"
-            f"```text\n{self.output}\n```"
+            f"```text\n{output}\n```"
         )

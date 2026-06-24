@@ -6,6 +6,7 @@ import subprocess
 from minimal_cli_agent.constants import PermissionModes, Tools
 from minimal_cli_agent.exceptions import CommandTimeout
 from minimal_cli_agent.interfaces import PermissionPolicy
+from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.types import AgentConfig, CommandResult
 
 NON_INTERACTIVE_ENV = {
@@ -43,10 +44,10 @@ class LocalEnvironment:
                 timeout=self.config.command_timeout,
             )
         except subprocess.TimeoutExpired as exc:
-            output = exc.stdout or ""
+            output = redact_text(exc.stdout)[-self.config.max_output_chars :]
             raise CommandTimeout(
                 f"Command timed out after {self.config.command_timeout}s.\nPartial output:\n{output}"
             ) from exc
 
-        output = result.stdout[-self.config.max_output_chars :]
+        output = redact_text(result.stdout)[-self.config.max_output_chars :]
         return CommandResult(command=command, exit_code=result.returncode, output=output)
