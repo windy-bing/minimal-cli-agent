@@ -26,6 +26,7 @@ ls -la
 - Executes commands with timeout and non-interactive environment variables.
 - Redacts common API keys, bearer tokens, and secret-looking values from command observations.
 - Blocks obvious network shell commands unless `--allow-network` is passed.
+- Supports additional shell policy deny rules through `--policy-file`.
 - Supports product permission modes: `default`, `autoEdit`, `plan`, and `yolo`.
 - Persists session messages and permission audit events to JSON when `--session` is provided.
 - Applies a simple context compaction guard when the transcript gets large.
@@ -135,12 +136,23 @@ Explicit CLI options such as `--model`, `--base-url`, and `--api-key` take prece
 --max-steps      maximum agent loop iterations
 --timeout        command timeout in seconds
 --allow-network  allow shell commands with obvious network access
+--policy-file    JSON file with additional shell policy deny tokens
 --interactive    start a multi-turn interactive CLI session
 --permission     default, autoEdit, plan, or yolo
 --session        JSON file for persisted messages
 ```
 
 ## Project Layout
+
+Policy files add deny rules without weakening the built-in hard gates:
+
+```json
+{
+  "deny_command_tokens": ["custom-danger"],
+  "sensitive_path_tokens": ["secrets.local"],
+  "network_command_tokens": ["my-net-tool "]
+}
+```
 
 ```text
 src/minimal_cli_agent/

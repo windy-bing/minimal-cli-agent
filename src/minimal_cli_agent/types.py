@@ -74,6 +74,7 @@ class AgentConfig:
     command_timeout: int = 30
     permission_mode: PermissionMode = PermissionModes.DEFAULT
     allow_network: bool = False
+    policy_file: Path | None = None
     max_output_chars: int = 12000
     max_context_chars: int = 60000
 

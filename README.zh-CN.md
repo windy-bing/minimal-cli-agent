@@ -26,6 +26,7 @@ ls -la
 - 执行命令时带超时控制和非交互环境变量。
 - 会从命令 observation 中清洗常见 API key、bearer token 和疑似密钥值。
 - 默认阻止明显的网络 shell 命令，除非显式传入 `--allow-network`。
+- 支持通过 `--policy-file` 追加 shell policy deny 规则。
 - 支持产品化权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - 传入 `--session` 时，可以把 session messages 和权限审计事件持久化到 JSON。
 - transcript 变大时，会应用一个简单的本地上下文压缩保护。
@@ -135,12 +136,23 @@ Profile 行为：
 --max-steps      Agent loop 最大迭代次数
 --timeout        命令超时时间，单位秒
 --allow-network  允许明显会访问网络的 shell 命令
+--policy-file    包含附加 shell policy deny token 的 JSON 文件
 --interactive    启动多轮交互 CLI 会话
 --permission     default、autoEdit、plan 或 yolo
 --session        用于持久化 messages 的 JSON 文件
 ```
 
 ## 项目结构
+
+Policy 文件只会追加 deny 规则，不会削弱内置 hard gate：
+
+```json
+{
+  "deny_command_tokens": ["custom-danger"],
+  "sensitive_path_tokens": ["secrets.local"],
+  "network_command_tokens": ["my-net-tool "]
+}
+```
 
 ```text
 src/minimal_cli_agent/

@@ -78,6 +78,49 @@ class PermissionEventFields:
     PERMISSION_MODE: Final = "permission_mode"
 
 
+class PolicyDefaults:
+    DANGEROUS_TOKENS: Final = (
+        "rm -rf /",
+        "sudo rm",
+        "mkfs",
+        ":(){",
+        "dd if=",
+    )
+    SENSITIVE_PATH_TOKENS: Final = (
+        ".env",
+        ".env.",
+        "id_rsa",
+        "id_dsa",
+        "id_ecdsa",
+        "id_ed25519",
+        ".pem",
+        ".key",
+        ".p12",
+        ".pfx",
+        ".codex/auth.json",
+        ".claude/settings.json",
+    )
+    NETWORK_COMMAND_TOKENS: Final = (
+        "curl ",
+        "wget ",
+        "http ",
+        "https ",
+        "ssh ",
+        "scp ",
+        "sftp ",
+        "rsync ",
+        "nc ",
+        "ncat ",
+        "telnet ",
+    )
+
+
+class PolicyFileFields:
+    DENY_COMMAND_TOKENS: Final = "deny_command_tokens"
+    SENSITIVE_PATH_TOKENS: Final = "sensitive_path_tokens"
+    NETWORK_COMMAND_TOKENS: Final = "network_command_tokens"
+
+
 class Defaults:
     MODEL: Final = "qwen3:4b"
     BASE_URL: Final = "http://localhost:11434"

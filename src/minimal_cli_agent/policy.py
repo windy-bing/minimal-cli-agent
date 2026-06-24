@@ -1,48 +1,57 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
+import json
 
-from minimal_cli_agent.constants import EventKinds, PermissionEventFields, PermissionModes, ToolDecisionKinds, Tools
-from minimal_cli_agent.exceptions import PermissionDenied
+from minimal_cli_agent.constants import (
+    EventKinds,
+    PermissionEventFields,
+    PermissionModes,
+    PolicyDefaults,
+    PolicyFileFields,
+    ToolDecisionKinds,
+    Tools,
+)
+from minimal_cli_agent.exceptions import ConfigurationError, PermissionDenied
 from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.types import AgentConfig, ToolDecision
 
-DANGEROUS_TOKENS = (
-    "rm -rf /",
-    "sudo rm",
-    "mkfs",
-    ":(){",
-    "dd if=",
-)
 
-SENSITIVE_PATH_TOKENS = (
-    ".env",
-    ".env.",
-    "id_rsa",
-    "id_dsa",
-    "id_ecdsa",
-    "id_ed25519",
-    ".pem",
-    ".key",
-    ".p12",
-    ".pfx",
-    ".codex/auth.json",
-    ".claude/settings.json",
-)
+@dataclass(frozen=True)
+class ShellPolicyRules:
+    dangerous_tokens: tuple[str, ...] = PolicyDefaults.DANGEROUS_TOKENS
+    sensitive_path_tokens: tuple[str, ...] = PolicyDefaults.SENSITIVE_PATH_TOKENS
+    network_command_tokens: tuple[str, ...] = PolicyDefaults.NETWORK_COMMAND_TOKENS
 
-NETWORK_COMMAND_TOKENS = (
-    "curl ",
-    "wget ",
-    "http ",
-    "https ",
-    "ssh ",
-    "scp ",
-    "sftp ",
-    "rsync ",
-    "nc ",
-    "ncat ",
-    "telnet ",
-)
+
+def load_shell_policy_rules(config: AgentConfig) -> ShellPolicyRules:
+    rules = ShellPolicyRules()
+    if config.policy_file is None:
+        return rules
+
+    try:
+        raw = json.loads(config.policy_file.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ConfigurationError(f"Unable to read policy file {config.policy_file}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError(f"Policy file must be valid JSON: {config.policy_file}") from exc
+
+    if not isinstance(raw, dict):
+        raise ConfigurationError("Policy file must contain a JSON object.")
+
+    return ShellPolicyRules(
+        dangerous_tokens=rules.dangerous_tokens + read_token_list(raw, PolicyFileFields.DENY_COMMAND_TOKENS),
+        sensitive_path_tokens=rules.sensitive_path_tokens + read_token_list(raw, PolicyFileFields.SENSITIVE_PATH_TOKENS),
+        network_command_tokens=rules.network_command_tokens + read_token_list(raw, PolicyFileFields.NETWORK_COMMAND_TOKENS),
+    )
+
+
+def read_token_list(raw: dict, field: str) -> tuple[str, ...]:
+    value = raw.get(field, [])
+    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+        raise ConfigurationError(f"Policy field {field} must be a list of non-empty strings.")
+    return tuple(item.lower() for item in value)
 
 
 class ShellPermissionPolicy:
@@ -50,17 +59,18 @@ class ShellPermissionPolicy:
         self.config = config
         self.audit_recorder = audit_recorder
         self.approved_shell_commands: set[str] = set()
+        self.rules = load_shell_policy_rules(config)
 
     def decide(self, action: str, payload: str) -> ToolDecision:
         if action != Tools.SHELL:
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Unknown action type: {action}")
 
         lowered = payload.lower()
-        if any(token in lowered for token in DANGEROUS_TOKENS):
+        if any(token in lowered for token in self.rules.dangerous_tokens):
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked dangerous command: {payload}")
-        if any(token in lowered for token in SENSITIVE_PATH_TOKENS):
+        if any(token in lowered for token in self.rules.sensitive_path_tokens):
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked command touching sensitive path: {payload}")
-        if not self.config.allow_network and any(token in f" {lowered} " for token in NETWORK_COMMAND_TOKENS):
+        if not self.config.allow_network and any(token in f" {lowered} " for token in self.rules.network_command_tokens):
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked network command without --allow-network: {payload}")
 
         if self.config.permission_mode == PermissionModes.YOLO:

@@ -28,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-steps", type=int, default=int(os.getenv("AGENT_MAX_STEPS", Defaults.MAX_STEPS)))
     parser.add_argument("--timeout", type=int, default=int(os.getenv("AGENT_COMMAND_TIMEOUT", Defaults.COMMAND_TIMEOUT)))
     parser.add_argument("--allow-network", action="store_true", help="Allow shell commands with obvious network access.")
+    parser.add_argument("--policy-file", type=Path, help="JSON file with additional shell policy deny tokens.")
     parser.add_argument("--show-config", action="store_true", help="Print resolved provider/model/base URL without secrets.")
     parser.add_argument(
         "--permission",
@@ -54,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
             command_timeout=args.timeout,
             permission_mode=args.permission,
             allow_network=args.allow_network,
+            policy_file=args.policy_file.resolve() if args.policy_file else None,
         ), args.profile, explicit_options=explicit_options)
         if args.show_config:
             print(f"profile: {args.profile or '<none>'}")

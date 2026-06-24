@@ -71,6 +71,7 @@ Implemented:
 - Tool aliases plus recoverable discovery and validation observations.
 - Secret redaction for command output and observations.
 - Network command hard gate with explicit `--allow-network` opt-in.
+- Configurable additional shell deny rules through `--policy-file`.
 - `ToolExecutionPipeline` with the full stage shape:
 
 ```text
@@ -157,7 +158,7 @@ Current product modes are `default`, `autoEdit`, `plan`, and `yolo`.
 
 A production version should add:
 
-- Command allow/deny rules.
+- Richer allow rules and policy reports.
 - Write scope restrictions.
 - Destructive command detection.
 - Queryable approval records and richer audit reports.

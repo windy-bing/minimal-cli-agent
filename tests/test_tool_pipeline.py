@@ -1,10 +1,11 @@
 import unittest
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from minimal_cli_agent.constants import EventKinds, PermissionEventFields, PermissionModes, Tools
-from minimal_cli_agent.exceptions import PermissionDenied
+from minimal_cli_agent.exceptions import ConfigurationError, PermissionDenied
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import JsonSessionStore
 from minimal_cli_agent.types import AgentConfig, ToolCall
@@ -88,6 +89,23 @@ class ToolPipelineTest(unittest.TestCase):
 
         self.assertTrue(observation.result.skipped)
         self.assertIn("plan mode", observation.result.output)
+
+    def test_policy_file_adds_custom_deny_command_tokens(self) -> None:
+        with TemporaryDirectory() as tmp:
+            policy_file = Path(tmp) / "policy.json"
+            policy_file.write_text(json.dumps({"deny_command_tokens": ["custom-danger"]}), encoding="utf-8")
+            harness = AgentHarness(AgentConfig(permission_mode="yolo", policy_file=policy_file))
+
+            with self.assertRaisesRegex(PermissionDenied, "dangerous command"):
+                harness.execute_shell("echo custom-danger")
+
+    def test_policy_file_rejects_invalid_token_list(self) -> None:
+        with TemporaryDirectory() as tmp:
+            policy_file = Path(tmp) / "policy.json"
+            policy_file.write_text(json.dumps({"deny_command_tokens": "custom-danger"}), encoding="utf-8")
+
+            with self.assertRaisesRegex(ConfigurationError, "deny_command_tokens"):
+                AgentHarness(AgentConfig(policy_file=policy_file))
 
     def test_permission_confirmation_is_recorded_in_session_events(self) -> None:
         with TemporaryDirectory() as tmp:
