@@ -1,6 +1,7 @@
 import unittest
 
 from minimal_cli_agent.agent import Agent
+from minimal_cli_agent.constants import LoopEventTypes
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message
 
@@ -31,8 +32,8 @@ class AgentTest(unittest.TestCase):
                 break
 
         self.assertTrue(result.success)
-        self.assertEqual(events[0].type, "step_start")
-        self.assertEqual(events[-1].type, "done")
+        self.assertEqual(events[0].type, LoopEventTypes.STEP_START)
+        self.assertEqual(events[-1].type, LoopEventTypes.DONE)
 
     def test_strict_chat_stream_keeps_format_recovery(self) -> None:
         config = AgentConfig(permission_mode="plan", max_steps=1)
@@ -48,7 +49,7 @@ class AgentTest(unittest.TestCase):
                 result = exc.value
                 break
 
-        observations = [event.data.get("observation", "") for event in events if event.type == "tool_call_result"]
+        observations = [event.data.get("observation", "") for event in events if event.type == LoopEventTypes.TOOL_CALL_RESULT]
         self.assertFalse(result.success)
         self.assertTrue(any("Your output was malformed." in observation for observation in observations))
 
@@ -67,8 +68,8 @@ class AgentTest(unittest.TestCase):
                 break
 
         self.assertTrue(result.success)
-        self.assertEqual(events[-1].type, "turn_complete")
-        self.assertFalse(any(event.type == "tool_call_result" for event in events))
+        self.assertEqual(events[-1].type, LoopEventTypes.TURN_COMPLETE)
+        self.assertFalse(any(event.type == LoopEventTypes.TOOL_CALL_RESULT for event in events))
         self.assertIn("排查问题", result.final_messages[-1].content)
 
 

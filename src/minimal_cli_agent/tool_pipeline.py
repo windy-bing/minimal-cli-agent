@@ -6,6 +6,7 @@ from typing import Callable
 from minimal_cli_agent.interfaces import PermissionPolicy
 from minimal_cli_agent.tool_registry import ToolRegistry
 from minimal_cli_agent.exceptions import PermissionDenied
+from minimal_cli_agent.constants import ToolDecisionKinds
 from minimal_cli_agent.types import CommandResult, ToolCall, ToolDecision, ToolDiscoveryError
 
 Hook = Callable[[ToolCall], None]
@@ -45,9 +46,9 @@ class ToolExecutionPipeline:
         self._pre_hook(canonical_call)
         decision = self._resolve_decision(canonical_call, decision)
         decision = self._confirmation(canonical_call, decision)
-        if decision.kind == "skip":
+        if decision.kind == ToolDecisionKinds.SKIP:
             return CommandResult(command=call.payload, exit_code=0, output=decision.reason or "tool skipped", skipped=True)
-        if decision.kind == "deny":
+        if decision.kind == ToolDecisionKinds.DENY:
             raise PermissionDenied(decision.reason or f"Denied tool call: {call.name}")
         result = self._execution(canonical_call)
         self._post_hook(canonical_call, result)

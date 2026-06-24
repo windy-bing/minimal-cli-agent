@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from minimal_cli_agent.constants import SessionFields
 from minimal_cli_agent.types import EventRecord, Message
 
 
@@ -14,15 +15,18 @@ class JsonSessionStore:
         if not self.path.exists():
             return []
         raw = json.loads(self.path.read_text(encoding="utf-8"))
-        raw_messages = raw["messages"] if isinstance(raw, dict) else raw
-        return [Message(role=item["role"], content=item["content"]) for item in raw_messages]
+        raw_messages = raw[SessionFields.MESSAGES] if isinstance(raw, dict) else raw
+        return [
+            Message(role=item[SessionFields.ROLE], content=item[SessionFields.CONTENT])
+            for item in raw_messages
+        ]
 
     def save(self, messages: list[Message]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         existing_events = self.load_events()
         data = {
-            "messages": [message.to_dict() for message in messages],
-            "events": [event.to_dict() for event in existing_events],
+            SessionFields.MESSAGES: [message.to_dict() for message in messages],
+            SessionFields.EVENTS: [event.to_dict() for event in existing_events],
         }
         self.path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -32,9 +36,13 @@ class JsonSessionStore:
         raw = json.loads(self.path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             return []
-        raw_events = raw.get("events", [])
+        raw_events = raw.get(SessionFields.EVENTS, [])
         return [
-            EventRecord(kind=item["kind"], data=item.get("data", {}), timestamp=item["timestamp"])
+            EventRecord(
+                kind=item[SessionFields.KIND],
+                data=item.get(SessionFields.DATA, {}),
+                timestamp=item[SessionFields.TIMESTAMP],
+            )
             for item in raw_events
         ]
 
@@ -43,8 +51,8 @@ class JsonSessionStore:
         events = [*self.load_events(), event]
         self.path.parent.mkdir(parents=True, exist_ok=True)
         data = {
-            "messages": [message.to_dict() for message in messages],
-            "events": [item.to_dict() for item in events],
+            SessionFields.MESSAGES: [message.to_dict() for message in messages],
+            SessionFields.EVENTS: [item.to_dict() for item in events],
         }
         self.path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 

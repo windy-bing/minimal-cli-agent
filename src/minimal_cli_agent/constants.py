@@ -28,6 +28,56 @@ class PermissionModes:
     ALL: Final = (DEFAULT, AUTO_EDIT, PLAN, YOLO)
 
 
+class ToolDecisionKinds:
+    ALLOW: Final = "allow"
+    ASK: Final = "ask"
+    DENY: Final = "deny"
+    SKIP: Final = "skip"
+    ALL: Final = (ALLOW, ASK, DENY, SKIP)
+
+
+class LoopEventTypes:
+    STEP_START: Final = "step_start"
+    MODEL_OUTPUT: Final = "model_output"
+    TOOL_CALL_START: Final = "tool_call_start"
+    TOOL_CALL_RESULT: Final = "tool_call_result"
+    DONE: Final = "done"
+    TURN_COMPLETE: Final = "turn_complete"
+    MAX_STEPS: Final = "max_steps"
+
+
+class LoopEventData:
+    STEP: Final = "step"
+    MAX_STEPS: Final = "max_steps"
+    CONTENT: Final = "content"
+    TOOL: Final = "tool"
+    PAYLOAD: Final = "payload"
+    REASON: Final = "reason"
+    OBSERVATION: Final = "observation"
+
+
+class SessionFields:
+    MESSAGES: Final = "messages"
+    EVENTS: Final = "events"
+    ROLE: Final = "role"
+    CONTENT: Final = "content"
+    KIND: Final = "kind"
+    DATA: Final = "data"
+    TIMESTAMP: Final = "timestamp"
+
+
+class EventKinds:
+    PERMISSION_DECISION: Final = "permission_decision"
+
+
+class PermissionEventFields:
+    ACTION: Final = "action"
+    DECISION: Final = "decision"
+    REASON: Final = "reason"
+    PAYLOAD: Final = "payload"
+    PERMISSION_MODE: Final = "permission_mode"
+
+
 class Defaults:
     MODEL: Final = "qwen3:4b"
     BASE_URL: Final = "http://localhost:11434"

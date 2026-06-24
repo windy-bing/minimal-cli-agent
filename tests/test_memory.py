@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from minimal_cli_agent.constants import EventKinds, PermissionEventFields
 from minimal_cli_agent.memory import JsonSessionStore, compact_messages
 from minimal_cli_agent.types import EventRecord, Message
 
@@ -32,14 +33,14 @@ class MemoryTest(unittest.TestCase):
             path = Path(tmp) / "session.json"
             store = JsonSessionStore(path)
             store.save([Message(role="user", content="hello")])
-            store.append_event(EventRecord(kind="permission_decision", data={"decision": "allow"}))
+            store.append_event(EventRecord(kind=EventKinds.PERMISSION_DECISION, data={PermissionEventFields.DECISION: "allow"}))
 
             messages = store.load()
             events = store.load_events()
 
         self.assertEqual(messages, [Message(role="user", content="hello")])
-        self.assertEqual(events[0].kind, "permission_decision")
-        self.assertEqual(events[0].data["decision"], "allow")
+        self.assertEqual(events[0].kind, EventKinds.PERMISSION_DECISION)
+        self.assertEqual(events[0].data[PermissionEventFields.DECISION], "allow")
 
 
 if __name__ == "__main__":

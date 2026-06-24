@@ -3,6 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from minimal_cli_agent.constants import EventKinds, PermissionEventFields, PermissionModes, Tools
 from minimal_cli_agent.exceptions import PermissionDenied
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import JsonSessionStore
@@ -98,10 +99,10 @@ class ToolPipelineTest(unittest.TestCase):
 
             events = store.load_events()
 
-        self.assertEqual(events[0].kind, "permission_decision")
-        self.assertEqual(events[0].data["decision"], "allow")
-        self.assertEqual(events[0].data["action"], "shell")
-        self.assertEqual(events[0].data["permission_mode"], "default")
+        self.assertEqual(events[0].kind, EventKinds.PERMISSION_DECISION)
+        self.assertEqual(events[0].data[PermissionEventFields.DECISION], "allow")
+        self.assertEqual(events[0].data[PermissionEventFields.ACTION], Tools.SHELL)
+        self.assertEqual(events[0].data[PermissionEventFields.PERMISSION_MODE], PermissionModes.DEFAULT)
 
 
 if __name__ == "__main__":

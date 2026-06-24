@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from minimal_cli_agent.constants import Defaults, PermissionModes, Providers
+from minimal_cli_agent.constants import Defaults, PermissionModes, Providers, SessionFields
 from minimal_cli_agent.redaction import redact_text
 
 Role = Literal["system", "user", "assistant"]
@@ -21,7 +21,7 @@ class Message:
     content: str
 
     def to_dict(self) -> dict[str, str]:
-        return {"role": self.role, "content": self.content}
+        return {SessionFields.ROLE: self.role, SessionFields.CONTENT: self.content}
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,11 @@ class EventRecord:
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
-        return {"kind": self.kind, "data": self.data, "timestamp": self.timestamp}
+        return {
+            SessionFields.KIND: self.kind,
+            SessionFields.DATA: self.data,
+            SessionFields.TIMESTAMP: self.timestamp,
+        }
 
 
 @dataclass
