@@ -27,7 +27,7 @@ ls -la
 - Redacts common API keys, bearer tokens, and secret-looking values from command observations.
 - Blocks obvious network shell commands unless `--allow-network` is passed.
 - Supports product permission modes: `default`, `autoEdit`, `plan`, and `yolo`.
-- Persists session messages to JSON when `--session` is provided.
+- Persists session messages and permission audit events to JSON when `--session` is provided.
 - Applies a simple context compaction guard when the transcript gets large.
 - Exposes a stateless `Agent.chat_stream(message, context)` API that yields loop events.
 - Returns recoverable tool discovery and validation observations instead of surfacing raw exceptions.
@@ -180,12 +180,13 @@ Implemented:
 - `ToolRegistry` and staged `ToolExecutionPipeline`.
 - Permission decision type with `allow`, `ask`, `deny`, and `skip`.
 - Product permission modes: `default`, `autoEdit`, `plan`, `yolo`.
+- JSON session event log for permission approval audit records.
 
 Reserved but intentionally minimal:
 
 - Context compression is local truncation, not model summarization yet.
 - `autoEdit` currently behaves like `default` because no file-edit tools exist yet.
-- Session persistence is JSON, not a full event log.
+- Session persistence is JSON, not SQLite or a queryable event database.
 
 Not implemented yet:
 

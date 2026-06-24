@@ -66,6 +66,7 @@ Implemented:
 - `ChatContext` carries session id, messages, and metadata from the caller.
 - `LoopEvent` / `LoopResult` for stream-style UI integration.
 - Multi-turn CLI REPL that reuses one `ChatContext` across turns.
+- JSON session event log for permission approval audit records.
 - `ToolRegistry` for tool discovery.
 - Tool aliases plus recoverable discovery and validation observations.
 - Secret redaction for command output and observations.
@@ -86,6 +87,7 @@ Reserved:
 - `Confirmation` is currently CLI `input()`. A UI client can replace the policy/harness boundary later.
 - `autoEdit` is present, but with only a shell tool it currently asks for confirmation like `default`.
 - Tool schema validation is intentionally minimal. It currently supports per-tool expected format and validator callbacks, not full JSON Schema.
+- The event log is JSON-backed. It is durable, but not yet indexed or queryable like SQLite.
 
 Not implemented yet:
 
@@ -158,7 +160,7 @@ A production version should add:
 - Command allow/deny rules.
 - Write scope restrictions.
 - Destructive command detection.
-- Approval records in the session log.
+- Queryable approval records and richer audit reports.
 
 ### Skills, MCP, and Plugins
 

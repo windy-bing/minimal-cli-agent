@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from minimal_cli_agent.constants import PermissionModes, Tools
 from minimal_cli_agent.exceptions import PermissionDenied
+from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.types import AgentConfig, ToolDecision
 
 DANGEROUS_TOKENS = (
@@ -43,8 +46,9 @@ NETWORK_COMMAND_TOKENS = (
 
 
 class ShellPermissionPolicy:
-    def __init__(self, config: AgentConfig) -> None:
+    def __init__(self, config: AgentConfig, audit_recorder: Callable[[str, dict], None] | None = None) -> None:
         self.config = config
+        self.audit_recorder = audit_recorder
         self.approved_shell_commands: set[str] = set()
 
     def decide(self, action: str, payload: str) -> ToolDecision:
@@ -77,7 +81,24 @@ class ShellPermissionPolicy:
             return decision
         answer = input(f"\nAllow command?\n{payload}\n[y/N] ").strip().lower()
         if answer not in {"y", "yes"}:
+            self._record_permission_event(action, payload, "deny", "user denied")
             raise PermissionDenied(f"User denied command: {payload}")
         if action == Tools.SHELL:
             self.approved_shell_commands.add(payload)
-        return ToolDecision(kind="allow", reason=f"user approved {action}")
+        reason = f"user approved {action}"
+        self._record_permission_event(action, payload, "allow", reason)
+        return ToolDecision(kind="allow", reason=reason)
+
+    def _record_permission_event(self, action: str, payload: str, decision: str, reason: str) -> None:
+        if not self.audit_recorder:
+            return
+        self.audit_recorder(
+            "permission_decision",
+            {
+                "action": action,
+                "decision": decision,
+                "reason": reason,
+                "payload": redact_text(payload),
+                "permission_mode": self.config.permission_mode,
+            },
+        )

@@ -27,7 +27,7 @@ ls -la
 - 会从命令 observation 中清洗常见 API key、bearer token 和疑似密钥值。
 - 默认阻止明显的网络 shell 命令，除非显式传入 `--allow-network`。
 - 支持产品化权限模式：`default`、`autoEdit`、`plan`、`yolo`。
-- 传入 `--session` 时，可以把 session messages 持久化到 JSON。
+- 传入 `--session` 时，可以把 session messages 和权限审计事件持久化到 JSON。
 - transcript 变大时，会应用一个简单的本地上下文压缩保护。
 - 暴露无状态 API：`Agent.chat_stream(message, context)`，以事件流形式产出 loop event。
 - 工具发现和参数校验失败时返回可恢复 observation，而不是直接把原始异常抛给用户。
@@ -180,12 +180,13 @@ src/minimal_cli_agent/
 - `ToolRegistry` 和分阶段 `ToolExecutionPipeline`。
 - `ToolDecision`：`allow`、`ask`、`deny`、`skip`。
 - 产品权限模式：`default`、`autoEdit`、`plan`、`yolo`。
+- JSON session event log，用于记录权限批准审计事件。
 
 已预留但保持最小实现：
 
 - 上下文压缩目前是本地截断，不是模型总结。
 - `autoEdit` 目前和 `default` 类似，因为还没有文件编辑工具。
-- session 持久化目前是 JSON，不是完整 event log。
+- session 持久化目前是 JSON，不是 SQLite 或可查询事件数据库。
 
 暂不实现：
 

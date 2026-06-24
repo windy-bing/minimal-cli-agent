@@ -1,7 +1,9 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-from minimal_cli_agent.memory import compact_messages
-from minimal_cli_agent.types import Message
+from minimal_cli_agent.memory import JsonSessionStore, compact_messages
+from minimal_cli_agent.types import EventRecord, Message
 
 
 class MemoryTest(unittest.TestCase):
@@ -14,6 +16,30 @@ class MemoryTest(unittest.TestCase):
         self.assertEqual(compacted[0].role, "system")
         self.assertIn("compacted", compacted[1].content)
         self.assertEqual(compacted[-1].content, "19" * 20)
+
+    def test_json_session_store_reads_legacy_message_list(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.json"
+            path.write_text('[{"role": "user", "content": "hello"}]', encoding="utf-8")
+            store = JsonSessionStore(path)
+
+            messages = store.load()
+
+        self.assertEqual(messages, [Message(role="user", content="hello")])
+
+    def test_json_session_store_persists_messages_and_events(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.json"
+            store = JsonSessionStore(path)
+            store.save([Message(role="user", content="hello")])
+            store.append_event(EventRecord(kind="permission_decision", data={"decision": "allow"}))
+
+            messages = store.load()
+            events = store.load_events()
+
+        self.assertEqual(messages, [Message(role="user", content="hello")])
+        self.assertEqual(events[0].kind, "permission_decision")
+        self.assertEqual(events[0].data["decision"], "allow")
 
 
 if __name__ == "__main__":

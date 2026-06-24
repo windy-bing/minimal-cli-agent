@@ -10,7 +10,7 @@ from minimal_cli_agent.model import ChatModel
 from minimal_cli_agent.policy import ShellPermissionPolicy
 from minimal_cli_agent.tool_pipeline import ToolExecutionPipeline
 from minimal_cli_agent.tool_registry import ToolRegistry, ToolSpec
-from minimal_cli_agent.types import AgentConfig, CommandResult, Message, ToolCall
+from minimal_cli_agent.types import AgentConfig, CommandResult, EventRecord, Message, ToolCall
 
 
 @dataclass
@@ -36,7 +36,7 @@ class AgentHarness:
         self.model = model or ChatModel(config)
         self.context_manager = context_manager or CompactingContextManager(config)
         self.session_store = session_store
-        self.policy = ShellPermissionPolicy(config)
+        self.policy = ShellPermissionPolicy(config, audit_recorder=self.record_event)
         self.environment = LocalEnvironment(config)
         self.tool_registry = tool_registry or ToolRegistry()
         self.tool_registry.register(
@@ -56,6 +56,10 @@ class AgentHarness:
     def save_messages(self, messages: list[Message]) -> None:
         if self.session_store:
             self.session_store.save(messages)
+
+    def record_event(self, kind: str, data: dict) -> None:
+        if self.session_store:
+            self.session_store.append_event(EventRecord(kind=kind, data=data))
 
     def prepare_context(self, messages: list[Message]) -> list[Message]:
         return self.context_manager.prepare(messages)

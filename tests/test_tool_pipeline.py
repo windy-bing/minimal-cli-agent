@@ -1,8 +1,11 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from minimal_cli_agent.exceptions import PermissionDenied
 from minimal_cli_agent.harness import AgentHarness
+from minimal_cli_agent.memory import JsonSessionStore
 from minimal_cli_agent.types import AgentConfig, ToolCall
 
 
@@ -84,6 +87,21 @@ class ToolPipelineTest(unittest.TestCase):
 
         self.assertTrue(observation.result.skipped)
         self.assertIn("plan mode", observation.result.output)
+
+    def test_permission_confirmation_is_recorded_in_session_events(self) -> None:
+        with TemporaryDirectory() as tmp:
+            store = JsonSessionStore(Path(tmp) / "session.json")
+            harness = AgentHarness(AgentConfig(permission_mode="default"), session_store=store)
+
+            with patch("builtins.input", side_effect=["y"]):
+                harness.execute_shell("printf hello")
+
+            events = store.load_events()
+
+        self.assertEqual(events[0].kind, "permission_decision")
+        self.assertEqual(events[0].data["decision"], "allow")
+        self.assertEqual(events[0].data["action"], "shell")
+        self.assertEqual(events[0].data["permission_mode"], "default")
 
 
 if __name__ == "__main__":

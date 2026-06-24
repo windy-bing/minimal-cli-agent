@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from minimal_cli_agent.types import CommandResult, Message, ToolDecision
+from minimal_cli_agent.types import CommandResult, EventRecord, Message, ToolDecision
 
 
 class Model(Protocol):
@@ -20,6 +20,9 @@ class SessionStore(Protocol):
         pass
 
     def save(self, messages: list[Message]) -> None:
+        pass
+
+    def append_event(self, event: EventRecord) -> None:
         pass
 
 

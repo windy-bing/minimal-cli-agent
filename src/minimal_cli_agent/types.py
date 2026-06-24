@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -21,6 +22,16 @@ class Message:
 
     def to_dict(self) -> dict[str, str]:
         return {"role": self.role, "content": self.content}
+
+
+@dataclass(frozen=True)
+class EventRecord:
+    kind: str
+    data: dict[str, Any] = field(default_factory=dict)
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"kind": self.kind, "data": self.data, "timestamp": self.timestamp}
 
 
 @dataclass
