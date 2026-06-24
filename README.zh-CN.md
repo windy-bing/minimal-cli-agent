@@ -30,6 +30,7 @@ ls -la
 - 支持产品化权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - 传入 `--session` 时，可以把 session messages 和权限审计事件持久化到 JSON。
 - transcript 变大时，会应用一个简单的本地上下文压缩保护。
+- 可以通过 `--summarize-context` 使用模型生成旧上下文摘要。
 - 暴露无状态 API：`Agent.chat_stream(message, context)`，以事件流形式产出 loop event。
 - 工具发现和参数校验失败时返回可恢复 observation，而不是直接把原始异常抛给用户。
 - Agent loop 运行在 `AgentHarness` 边界后面，tools、memory、policy、context、environment 可以独立演进。
@@ -137,6 +138,7 @@ Profile 行为：
 --timeout        命令超时时间，单位秒
 --allow-network  允许明显会访问网络的 shell 命令
 --policy-file    包含附加 shell policy deny token 的 JSON 文件
+--summarize-context 使用模型总结旧上下文
 --interactive    启动多轮交互 CLI 会话
 --permission     default、autoEdit、plan 或 yolo
 --session        用于持久化 messages 的 JSON 文件
@@ -193,10 +195,11 @@ src/minimal_cli_agent/
 - `ToolDecision`：`allow`、`ask`、`deny`、`skip`。
 - 产品权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - JSON session event log，用于记录权限批准审计事件。
+- 通过 `--summarize-context` 可选启用模型生成式上下文摘要。
 
 已预留但保持最小实现：
 
-- 上下文压缩目前是本地截断，不是模型总结。
+- 上下文压缩默认是本地截断；模型总结需要显式启用。
 - `autoEdit` 目前和 `default` 类似，因为还没有文件编辑工具。
 - session 持久化目前是 JSON，不是 SQLite 或可查询事件数据库。
 

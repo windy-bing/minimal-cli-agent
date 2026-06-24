@@ -34,7 +34,7 @@ class AgentHarness:
     ) -> None:
         self.config = config
         self.model = model or ChatModel(config)
-        self.context_manager = context_manager or CompactingContextManager(config)
+        self.context_manager = context_manager or CompactingContextManager(config, summarizer=self.model)
         self.session_store = session_store
         self.policy = ShellPermissionPolicy(config, audit_recorder=self.record_event)
         self.environment = LocalEnvironment(config)

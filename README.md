@@ -30,6 +30,7 @@ ls -la
 - Supports product permission modes: `default`, `autoEdit`, `plan`, and `yolo`.
 - Persists session messages and permission audit events to JSON when `--session` is provided.
 - Applies a simple context compaction guard when the transcript gets large.
+- Can use model-generated context summaries with `--summarize-context`.
 - Exposes a stateless `Agent.chat_stream(message, context)` API that yields loop events.
 - Returns recoverable tool discovery and validation observations instead of surfacing raw exceptions.
 - Keeps the agent loop behind an `AgentHarness` boundary so tools, memory, policy, context, and environments can evolve independently.
@@ -137,6 +138,7 @@ Explicit CLI options such as `--model`, `--base-url`, and `--api-key` take prece
 --timeout        command timeout in seconds
 --allow-network  allow shell commands with obvious network access
 --policy-file    JSON file with additional shell policy deny tokens
+--summarize-context use the model to summarize old context when compacting
 --interactive    start a multi-turn interactive CLI session
 --permission     default, autoEdit, plan, or yolo
 --session        JSON file for persisted messages
@@ -193,10 +195,11 @@ Implemented:
 - Permission decision type with `allow`, `ask`, `deny`, and `skip`.
 - Product permission modes: `default`, `autoEdit`, `plan`, `yolo`.
 - JSON session event log for permission approval audit records.
+- Optional model-generated context summaries with `--summarize-context`.
 
 Reserved but intentionally minimal:
 
-- Context compression is local truncation, not model summarization yet.
+- Context compression defaults to local truncation; model summarization is opt-in.
 - `autoEdit` currently behaves like `default` because no file-edit tools exist yet.
 - Session persistence is JSON, not SQLite or a queryable event database.
 

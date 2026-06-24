@@ -66,6 +66,7 @@ Implemented:
 - `ChatContext` carries session id, messages, and metadata from the caller.
 - `LoopEvent` / `LoopResult` for stream-style UI integration.
 - Multi-turn CLI REPL that reuses one `ChatContext` across turns.
+- Optional model-generated context summaries with `--summarize-context`.
 - JSON session event log for permission approval audit records.
 - `ToolRegistry` for tool discovery.
 - Tool aliases plus recoverable discovery and validation observations.
@@ -105,10 +106,10 @@ See [Harness Gap Analysis](harness-gap-analysis.zh-CN.md) for a more detailed co
 
 ### Context Compression
 
-The current `compact_messages` function trims older messages and inserts a local note. The next version should add model-based summarization:
+The default `compact_messages` function trims older messages and inserts a local note. When `--summarize-context` is enabled, the harness uses the active model to summarize older messages, then sends system prompt + summary + recent tail messages as working context.
 
 - Keep system prompt, user goal, recent tool observations, and explicit decisions.
-- Summarize older command/output history into a structured state block.
+- Summarize older command/output history into a structured state block when enabled.
 - Store both raw transcript and compacted working context.
 
 ### SubAgent

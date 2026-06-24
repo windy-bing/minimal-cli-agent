@@ -75,6 +75,8 @@ class AgentConfig:
     permission_mode: PermissionMode = PermissionModes.DEFAULT
     allow_network: bool = False
     policy_file: Path | None = None
+    summarize_context: bool = False
+    context_tail_messages: int = int(Defaults.CONTEXT_TAIL_MESSAGES)
     max_output_chars: int = 12000
     max_context_chars: int = 60000
 

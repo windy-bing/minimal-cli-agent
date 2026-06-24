@@ -54,3 +54,15 @@ To finish, use:
 exit
 ```
 """
+
+CONTEXT_SUMMARY_SYSTEM_PROMPT = """Summarize prior CLI agent context for continued work.
+
+Keep only durable facts:
+- User goal and constraints.
+- Decisions already made.
+- Files or commands already inspected.
+- Tool results that affect next steps.
+- Open blockers or pending tasks.
+
+Do not include secrets. Be concise and structured.
+"""
