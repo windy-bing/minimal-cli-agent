@@ -119,6 +119,8 @@ Profile behavior:
 - `claude`: reads `~/.claude/settings.json` for model and Anthropic proxy env, plus `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`.
 - `gemini`: reads `GEMINI_MODEL`, `GEMINI_BASE_URL`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`.
 
+Explicit CLI options such as `--model`, `--base-url`, and `--api-key` take precedence over profile-specific environment variables or config files.
+
 ## CLI Options
 
 ```text

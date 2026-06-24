@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from minimal_cli_agent.agent import Agent
-from minimal_cli_agent.cli import run_interactive, run_turn
+from minimal_cli_agent.cli import detect_explicit_options, run_interactive, run_turn
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.types import AgentConfig, ChatContext, Message
 
@@ -94,6 +94,19 @@ class CliTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
         self.assertIn("Commands: /help, /exit, /quit", printed)
+
+    def test_detect_explicit_options_supports_space_and_equals_forms(self) -> None:
+        explicit = detect_explicit_options([
+            "--profile",
+            "ollama",
+            "--model=model-a",
+            "--base-url",
+            "http://localhost:11434",
+        ])
+
+        self.assertIn("profile", explicit)
+        self.assertIn("model", explicit)
+        self.assertIn("base_url", explicit)
 
     def test_run_interactive_accepts_plain_text_reply(self) -> None:
         model = SequenceModel(["你好，我可以帮你看代码、改文件或排查问题。"])

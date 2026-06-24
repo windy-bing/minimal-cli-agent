@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from minimal_cli_agent.exceptions import ConfigurationError
-from minimal_cli_agent.profiles import nested_get, resolve_codex, resolve_gemini, read_json, read_toml
+from minimal_cli_agent.profiles import nested_get, resolve_codex, resolve_gemini, resolve_ollama, read_json, read_toml
 from minimal_cli_agent.types import AgentConfig
 
 
@@ -29,6 +29,33 @@ class ProfileTest(unittest.TestCase):
         self.assertEqual(config.provider, "gemini")
         self.assertEqual(config.model, "gemini-test")
         self.assertEqual(config.api_key, "key")
+
+    def test_resolve_ollama_uses_env_when_cli_option_is_not_explicit(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"OLLAMA_MODEL": "env-model", "OLLAMA_BASE_URL": "http://env-ollama:11434"},
+            clear=False,
+        ):
+            config = resolve_ollama(AgentConfig(model="default-model", base_url="http://default:11434"))
+
+        self.assertEqual(config.provider, "ollama")
+        self.assertEqual(config.model, "env-model")
+        self.assertEqual(config.base_url, "http://env-ollama:11434")
+
+    def test_resolve_ollama_keeps_explicit_cli_model_and_base_url(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"OLLAMA_MODEL": "env-model", "OLLAMA_BASE_URL": "http://env-ollama:11434"},
+            clear=False,
+        ):
+            config = resolve_ollama(
+                AgentConfig(model="cli-model", base_url="http://cli-ollama:11434"),
+                explicit_options={"model", "base_url"},
+            )
+
+        self.assertEqual(config.provider, "ollama")
+        self.assertEqual(config.model, "cli-model")
+        self.assertEqual(config.base_url, "http://cli-ollama:11434")
 
     def test_resolve_codex_requires_openai_key(self) -> None:
         with patch.dict(os.environ, {"HOME": "/tmp/no-such-home"}, clear=True):
