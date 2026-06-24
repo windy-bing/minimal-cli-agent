@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
 from minimal_cli_agent.agent import Agent, print_event
@@ -37,7 +38,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = build_parser().parse_args(raw_argv)
+    explicit_options = detect_explicit_options(raw_argv)
 
     try:
         config = resolve_profile(AgentConfig(
@@ -49,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
             max_steps=args.max_steps,
             command_timeout=args.timeout,
             permission_mode=args.permission,
-        ), args.profile)
+        ), args.profile, explicit_options=explicit_options)
         if args.show_config:
             print(f"profile: {args.profile or '<none>'}")
             print(f"provider: {config.provider}")
@@ -136,6 +139,22 @@ def print_interactive_help() -> None:
     print("Interactive commands:")
     for command, description in InteractiveCommands.DESCRIPTIONS.items():
         print(f"  {command:<8} {description}")
+
+
+def detect_explicit_options(argv: list[str]) -> set[str]:
+    option_map = {
+        "--provider": "provider",
+        "--profile": "profile",
+        "--model": "model",
+        "--base-url": "base_url",
+        "--api-key": "api_key",
+    }
+    explicit = set()
+    for item in argv:
+        for option, name in option_map.items():
+            if item == option or item.startswith(f"{option}="):
+                explicit.add(name)
+    return explicit
 
 
 if __name__ == "__main__":

@@ -119,6 +119,8 @@ Profile 行为：
 - `claude`：读取 `~/.claude/settings.json` 里的 model 和 Anthropic proxy env，同时支持 `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`。
 - `gemini`：读取 `GEMINI_MODEL`、`GEMINI_BASE_URL`、`GEMINI_API_KEY` 或 `GOOGLE_API_KEY`。
 
+显式传入的 CLI 参数优先级最高，例如 `--model`、`--base-url`、`--api-key` 会覆盖 profile 专属环境变量或配置文件。
+
 ## CLI 参数
 
 ```text
