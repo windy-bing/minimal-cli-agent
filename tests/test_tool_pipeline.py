@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 
+from minimal_cli_agent.exceptions import PermissionDenied
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.types import AgentConfig, ToolCall
 
@@ -63,6 +64,12 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertEqual(input_mock.call_count, 1)
         self.assertEqual(first.result.output, "hello")
         self.assertEqual(second.result.output, "hello")
+
+    def test_sensitive_paths_are_hard_denied_even_in_yolo(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="yolo"))
+
+        with self.assertRaisesRegex(PermissionDenied, "sensitive path"):
+            harness.execute_shell("cat .env")
 
 
 if __name__ == "__main__":

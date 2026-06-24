@@ -12,6 +12,21 @@ DANGEROUS_TOKENS = (
     "dd if=",
 )
 
+SENSITIVE_PATH_TOKENS = (
+    ".env",
+    ".env.",
+    "id_rsa",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
+    ".pem",
+    ".key",
+    ".p12",
+    ".pfx",
+    ".codex/auth.json",
+    ".claude/settings.json",
+)
+
 
 class ShellPermissionPolicy:
     def __init__(self, config: AgentConfig) -> None:
@@ -25,6 +40,8 @@ class ShellPermissionPolicy:
         lowered = payload.lower()
         if any(token in lowered for token in DANGEROUS_TOKENS):
             return ToolDecision(kind="deny", reason=f"Blocked dangerous command: {payload}")
+        if any(token in lowered for token in SENSITIVE_PATH_TOKENS):
+            return ToolDecision(kind="deny", reason=f"Blocked command touching sensitive path: {payload}")
 
         if self.config.permission_mode == PermissionModes.YOLO:
             return ToolDecision(kind="allow", reason="yolo mode")
