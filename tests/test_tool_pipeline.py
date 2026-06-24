@@ -1,5 +1,7 @@
 import unittest
+from unittest.mock import patch
 
+from minimal_cli_agent.exceptions import PermissionDenied
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.types import AgentConfig, ToolCall
 
@@ -51,6 +53,37 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertIn("Tool discovery failed.", result.output)
         self.assertIn("available_tools:", result.output)
         self.assertIn("shell", result.output)
+
+    def test_default_mode_remembers_approved_shell_command_in_session(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="default"))
+
+        with patch("builtins.input", side_effect=["y"]) as input_mock:
+            first = harness.execute_shell("printf hello")
+            second = harness.execute_shell("printf hello")
+
+        self.assertEqual(input_mock.call_count, 1)
+        self.assertEqual(first.result.output, "hello")
+        self.assertEqual(second.result.output, "hello")
+
+    def test_sensitive_paths_are_hard_denied_even_in_yolo(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="yolo"))
+
+        with self.assertRaisesRegex(PermissionDenied, "sensitive path"):
+            harness.execute_shell("cat .env")
+
+    def test_network_commands_are_denied_without_network_permission(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="yolo"))
+
+        with self.assertRaisesRegex(PermissionDenied, "--allow-network"):
+            harness.execute_shell("curl https://example.com")
+
+    def test_network_commands_can_be_explicitly_allowed(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="plan", allow_network=True))
+
+        observation = harness.execute_shell("curl https://example.com")
+
+        self.assertTrue(observation.result.skipped)
+        self.assertIn("plan mode", observation.result.output)
 
 
 if __name__ == "__main__":

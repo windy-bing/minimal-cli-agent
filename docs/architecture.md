@@ -69,6 +69,7 @@ Implemented:
 - `ToolRegistry` for tool discovery.
 - Tool aliases plus recoverable discovery and validation observations.
 - Secret redaction for command output and observations.
+- Network command hard gate with explicit `--allow-network` opt-in.
 - `ToolExecutionPipeline` with the full stage shape:
 
 ```text
@@ -157,7 +158,6 @@ A production version should add:
 - Command allow/deny rules.
 - Write scope restrictions.
 - Destructive command detection.
-- Network access policy.
 - Approval records in the session log.
 
 ### Skills, MCP, and Plugins
