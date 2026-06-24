@@ -27,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cwd", type=Path, default=Path(os.getenv("AGENT_CWD", ".")))
     parser.add_argument("--max-steps", type=int, default=int(os.getenv("AGENT_MAX_STEPS", Defaults.MAX_STEPS)))
     parser.add_argument("--timeout", type=int, default=int(os.getenv("AGENT_COMMAND_TIMEOUT", Defaults.COMMAND_TIMEOUT)))
+    parser.add_argument("--model-timeout", type=int, default=int(os.getenv("AGENT_MODEL_TIMEOUT", Defaults.MODEL_TIMEOUT)))
     parser.add_argument("--allow-network", action="store_true", help="Allow shell commands with obvious network access.")
     parser.add_argument("--policy-file", type=Path, help="JSON file with additional shell policy deny tokens.")
     parser.add_argument("--summarize-context", action="store_true", help="Use the model to summarize old context when compacting.")
@@ -54,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
             cwd=args.cwd.resolve(),
             max_steps=args.max_steps,
             command_timeout=args.timeout,
+            model_timeout=args.model_timeout,
             permission_mode=args.permission,
             allow_network=args.allow_network,
             policy_file=args.policy_file.resolve() if args.policy_file else None,
@@ -92,6 +94,9 @@ def run_turn(
     while True:
         try:
             event = next(stream)
+        except AgentError as exc:
+            print(f"error: {exc}")
+            return 1
         except StopIteration as exc:
             result = exc.value
             context.messages = result.final_messages
@@ -127,13 +132,15 @@ def run_interactive(
             print(f"Unknown command: {pending}")
             print_quick_command_hint()
         elif pending:
-            run_turn(
+            exit_code = run_turn(
                 agent,
                 pending,
                 context,
                 session_store,
                 LoopOptions(allow_final_text=True, system_prompt=INTERACTIVE_SYSTEM_PROMPT),
             )
+            if exit_code != 0:
+                print("Turn failed. You can retry, adjust options, or type /exit.")
         pending = None
 
 

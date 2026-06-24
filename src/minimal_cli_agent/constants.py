@@ -126,6 +126,7 @@ class Defaults:
     BASE_URL: Final = "http://localhost:11434"
     MAX_STEPS: Final = "20"
     COMMAND_TIMEOUT: Final = "30"
+    MODEL_TIMEOUT: Final = "300"
     CONTEXT_TAIL_MESSAGES: Final = "8"
 
 

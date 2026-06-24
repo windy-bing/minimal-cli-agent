@@ -136,6 +136,7 @@ Profile 行为：
 --cwd            命令执行目录
 --max-steps      Agent loop 最大迭代次数
 --timeout        命令超时时间，单位秒
+--model-timeout  模型请求超时时间，单位秒
 --allow-network  允许明显会访问网络的 shell 命令
 --policy-file    包含附加 shell policy deny token 的 JSON 文件
 --summarize-context 使用模型总结旧上下文
@@ -155,6 +156,8 @@ Policy 文件只会追加 deny 规则，不会削弱内置 hard gate：
   "network_command_tokens": ["my-net-tool "]
 }
 ```
+
+使用 `--profile codex` 时，Codex CLI 只作为模型适配器使用。它会被提示只返回下一条 assistant message；如果需要操作工作区，应输出 `bash-action`，仍由 minimal-agent loop 负责执行命令和修改文件。如果适配器耗时较长，可以调大 `--model-timeout`。
 
 ```text
 src/minimal_cli_agent/

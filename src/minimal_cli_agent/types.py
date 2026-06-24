@@ -72,6 +72,7 @@ class AgentConfig:
     cwd: Path = field(default_factory=Path.cwd)
     max_steps: int = 20
     command_timeout: int = 30
+    model_timeout: int = int(Defaults.MODEL_TIMEOUT)
     permission_mode: PermissionMode = PermissionModes.DEFAULT
     allow_network: bool = False
     policy_file: Path | None = None

@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from minimal_cli_agent.agent import Agent
 from minimal_cli_agent.cli import detect_explicit_options, run_interactive, run_turn
+from minimal_cli_agent.exceptions import ModelRequestError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.types import AgentConfig, ChatContext, Message
 
@@ -25,6 +26,17 @@ class SequenceModel:
         output = self.outputs[min(self.calls, len(self.outputs) - 1)]
         self.calls += 1
         return output
+
+
+class FailingThenCountingModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, messages: list[Message]) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            raise ModelRequestError("temporary model failure")
+        return "recovered\n```bash-action\nexit\n```"
 
 
 class CliTest(unittest.TestCase):
@@ -108,6 +120,11 @@ class CliTest(unittest.TestCase):
         self.assertIn("model", explicit)
         self.assertIn("base_url", explicit)
 
+    def test_model_timeout_can_be_configured_on_agent_config(self) -> None:
+        config = AgentConfig(model_timeout=7)
+
+        self.assertEqual(config.model_timeout, 7)
+
     def test_run_interactive_accepts_plain_text_reply(self) -> None:
         model = SequenceModel(["你好，我可以帮你看代码、改文件或排查问题。"])
         config = AgentConfig(permission_mode="plan")
@@ -139,6 +156,22 @@ class CliTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 2)
         self.assertIn("当前目录", assistant_messages[-1])
+
+    def test_run_interactive_continues_after_model_error(self) -> None:
+        model = FailingThenCountingModel()
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+        context = ChatContext()
+
+        with patch("builtins.input", side_effect=["retry", "/quit"]), patch("builtins.print") as print_mock:
+            exit_code = run_interactive(agent, context, first_message="first")
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(model.calls, 2)
+        self.assertIn("temporary model failure", printed)
+        self.assertIn("Turn failed", printed)
+        self.assertIn("recovered", context.messages[-1].content)
 
 
 if __name__ == "__main__":

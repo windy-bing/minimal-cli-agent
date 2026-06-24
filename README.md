@@ -136,6 +136,7 @@ Explicit CLI options such as `--model`, `--base-url`, and `--api-key` take prece
 --cwd            working directory for commands
 --max-steps      maximum agent loop iterations
 --timeout        command timeout in seconds
+--model-timeout  model request timeout in seconds
 --allow-network  allow shell commands with obvious network access
 --policy-file    JSON file with additional shell policy deny tokens
 --summarize-context use the model to summarize old context when compacting
@@ -155,6 +156,8 @@ Policy files add deny rules without weakening the built-in hard gates:
   "network_command_tokens": ["my-net-tool "]
 }
 ```
+
+When using `--profile codex`, the Codex CLI is used only as a model adapter. It is prompted to return the next assistant message, including `bash-action` blocks when workspace work is needed. The minimal-agent loop remains responsible for executing commands and editing files. Increase `--model-timeout` if the adapter needs more time.
 
 ```text
 src/minimal_cli_agent/

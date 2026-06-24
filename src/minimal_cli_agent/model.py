@@ -38,7 +38,7 @@ class ChatModel:
             "messages": [message.to_dict() for message in messages],
             "stream": False,
         }
-        data = post_json(url, payload)
+        data = post_json(url, payload, timeout=self.config.model_timeout)
         return str(data.get("message", {}).get("content", ""))
 
     def _complete_openai_compatible(self, messages: list[Message]) -> str:
@@ -53,7 +53,7 @@ class ChatModel:
         headers = {}
         if self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
-        data = post_json(url, payload, headers=headers)
+        data = post_json(url, payload, headers=headers, timeout=self.config.model_timeout)
         choices = data.get("choices", [])
         if not choices:
             return ""
@@ -78,7 +78,7 @@ class ChatModel:
             headers["x-api-key"] = self.config.api_key
             headers["Authorization"] = f"Bearer {self.config.api_key}"
 
-        data = post_json(url, payload, headers=headers)
+        data = post_json(url, payload, headers=headers, timeout=self.config.model_timeout)
         blocks = data.get("content", [])
         return "".join(str(block.get("text", "")) for block in blocks if block.get("type") == "text")
 
@@ -103,7 +103,7 @@ class ChatModel:
         if system:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
 
-        data = post_json(url, payload)
+        data = post_json(url, payload, timeout=self.config.model_timeout)
         candidates = data.get("candidates", [])
         if not candidates:
             return ""
@@ -138,7 +138,7 @@ class ChatModel:
                     errors="replace",
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
-                    timeout=max(self.config.command_timeout, 120),
+                    timeout=self.config.model_timeout,
                 )
             except (OSError, subprocess.TimeoutExpired) as exc:
                 raise ModelRequestError(f"Codex CLI request failed: {exc}") from exc
@@ -163,6 +163,9 @@ def render_messages_for_codex(messages: list[Message]) -> str:
     rendered = [
         "Continue the following conversation. Return only the assistant's next message.",
         "Do not mention that this prompt was transformed.",
+        "You are being used only as a model adapter for minimal-agent.",
+        "Do not inspect files or run commands yourself.",
+        "If workspace action is needed, return a bash-action block and let minimal-agent execute it.",
         "",
     ]
     for message in messages:
@@ -199,9 +202,9 @@ def find_codex_command() -> list[str]:
     return candidates[0]
 
 
-def post_json(url: str, payload: dict, headers: dict[str, str] | None = None) -> dict:
+def post_json(url: str, payload: dict, headers: dict[str, str] | None = None, timeout: int = 120) -> dict:
     try:
-        with httpx.Client(timeout=120, trust_env=True) as client:
+        with httpx.Client(timeout=timeout, trust_env=True) as client:
             response = client.post(
                 url,
                 json=payload,
