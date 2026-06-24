@@ -71,6 +71,20 @@ class ToolPipelineTest(unittest.TestCase):
         with self.assertRaisesRegex(PermissionDenied, "sensitive path"):
             harness.execute_shell("cat .env")
 
+    def test_network_commands_are_denied_without_network_permission(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="yolo"))
+
+        with self.assertRaisesRegex(PermissionDenied, "--allow-network"):
+            harness.execute_shell("curl https://example.com")
+
+    def test_network_commands_can_be_explicitly_allowed(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="plan", allow_network=True))
+
+        observation = harness.execute_shell("curl https://example.com")
+
+        self.assertTrue(observation.result.skipped)
+        self.assertIn("plan mode", observation.result.output)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -25,6 +25,7 @@ ls -la
 
 - 执行命令时带超时控制和非交互环境变量。
 - 会从命令 observation 中清洗常见 API key、bearer token 和疑似密钥值。
+- 默认阻止明显的网络 shell 命令，除非显式传入 `--allow-network`。
 - 支持产品化权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - 传入 `--session` 时，可以把 session messages 持久化到 JSON。
 - transcript 变大时，会应用一个简单的本地上下文压缩保护。
@@ -133,6 +134,7 @@ Profile 行为：
 --cwd            命令执行目录
 --max-steps      Agent loop 最大迭代次数
 --timeout        命令超时时间，单位秒
+--allow-network  允许明显会访问网络的 shell 命令
 --interactive    启动多轮交互 CLI 会话
 --permission     default、autoEdit、plan 或 yolo
 --session        用于持久化 messages 的 JSON 文件

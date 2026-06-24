@@ -27,6 +27,20 @@ SENSITIVE_PATH_TOKENS = (
     ".claude/settings.json",
 )
 
+NETWORK_COMMAND_TOKENS = (
+    "curl ",
+    "wget ",
+    "http ",
+    "https ",
+    "ssh ",
+    "scp ",
+    "sftp ",
+    "rsync ",
+    "nc ",
+    "ncat ",
+    "telnet ",
+)
+
 
 class ShellPermissionPolicy:
     def __init__(self, config: AgentConfig) -> None:
@@ -42,6 +56,8 @@ class ShellPermissionPolicy:
             return ToolDecision(kind="deny", reason=f"Blocked dangerous command: {payload}")
         if any(token in lowered for token in SENSITIVE_PATH_TOKENS):
             return ToolDecision(kind="deny", reason=f"Blocked command touching sensitive path: {payload}")
+        if not self.config.allow_network and any(token in f" {lowered} " for token in NETWORK_COMMAND_TOKENS):
+            return ToolDecision(kind="deny", reason=f"Blocked network command without --allow-network: {payload}")
 
         if self.config.permission_mode == PermissionModes.YOLO:
             return ToolDecision(kind="allow", reason="yolo mode")
