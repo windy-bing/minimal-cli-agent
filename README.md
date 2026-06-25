@@ -36,7 +36,7 @@ ls -la
 ```
 
 ```tool-action
-{"tool":"search","pattern":"permission","path":".","top_k":20}
+{"tool":"search","pattern":"permission","path":".","top_k":20,"timeout_ms":2000,"ignore_dirs":["dist"],"include_extensions":[".py"]}
 ```
 
 ```tool-action
@@ -46,6 +46,7 @@ ls -la
 
 - Executes commands with timeout and non-interactive environment variables.
 - Reads, pages, tails, searches, and writes workspace files through structured tools instead of forcing file operations through shell commands.
+- Search supports `top_k`, `max_files`, `timeout_ms`, extra `ignore_dirs`, and `include_extensions`.
 - Validates JSON, TOML, and XML before `write_file` writes them; YAML is validated when PyYAML is available.
 - Redacts common API keys, bearer tokens, and secret-looking values from command observations.
 - Blocks obvious network shell commands unless `--allow-network` is passed.

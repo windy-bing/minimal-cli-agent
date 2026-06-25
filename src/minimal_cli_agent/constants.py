@@ -139,6 +139,8 @@ class FileToolDefaults:
     SEARCH_MAX_FILES: Final = 200
     SEARCH_MAX_TOP_K: Final = 200
     SEARCH_MAX_FILES_LIMIT: Final = 5000
+    SEARCH_TIMEOUT_MS: Final = 2000
+    SEARCH_MAX_TIMEOUT_MS: Final = 30000
     IGNORED_DIRS: Final = (".git", "__pycache__", ".venv", "node_modules", ".mypy_cache", ".pytest_cache")
     JSON_SUFFIXES: Final = (".json",)
     TOML_SUFFIXES: Final = (".toml",)
@@ -161,7 +163,7 @@ class Tools:
     READ_FORWARD_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt","offset":0,"limit":8192}'
     SEARCH: Final = "search"
     SEARCH_ALIASES: Final = ("grep", "rg")
-    SEARCH_EXPECTED_FORMAT: Final = '{"pattern":"needle","path":".","top_k":20,"max_files":200}'
+    SEARCH_EXPECTED_FORMAT: Final = '{"pattern":"needle","path":".","top_k":20,"max_files":200,"timeout_ms":2000}'
     WRITE_FILE: Final = "write_file"
     WRITE_FILE_ALIASES: Final = ("write", "writeFile")
     WRITE_FILE_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt","content":"new file content"}'
@@ -179,6 +181,9 @@ class ToolPayloadFields:
     PATTERN: Final = "pattern"
     TOP_K: Final = "top_k"
     MAX_FILES: Final = "max_files"
+    TIMEOUT_MS: Final = "timeout_ms"
+    IGNORE_DIRS: Final = "ignore_dirs"
+    INCLUDE_EXTENSIONS: Final = "include_extensions"
 
 
 class InteractiveCommands:

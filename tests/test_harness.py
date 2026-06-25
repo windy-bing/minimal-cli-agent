@@ -89,6 +89,57 @@ class HarnessTest(unittest.TestCase):
         self.assertIn("a.txt:3: needle two", observation.result.output)
         self.assertNotIn("needle three", observation.result.output)
 
+    def test_search_respects_extra_ignore_dirs(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "visible.txt").write_text("needle visible\n", encoding="utf-8")
+            ignored = root / "dist"
+            ignored.mkdir()
+            (ignored / "hidden.txt").write_text("needle hidden\n", encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="plan"))
+
+            observation = harness.execute_tool(
+                ToolCall(
+                    name=Tools.SEARCH,
+                    payload=json.dumps({"pattern": "needle", "path": ".", "ignore_dirs": ["dist"]}),
+                )
+            )
+
+        self.assertIn("visible.txt:1: needle visible", observation.result.output)
+        self.assertNotIn("hidden", observation.result.output)
+
+    def test_search_respects_include_extensions(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.py").write_text("needle python\n", encoding="utf-8")
+            (root / "a.md").write_text("needle markdown\n", encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="plan"))
+
+            observation = harness.execute_tool(
+                ToolCall(
+                    name=Tools.SEARCH,
+                    payload=json.dumps({"pattern": "needle", "path": ".", "include_extensions": [".py"]}),
+                )
+            )
+
+        self.assertIn("a.py:1: needle python", observation.result.output)
+        self.assertNotIn("markdown", observation.result.output)
+
+    def test_search_reports_timeout(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "large.txt").write_text("\n".join("miss" for _ in range(20000)), encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="plan"))
+
+            observation = harness.execute_tool(
+                ToolCall(
+                    name=Tools.SEARCH,
+                    payload=json.dumps({"pattern": "needle", "path": ".", "timeout_ms": 1}),
+                )
+            )
+
+        self.assertIn("search timed out", observation.result.output)
+
     def test_write_file_rejects_invalid_json_without_writing(self) -> None:
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.json"

@@ -23,7 +23,7 @@ When you need to read or write a file, output exactly one tool action block:
 ```
 
 ```tool-action
-{"tool":"search","pattern":"needle","path":".","top_k":20}
+{"tool":"search","pattern":"needle","path":".","top_k":20,"timeout_ms":2000}
 ```
 
 ```tool-action
@@ -70,7 +70,7 @@ When you need to read or write a file, output exactly one tool action block:
 ```
 
 ```tool-action
-{"tool":"search","pattern":"needle","path":".","top_k":20}
+{"tool":"search","pattern":"needle","path":".","top_k":20,"timeout_ms":2000}
 ```
 
 ```tool-action

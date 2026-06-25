@@ -36,7 +36,7 @@ ls -la
 ```
 
 ```tool-action
-{"tool":"search","pattern":"permission","path":".","top_k":20}
+{"tool":"search","pattern":"permission","path":".","top_k":20,"timeout_ms":2000,"ignore_dirs":["dist"],"include_extensions":[".py"]}
 ```
 
 ```tool-action
@@ -46,6 +46,7 @@ ls -la
 
 - 执行命令时带超时控制和非交互环境变量。
 - 通过结构化工具读取、分页读取、读取尾部、搜索和写入工作区文件，不强迫模型用 shell 操作文件。
+- 搜索支持 `top_k`、`max_files`、`timeout_ms`、额外 `ignore_dirs` 和 `include_extensions`。
 - `write_file` 写入 JSON、TOML、XML 前会先校验格式；YAML 在安装 PyYAML 时也会校验。
 - 会从命令 observation 中清洗常见 API key、bearer token 和疑似密钥值。
 - 默认阻止明显的网络 shell 命令，除非显式传入 `--allow-network`。

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -107,13 +108,33 @@ class FileToolEnvironment:
             minimum=1,
             maximum=FileToolDefaults.SEARCH_MAX_FILES_LIMIT,
         )
+        timeout_ms = read_positive_int(
+            data,
+            ToolPayloadFields.TIMEOUT_MS,
+            default=FileToolDefaults.SEARCH_TIMEOUT_MS,
+            minimum=1,
+            maximum=FileToolDefaults.SEARCH_MAX_TIMEOUT_MS,
+        )
+        ignore_dirs = FileToolDefaults.IGNORED_DIRS + read_string_tuple(data, ToolPayloadFields.IGNORE_DIRS)
+        include_extensions = normalize_extensions(read_string_tuple(data, ToolPayloadFields.INCLUDE_EXTENSIONS))
         try:
             regex = re.compile(pattern)
         except re.error:
             regex = re.compile(re.escape(pattern))
 
-        matches = search_text(root, regex=regex, top_k=top_k, max_files=max_files, workspace=self.config.cwd.resolve())
-        output = "\n".join(matches) if matches else "no matches"
+        result = search_text(
+            root,
+            regex=regex,
+            top_k=top_k,
+            max_files=max_files,
+            workspace=self.config.cwd.resolve(),
+            timeout_ms=timeout_ms,
+            ignore_dirs=ignore_dirs,
+            include_extensions=include_extensions,
+        )
+        output = "\n".join(result.matches) if result.matches else "no matches"
+        if result.timed_out:
+            output = f"{output}\nsearch timed out after {timeout_ms}ms; scanned_files={result.scanned_files}".strip()
         return CommandResult(command=f"{Tools.SEARCH} {root}", exit_code=0, output=output[-self.config.max_output_chars :])
 
     def write_file(self, payload: str) -> CommandResult:
@@ -226,6 +247,19 @@ def read_positive_int(data: dict[str, Any], field: str, default: int, minimum: i
     return max(minimum, min(value, maximum))
 
 
+def read_string_tuple(data: dict[str, Any], field: str) -> tuple[str, ...]:
+    raw = data.get(field, ())
+    if isinstance(raw, str):
+        return (raw,)
+    if not isinstance(raw, list):
+        return ()
+    return tuple(str(item) for item in raw if str(item).strip())
+
+
+def normalize_extensions(values: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(value if value.startswith(".") else f".{value}" for value in values)
+
+
 def tail_text(path: Path, lines: int, max_bytes: int) -> str:
     file_size = path.stat().st_size
     read_size = min(file_size, max_bytes)
@@ -236,17 +270,41 @@ def tail_text(path: Path, lines: int, max_bytes: int) -> str:
     return "\n".join(text.splitlines()[-lines:])
 
 
-def search_text(root: Path, regex: re.Pattern[str], top_k: int, max_files: int, workspace: Path) -> list[str]:
-    files = [root] if root.is_file() else iter_text_files(root, max_files=max_files)
+class SearchResult:
+    def __init__(self, matches: list[str], scanned_files: int, timed_out: bool) -> None:
+        self.matches = matches
+        self.scanned_files = scanned_files
+        self.timed_out = timed_out
+
+
+def search_text(
+    root: Path,
+    regex: re.Pattern[str],
+    top_k: int,
+    max_files: int,
+    workspace: Path,
+    timeout_ms: int,
+    ignore_dirs: tuple[str, ...],
+    include_extensions: tuple[str, ...],
+) -> SearchResult:
+    deadline = time.monotonic() + (timeout_ms / 1000)
+    files = [root] if root.is_file() else iter_text_files(root, max_files=max_files, ignore_dirs=ignore_dirs, include_extensions=include_extensions)
     matches: list[str] = []
     scanned = 0
+    timed_out = False
     for path in files:
+        if time.monotonic() > deadline:
+            timed_out = True
+            break
         if scanned >= max_files or len(matches) >= top_k:
             break
         scanned += 1
         try:
             with path.open("r", encoding="utf-8", errors="replace") as file:
                 for line_number, line in enumerate(file, start=1):
+                    if time.monotonic() > deadline:
+                        timed_out = True
+                        break
                     if regex.search(line):
                         relative = path.relative_to(workspace)
                         matches.append(f"{relative}:{line_number}: {line.strip()}")
@@ -254,17 +312,17 @@ def search_text(root: Path, regex: re.Pattern[str], top_k: int, max_files: int, 
                             break
         except OSError:
             continue
-    return matches
+    return SearchResult(matches=matches, scanned_files=scanned, timed_out=timed_out)
 
 
-def iter_text_files(root: Path, max_files: int):
+def iter_text_files(root: Path, max_files: int, ignore_dirs: tuple[str, ...], include_extensions: tuple[str, ...]):
     yielded = 0
     for path in sorted(root.rglob("*")):
         if yielded >= max_files:
             break
-        if any(part in FileToolDefaults.IGNORED_DIRS for part in path.parts):
+        if any(part in ignore_dirs for part in path.parts):
             continue
-        if path.is_file():
+        if path.is_file() and (not include_extensions or path.suffix in include_extensions):
             yielded += 1
             yield path
 
