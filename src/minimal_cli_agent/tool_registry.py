@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Any, Callable
 
 from minimal_cli_agent.types import CommandResult, ToolValidationError
 
@@ -31,8 +32,13 @@ class ToolSpec:
     expected_format: str = "non-empty text payload"
     aliases: tuple[str, ...] = field(default_factory=tuple)
     validator: ToolValidator | None = None
+    parameters_schema: dict[str, Any] | None = None
 
     def validate(self, payload: str) -> ToolValidationError | None:
+        if self.parameters_schema is not None:
+            schema_error = validate_payload_schema(self.name, payload, self.expected_format, self.parameters_schema)
+            if schema_error is not None:
+                return schema_error
         validator = self.validator or non_empty_payload_validator(self.name, self.expected_format)
         return validator(payload)
 
@@ -67,3 +73,79 @@ class ToolRegistry:
 
     def descriptions(self) -> str:
         return "\n".join(f"- {spec.name}: {spec.description}" for spec in self._tools.values())
+
+
+def validate_payload_schema(
+    tool_name: str,
+    payload: str,
+    expected_format: str,
+    schema: dict[str, Any],
+) -> ToolValidationError | None:
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        return ToolValidationError(
+            tool_name=tool_name,
+            message="payload must be valid JSON",
+            expected_format=expected_format,
+            received=payload,
+            field_errors=(str(exc),),
+        )
+
+    errors = validate_object_schema(data, schema)
+    if not errors:
+        return None
+    return ToolValidationError(
+        tool_name=tool_name,
+        message="payload does not match tool parameter schema",
+        expected_format=expected_format,
+        received=payload,
+        field_errors=tuple(errors),
+    )
+
+
+def validate_object_schema(data: Any, schema: dict[str, Any]) -> list[str]:
+    if schema.get("type") != "object":
+        return []
+    if not isinstance(data, dict):
+        return ["payload must be a JSON object"]
+
+    errors: list[str] = []
+    required = schema.get("required", [])
+    if isinstance(required, list):
+        for field_name in required:
+            if field_name not in data or data[field_name] is None:
+                errors.append(f"{field_name}: missing required field")
+
+    properties = schema.get("properties", {})
+    if isinstance(properties, dict):
+        for field_name, rules in properties.items():
+            if field_name not in data or not isinstance(rules, dict):
+                continue
+            errors.extend(validate_field(field_name, data[field_name], rules))
+    return errors
+
+
+def validate_field(field_name: str, value: Any, rules: dict[str, Any]) -> list[str]:
+    expected_type = rules.get("type")
+    errors: list[str] = []
+    if expected_type == "string" and not isinstance(value, str):
+        errors.append(f"{field_name}: expected string")
+    elif expected_type == "integer":
+        if not isinstance(value, int) or isinstance(value, bool):
+            errors.append(f"{field_name}: expected integer")
+        else:
+            minimum = rules.get("minimum")
+            maximum = rules.get("maximum")
+            if isinstance(minimum, int) and value < minimum:
+                errors.append(f"{field_name}: must be >= {minimum}")
+            if isinstance(maximum, int) and value > maximum:
+                errors.append(f"{field_name}: must be <= {maximum}")
+    elif expected_type == "array":
+        if not isinstance(value, list):
+            errors.append(f"{field_name}: expected array")
+        else:
+            item_type = rules.get("items", {}).get("type") if isinstance(rules.get("items"), dict) else None
+            if item_type == "string" and not all(isinstance(item, str) for item in value):
+                errors.append(f"{field_name}: expected array of strings")
+    return errors

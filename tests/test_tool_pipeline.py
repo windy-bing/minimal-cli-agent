@@ -40,6 +40,37 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertIn("expected:", result.output)
         self.assertIn("A non-empty shell command string", result.output)
 
+    def test_schema_validation_reports_field_errors(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="plan"))
+
+        result = harness.tool_pipeline.execute(
+            ToolCall(name=Tools.READ_FORWARD, payload=json.dumps({"path": "notes.txt", "offset": "zero"}))
+        )
+
+        self.assertTrue(result.skipped)
+        self.assertEqual(result.exit_code, 2)
+        self.assertIn("field_errors:", result.output)
+        self.assertIn("offset: expected integer", result.output)
+
+    def test_schema_validation_reports_missing_required_field(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="plan"))
+
+        result = harness.tool_pipeline.execute(ToolCall(name=Tools.SEARCH, payload=json.dumps({"path": "."})))
+
+        self.assertTrue(result.skipped)
+        self.assertEqual(result.exit_code, 2)
+        self.assertIn("pattern: missing required field", result.output)
+
+    def test_schema_validation_reports_array_item_type(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="plan"))
+
+        result = harness.tool_pipeline.execute(
+            ToolCall(name=Tools.SEARCH, payload=json.dumps({"pattern": "x", "include_extensions": [".py", 3]}))
+        )
+
+        self.assertTrue(result.skipped)
+        self.assertIn("include_extensions: expected array of strings", result.output)
+
     def test_tool_alias_resolves_to_registered_tool(self) -> None:
         harness = AgentHarness(AgentConfig(permission_mode="plan"))
 

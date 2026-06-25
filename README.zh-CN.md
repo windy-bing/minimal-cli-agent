@@ -57,6 +57,7 @@ ls -la
 - 可以通过 `--summarize-context` 使用模型生成旧上下文摘要。
 - 暴露无状态 API：`Agent.chat_stream(message, context)`，以事件流形式产出 loop event。
 - 工具发现和参数校验失败时返回可恢复 observation，而不是直接把原始异常抛给用户。
+- 工具参数校验会对结构化 payload 返回字段级 repair observation。
 - Agent loop 运行在 `AgentHarness` 边界后面，tools、memory、policy、context、environment 可以独立演进。
 
 ## 为什么这样开始
@@ -243,6 +244,7 @@ src/minimal_cli_agent/
 - `ToolRegistry` 和分阶段 `ToolExecutionPipeline`。
 - 内置 `read_file`、`read_tail`、`read_forward`、`search` 和 `write_file`，支持有边界地访问和修改工作区文件。
 - 对 JSON、TOML、XML 和可选 PyYAML 支持的 YAML 做结构化写入校验。
+- `ToolSpec` 支持轻量参数 schema，并返回字段级校验错误。
 - `ToolDecision`：`allow`、`ask`、`deny`、`skip`。
 - 产品权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - JSON session event log，用于记录权限批准审计事件。

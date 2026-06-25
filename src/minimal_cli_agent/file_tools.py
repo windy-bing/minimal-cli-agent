@@ -11,6 +11,55 @@ from typing import Any
 from minimal_cli_agent.constants import FileToolDefaults, ToolPayloadFields, Tools
 from minimal_cli_agent.types import AgentConfig, CommandResult, ToolValidationError
 
+READ_FILE_SCHEMA = {
+    "type": "object",
+    "required": [ToolPayloadFields.PATH],
+    "properties": {ToolPayloadFields.PATH: {"type": "string"}},
+}
+
+READ_TAIL_SCHEMA = {
+    "type": "object",
+    "required": [ToolPayloadFields.PATH],
+    "properties": {
+        ToolPayloadFields.PATH: {"type": "string"},
+        ToolPayloadFields.LINES: {"type": "integer", "minimum": 1, "maximum": FileToolDefaults.TAIL_MAX_LINES},
+        ToolPayloadFields.MAX_BYTES: {"type": "integer", "minimum": 1},
+    },
+}
+
+READ_FORWARD_SCHEMA = {
+    "type": "object",
+    "required": [ToolPayloadFields.PATH],
+    "properties": {
+        ToolPayloadFields.PATH: {"type": "string"},
+        ToolPayloadFields.OFFSET: {"type": "integer", "minimum": 0},
+        ToolPayloadFields.LIMIT: {"type": "integer", "minimum": 1},
+    },
+}
+
+SEARCH_SCHEMA = {
+    "type": "object",
+    "required": [ToolPayloadFields.PATTERN],
+    "properties": {
+        ToolPayloadFields.PATTERN: {"type": "string"},
+        ToolPayloadFields.PATH: {"type": "string"},
+        ToolPayloadFields.TOP_K: {"type": "integer", "minimum": 1, "maximum": FileToolDefaults.SEARCH_MAX_TOP_K},
+        ToolPayloadFields.MAX_FILES: {"type": "integer", "minimum": 1, "maximum": FileToolDefaults.SEARCH_MAX_FILES_LIMIT},
+        ToolPayloadFields.TIMEOUT_MS: {"type": "integer", "minimum": 1, "maximum": FileToolDefaults.SEARCH_MAX_TIMEOUT_MS},
+        ToolPayloadFields.IGNORE_DIRS: {"type": "array", "items": {"type": "string"}},
+        ToolPayloadFields.INCLUDE_EXTENSIONS: {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+WRITE_FILE_SCHEMA = {
+    "type": "object",
+    "required": [ToolPayloadFields.PATH, ToolPayloadFields.CONTENT],
+    "properties": {
+        ToolPayloadFields.PATH: {"type": "string"},
+        ToolPayloadFields.CONTENT: {"type": "string"},
+    },
+}
+
 
 class FileToolEnvironment:
     def __init__(self, config: AgentConfig) -> None:

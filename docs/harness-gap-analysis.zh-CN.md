@@ -26,7 +26,7 @@
 
 | 主题 | 风险 | 建议 |
 | --- | --- | --- |
-| 完整 JSON Schema | 当前已有最小 validator，但还不是 JSON Schema | 引入 typed `ToolCall` 参数 schema，支持字段级错误和正确格式示例 |
+| 完整 JSON Schema | 已有轻量 `ToolSpec.parameters_schema` 和字段级 repair observation；还不是完整 JSON Schema | 继续补 nested object、enum、oneOf、默认值和 schema 文档生成 |
 | 工具模糊识别 | 当前已有显式 alias，但没有 fuzzy suggestion | 在 Discovery 阶段增加安全的 fuzzy suggestion，但不自动执行高风险猜测 |
 | 文件读取工具性能 | 已实现 `read_tail` / `read_forward` 基线，但还没有更细的编码、二进制和分页状态治理 | 继续补 byte/line 双模式、二进制检测和分页游标 |
 | grep/search top-k | 已实现 `search(pattern,path,top_k,max_files,timeout_ms)`，支持额外 ignore dirs 和 extension filter | 继续补项目 ignore 文件解析、渐进输出和 richer ranking |
@@ -55,7 +55,7 @@
 
 | 能力 | 为什么优先 |
 | --- | --- |
-| 完整 schema validation + repair observation | 当前已有最小 repair observation，下一步要支持 JSON Schema 和字段级错误 |
+| 完整 schema validation + repair observation | 已有字段级 schema validation 基线，下一步补完整 JSON Schema 子集和 schema 文档生成 |
 | Plan/Execute 双上下文 | Coding agent 的计划噪音和执行历史应该隔离，否则长任务会持续污染上下文 |
 | 文件工具流式读取和搜索 top-k | 已有 timeout 和显式 ignore/filter 基线，下一步应补项目 ignore 文件解析、分页游标和更强 ranking |
 | 结构化编辑校验 | 已有写入前 parse validation 基线，下一步做 schema/format/repair 增强 |
@@ -69,8 +69,8 @@
 
 目标是让工具错误可恢复、可审计、可验证。
 
-- 为 `ToolSpec` 增加 JSON Schema、风险等级、输出 schema。
-- `Validation` 阶段已经返回可恢复 observation，下一步补字段级错误和 JSON 格式示例。
+- `ToolSpec` 已支持轻量参数 schema；下一步补风险等级、输出 schema 和完整 JSON Schema 子集。
+- `Validation` 阶段已返回可恢复 observation 和字段级错误；下一步补 schema 文档生成和默认值提示。
 - `Formatting` 阶段统一 observation 格式，避免模型收到散乱异常文本。
 - 为 `ToolExecutionPipeline` 增加 hook 仲裁和测试覆盖。
 

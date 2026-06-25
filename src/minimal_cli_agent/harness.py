@@ -7,6 +7,11 @@ from minimal_cli_agent.constants import Tools
 from minimal_cli_agent.environment import LocalEnvironment
 from minimal_cli_agent.file_tools import (
     FileToolEnvironment,
+    READ_FILE_SCHEMA,
+    READ_FORWARD_SCHEMA,
+    READ_TAIL_SCHEMA,
+    SEARCH_SCHEMA,
+    WRITE_FILE_SCHEMA,
     read_file_validator,
     read_forward_validator,
     read_tail_validator,
@@ -65,6 +70,7 @@ class AgentHarness:
                 expected_format=Tools.READ_FILE_EXPECTED_FORMAT,
                 aliases=Tools.READ_FILE_ALIASES,
                 validator=read_file_validator,
+                parameters_schema=READ_FILE_SCHEMA,
             )
         )
         self.tool_registry.register(
@@ -75,6 +81,7 @@ class AgentHarness:
                 expected_format=Tools.READ_TAIL_EXPECTED_FORMAT,
                 aliases=Tools.READ_TAIL_ALIASES,
                 validator=read_tail_validator,
+                parameters_schema=READ_TAIL_SCHEMA,
             )
         )
         self.tool_registry.register(
@@ -85,6 +92,7 @@ class AgentHarness:
                 expected_format=Tools.READ_FORWARD_EXPECTED_FORMAT,
                 aliases=Tools.READ_FORWARD_ALIASES,
                 validator=read_forward_validator,
+                parameters_schema=READ_FORWARD_SCHEMA,
             )
         )
         self.tool_registry.register(
@@ -95,6 +103,7 @@ class AgentHarness:
                 expected_format=Tools.SEARCH_EXPECTED_FORMAT,
                 aliases=Tools.SEARCH_ALIASES,
                 validator=search_validator,
+                parameters_schema=SEARCH_SCHEMA,
             )
         )
         self.tool_registry.register(
@@ -105,6 +114,7 @@ class AgentHarness:
                 expected_format=Tools.WRITE_FILE_EXPECTED_FORMAT,
                 aliases=Tools.WRITE_FILE_ALIASES,
                 validator=write_file_validator,
+                parameters_schema=WRITE_FILE_SCHEMA,
             )
         )
         self.tool_pipeline = ToolExecutionPipeline(registry=self.tool_registry, permission_policy=self.policy)

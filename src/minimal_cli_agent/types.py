@@ -94,12 +94,17 @@ class ToolValidationError:
     message: str
     expected_format: str
     received: str
+    field_errors: tuple[str, ...] = ()
 
     def as_observation(self) -> str:
+        field_errors = ""
+        if self.field_errors:
+            field_errors = "field_errors:\n" + "\n".join(f"- {error}" for error in self.field_errors) + "\n"
         return (
             "Tool validation failed.\n"
             f"tool: {self.tool_name}\n"
             f"error: {self.message}\n"
+            f"{field_errors}"
             f"expected:\n{self.expected_format}\n"
             f"received:\n{self.received}"
         )

@@ -57,6 +57,7 @@ ls -la
 - Can use model-generated context summaries with `--summarize-context`.
 - Exposes a stateless `Agent.chat_stream(message, context)` API that yields loop events.
 - Returns recoverable tool discovery and validation observations instead of surfacing raw exceptions.
+- Tool parameter validation returns field-level repair observations for structured payloads.
 - Keeps the agent loop behind an `AgentHarness` boundary so tools, memory, policy, context, and environments can evolve independently.
 
 ## Why Start This Way
@@ -243,6 +244,7 @@ Implemented:
 - `ToolRegistry` and staged `ToolExecutionPipeline`.
 - Built-in `read_file`, `read_tail`, `read_forward`, `search`, and `write_file` tools for bounded workspace file access.
 - Structured write validation for JSON, TOML, XML, and optional PyYAML-backed YAML.
+- `ToolSpec` supports lightweight parameter schemas with field-level validation errors.
 - Permission decision type with `allow`, `ask`, `deny`, and `skip`.
 - Product permission modes: `default`, `autoEdit`, `plan`, `yolo`.
 - JSON session event log for permission approval audit records.
