@@ -114,13 +114,18 @@ class ToolValidationError:
 class ToolDiscoveryError:
     tool_name: str
     available_tools: tuple[str, ...]
+    suggested_tools: tuple[str, ...] = ()
 
     def as_observation(self) -> str:
         available = ", ".join(self.available_tools) if self.available_tools else "<none>"
+        suggestions = ""
+        if self.suggested_tools:
+            suggestions = f"suggested_tools: {', '.join(self.suggested_tools)}\n"
         return (
             "Tool discovery failed.\n"
             f"tool: {self.tool_name}\n"
             f"available_tools: {available}\n"
+            f"{suggestions}"
             "Use one of the available tool names or aliases."
         )
 

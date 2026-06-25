@@ -57,6 +57,7 @@ ls -la
 - 可以通过 `--summarize-context` 使用模型生成旧上下文摘要。
 - 暴露无状态 API：`Agent.chat_stream(message, context)`，以事件流形式产出 loop event。
 - 工具发现和参数校验失败时返回可恢复 observation，而不是直接把原始异常抛给用户。
+- 未知工具会返回安全的相近工具名建议，但不会自动猜测并执行。
 - 工具参数校验会对结构化 payload 返回字段级 repair observation。
 - Agent loop 运行在 `AgentHarness` 边界后面，tools、memory、policy、context、environment 可以独立演进。
 

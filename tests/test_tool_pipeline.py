@@ -90,6 +90,16 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertIn("available_tools:", result.output)
         self.assertIn("shell", result.output)
 
+    def test_unknown_tool_returns_safe_suggestions(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="yolo"))
+
+        result = harness.tool_pipeline.execute(ToolCall(name="read_fil", payload=json.dumps({"path": "README.md"})))
+
+        self.assertTrue(result.skipped)
+        self.assertEqual(result.exit_code, 127)
+        self.assertIn("suggested_tools:", result.output)
+        self.assertIn("read_file", result.output)
+
     def test_default_mode_asks_before_write_file(self) -> None:
         with TemporaryDirectory() as tmp:
             harness = AgentHarness(AgentConfig(cwd=Path(tmp), permission_mode="default"))

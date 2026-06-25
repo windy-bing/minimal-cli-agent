@@ -57,6 +57,7 @@ ls -la
 - Can use model-generated context summaries with `--summarize-context`.
 - Exposes a stateless `Agent.chat_stream(message, context)` API that yields loop events.
 - Returns recoverable tool discovery and validation observations instead of surfacing raw exceptions.
+- Unknown tools return safe close-match suggestions without automatically executing guesses.
 - Tool parameter validation returns field-level repair observations for structured payloads.
 - Keeps the agent loop behind an `AgentHarness` boundary so tools, memory, policy, context, and environments can evolve independently.
 

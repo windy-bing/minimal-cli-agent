@@ -76,6 +76,7 @@ Implemented:
 - `search` has top-k, max-files, timeout, ignore-dir, and extension filters.
 - Structured write validation for JSON, TOML, XML, and YAML when PyYAML is available.
 - Tool aliases plus recoverable discovery and validation observations.
+- Safe close-match suggestions for unknown tool names, without automatic fuzzy execution.
 - Lightweight `ToolSpec.parameters_schema` validation with field-level repair observations.
 - Secret redaction for command output and observations.
 - Network command hard gate with explicit `--allow-network` opt-in.

@@ -27,7 +27,7 @@
 | 主题 | 风险 | 建议 |
 | --- | --- | --- |
 | 完整 JSON Schema | 已有轻量 `ToolSpec.parameters_schema` 和字段级 repair observation；还不是完整 JSON Schema | 继续补 nested object、enum、oneOf、默认值和 schema 文档生成 |
-| 工具模糊识别 | 当前已有显式 alias，但没有 fuzzy suggestion | 在 Discovery 阶段增加安全的 fuzzy suggestion，但不自动执行高风险猜测 |
+| 工具模糊识别 | 已在 Discovery 阶段返回安全的相近工具名建议，但不会自动执行猜测 | 后续可加入风险等级过滤和更细的提示文案 |
 | 文件读取工具性能 | 已实现 `read_tail` / `read_forward` 基线，但还没有更细的编码、二进制和分页状态治理 | 继续补 byte/line 双模式、二进制检测和分页游标 |
 | grep/search top-k | 已实现 `search(pattern,path,top_k,max_files,timeout_ms)`，支持额外 ignore dirs 和 extension filter | 继续补项目 ignore 文件解析、渐进输出和 richer ranking |
 | 结构化文本编辑校验 | 已有 JSON/TOML/XML 写入前校验，YAML 在 PyYAML 可用时校验；还没有 schema 级校验和自动格式化 | 下一步补 JSON Schema、YAML schema、格式化建议和字段级 repair observation |
@@ -44,6 +44,7 @@
 | --- | --- |
 | Agent 持有 session 导致多会话混乱 | `Agent.chat_stream(message, context)` 是无状态入口，`ChatContext` 由调用方传入 |
 | 工具调用散落在 Agent loop | `Agent` 只解析 action，执行经过 `AgentHarness`、`ToolRegistry`、`ToolExecutionPipeline` |
+| 工具拼写错误直接失败 | Discovery observation 会返回 `suggested_tools`，但不会自动执行模糊匹配结果 |
 | 文件工具整文件读取风险 | 已有 `read_tail`、`read_forward` 和 `search` 的有界基线，避免所有读取都走 `read_file` |
 | Plan Mode 只靠模型自觉不执行 | 当前 `plan` 权限模式在 policy/pipeline 层返回 `skip`，shell 不会执行 |
 | 权限模式只是提示词约定 | `ToolDecision` 是代码层决策，`deny/skip` 是 hard gate |

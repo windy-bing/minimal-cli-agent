@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -64,6 +65,9 @@ class ToolRegistry:
 
     def available_names(self) -> tuple[str, ...]:
         return tuple(sorted([*self._tools.keys(), *self._aliases.keys()]))
+
+    def suggested_names(self, name: str, limit: int = 3) -> tuple[str, ...]:
+        return tuple(difflib.get_close_matches(name, self.available_names(), n=limit, cutoff=0.55))
 
     def execute(self, name: str, payload: str) -> CommandResult:
         canonical_name = self.resolve_name(name)

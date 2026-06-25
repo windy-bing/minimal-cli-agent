@@ -36,7 +36,11 @@ class ToolExecutionPipeline:
         try:
             spec = self._discovery(call)
         except KeyError:
-            discovery_error = ToolDiscoveryError(tool_name=call.name, available_tools=self.registry.available_names())
+            discovery_error = ToolDiscoveryError(
+                tool_name=call.name,
+                available_tools=self.registry.available_names(),
+                suggested_tools=self.registry.suggested_names(call.name),
+            )
             return CommandResult(command=call.payload, exit_code=127, output=discovery_error.as_observation(), skipped=True)
         canonical_call = ToolCall(name=spec.name, payload=call.payload)
         validation_error = self._validation(canonical_call)
