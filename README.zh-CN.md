@@ -46,6 +46,7 @@ ls -la
 
 - 执行命令时带超时控制和非交互环境变量。
 - 通过结构化工具读取、分页读取、读取尾部、搜索和写入工作区文件，不强迫模型用 shell 操作文件。
+- `write_file` 写入 JSON、TOML、XML 前会先校验格式；YAML 在安装 PyYAML 时也会校验。
 - 会从命令 observation 中清洗常见 API key、bearer token 和疑似密钥值。
 - 默认阻止明显的网络 shell 命令，除非显式传入 `--allow-network`。
 - 支持通过 `--policy-file` 追加 shell policy deny 规则。
@@ -240,6 +241,7 @@ src/minimal_cli_agent/
 - 用于 UI/CLI 集成的 `LoopEvent` / `LoopResult`。
 - `ToolRegistry` 和分阶段 `ToolExecutionPipeline`。
 - 内置 `read_file`、`read_tail`、`read_forward`、`search` 和 `write_file`，支持有边界地访问和修改工作区文件。
+- 对 JSON、TOML、XML 和可选 PyYAML 支持的 YAML 做结构化写入校验。
 - `ToolDecision`：`allow`、`ask`、`deny`、`skip`。
 - 产品权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - JSON session event log，用于记录权限批准审计事件。

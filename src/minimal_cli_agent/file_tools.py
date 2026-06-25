@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -121,6 +123,14 @@ class FileToolEnvironment:
         except ValueError as exc:
             return CommandResult(command=f"{Tools.WRITE_FILE} {payload}", exit_code=1, output=str(exc))
         content = str(data[ToolPayloadFields.CONTENT])
+        structured_error = validate_structured_content(path, content)
+        if structured_error is not None:
+            return CommandResult(
+                command=f"{Tools.WRITE_FILE} {path}",
+                exit_code=2,
+                output=structured_error,
+                skipped=True,
+            )
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         relative = path.relative_to(self.config.cwd.resolve())
@@ -257,6 +267,34 @@ def iter_text_files(root: Path, max_files: int):
         if path.is_file():
             yielded += 1
             yield path
+
+
+def validate_structured_content(path: Path, content: str) -> str | None:
+    suffix = path.suffix.lower()
+    try:
+        if suffix in FileToolDefaults.JSON_SUFFIXES:
+            json.loads(content)
+        elif suffix in FileToolDefaults.TOML_SUFFIXES:
+            tomllib.loads(content)
+        elif suffix in FileToolDefaults.XML_SUFFIXES:
+            ET.fromstring(content)
+        elif suffix in FileToolDefaults.YAML_SUFFIXES:
+            return validate_yaml_content(content)
+    except (json.JSONDecodeError, tomllib.TOMLDecodeError, ET.ParseError) as exc:
+        return f"Structured file validation failed for {path.name}: {exc}"
+    return None
+
+
+def validate_yaml_content(content: str) -> str | None:
+    try:
+        import yaml  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    try:
+        yaml.safe_load(content)
+    except Exception as exc:  # pragma: no cover - exact PyYAML exception type depends on optional dependency.
+        return f"Structured file validation failed for YAML content: {exc}"
+    return None
 
 
 def parse_payload(payload: str) -> dict[str, Any]:

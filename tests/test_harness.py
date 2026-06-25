@@ -89,6 +89,62 @@ class HarnessTest(unittest.TestCase):
         self.assertIn("a.txt:3: needle two", observation.result.output)
         self.assertNotIn("needle three", observation.result.output)
 
+    def test_write_file_rejects_invalid_json_without_writing(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            harness = AgentHarness(AgentConfig(cwd=Path(tmp), permission_mode="autoEdit"))
+
+            observation = harness.execute_tool(
+                ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": "config.json", "content": '{"bad":'}))
+            )
+
+            self.assertFalse(path.exists())
+
+        self.assertTrue(observation.result.skipped)
+        self.assertEqual(observation.result.exit_code, 2)
+        self.assertIn("Structured file validation failed", observation.result.output)
+
+    def test_write_file_accepts_valid_json(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            harness = AgentHarness(AgentConfig(cwd=Path(tmp), permission_mode="autoEdit"))
+
+            observation = harness.execute_tool(
+                ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": "config.json", "content": '{"ok": true}'}))
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), '{"ok": true}')
+
+        self.assertEqual(observation.result.exit_code, 0)
+
+    def test_write_file_rejects_invalid_toml_without_writing(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pyproject.toml"
+            harness = AgentHarness(AgentConfig(cwd=Path(tmp), permission_mode="autoEdit"))
+
+            observation = harness.execute_tool(
+                ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": "pyproject.toml", "content": "[project\n"}))
+            )
+
+            self.assertFalse(path.exists())
+
+        self.assertTrue(observation.result.skipped)
+        self.assertIn("Structured file validation failed", observation.result.output)
+
+    def test_write_file_rejects_invalid_xml_without_writing(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.xml"
+            harness = AgentHarness(AgentConfig(cwd=Path(tmp), permission_mode="autoEdit"))
+
+            observation = harness.execute_tool(
+                ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": "config.xml", "content": "<root>"}))
+            )
+
+            self.assertFalse(path.exists())
+
+        self.assertTrue(observation.result.skipped)
+        self.assertIn("Structured file validation failed", observation.result.output)
+
 
 if __name__ == "__main__":
     unittest.main()

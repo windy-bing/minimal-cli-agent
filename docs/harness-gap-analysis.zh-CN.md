@@ -30,7 +30,7 @@
 | 工具模糊识别 | 当前已有显式 alias，但没有 fuzzy suggestion | 在 Discovery 阶段增加安全的 fuzzy suggestion，但不自动执行高风险猜测 |
 | 文件读取工具性能 | 已实现 `read_tail` / `read_forward` 基线，但还没有更细的编码、二进制和分页状态治理 | 继续补 byte/line 双模式、二进制检测和分页游标 |
 | grep/search top-k | 已实现 `search(pattern,path,top_k,max_files)` 基线，但还没有 timeout 和 ignore 文件规则 | 继续补 timeout、ignore rules、渐进输出和 richer ranking |
-| 结构化文本编辑校验 | JSON/XML/YAML 被模型写坏后，后端如果无校验会沉默失败 | 写入后按文件类型 parse/format/validate；失败时阻断并把错误返回给模型 |
+| 结构化文本编辑校验 | 已有 JSON/TOML/XML 写入前校验，YAML 在 PyYAML 可用时校验；还没有 schema 级校验和自动格式化 | 下一步补 JSON Schema、YAML schema、格式化建议和字段级 repair observation |
 | Plan Mode 上下文隔离 | 探索噪音会污染执行阶段，计划和执行工具集也可能混在一起 | Plan 应该是独立 context、独立 tool allowlist，并输出 typed plan artifact |
 | OS shell adapter | 只假设 bash 会伤害 Windows/Powershell/cmd/Git Bash 场景 | 增加 `ShellAdapter`：bash/zsh/powershell/cmd/git-bash；显式暴露 shell、encoding、path rules 给模型 |
 | 环境变量刷新 | 长会话里环境变化不能被 runtime 感知 | Environment 每次执行前重建 env snapshot，并记录差异或允许 hook 更新 |
@@ -58,7 +58,7 @@
 | 完整 schema validation + repair observation | 当前已有最小 repair observation，下一步要支持 JSON Schema 和字段级错误 |
 | Plan/Execute 双上下文 | Coding agent 的计划噪音和执行历史应该隔离，否则长任务会持续污染上下文 |
 | 文件工具流式读取和搜索 top-k | 已有基线，下一步应补 timeout、ignore rules、分页游标和更强 ranking |
-| 结构化编辑校验 | 能直接减少模型幻觉导致的坏 JSON/XML/YAML/配置文件 |
+| 结构化编辑校验 | 已有写入前 parse validation 基线，下一步做 schema/format/repair 增强 |
 | ShellAdapter 跨平台设计 | CLI agent 不能长期只假设 bash，尤其不能把 Git Bash 当成 Windows 原生 shell |
 | Prompt budget policy | harness 不只管工具和权限，也要管提示词预算、角色差异和规则注入 |
 | EventStore + memory retrieval | 压缩后无法召回会让长期任务丢状态；需要原始日志和可检索 memory 双轨 |
@@ -81,7 +81,7 @@
 - `read_tail(path, lines, max_bytes)` 已使用尾部窗口读取，不整文件读入。
 - `read_forward(path, offset, limit)` 已支持 byte offset 分页和最大输出。
 - `search(pattern, path, top_k, max_files)` 已有 top-k 和文件数边界；下一步补 timeout 和 ignore rules。
-- `write/edit` 对 JSON/YAML/XML/TOML 做 parse validation。
+- `write_file` 已对 JSON/TOML/XML 做 parse validation，YAML 在 PyYAML 可用时校验；下一步补 schema validation 和自动格式化。
 
 ### Phase 3: Plan/Execute Separation
 

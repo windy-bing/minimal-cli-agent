@@ -73,6 +73,7 @@ Implemented:
 - JSON session event log for permission approval audit records.
 - `ToolRegistry` for tool discovery.
 - Built-in workspace `read_file`, `read_tail`, `read_forward`, `search`, and `write_file` tools.
+- Structured write validation for JSON, TOML, XML, and YAML when PyYAML is available.
 - Tool aliases plus recoverable discovery and validation observations.
 - Secret redaction for command output and observations.
 - Network command hard gate with explicit `--allow-network` opt-in.

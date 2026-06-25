@@ -140,6 +140,10 @@ class FileToolDefaults:
     SEARCH_MAX_TOP_K: Final = 200
     SEARCH_MAX_FILES_LIMIT: Final = 5000
     IGNORED_DIRS: Final = (".git", "__pycache__", ".venv", "node_modules", ".mypy_cache", ".pytest_cache")
+    JSON_SUFFIXES: Final = (".json",)
+    TOML_SUFFIXES: Final = (".toml",)
+    XML_SUFFIXES: Final = (".xml",)
+    YAML_SUFFIXES: Final = (".yaml", ".yml")
 
 
 class Tools:
