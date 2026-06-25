@@ -165,7 +165,7 @@ def render_messages_for_codex(messages: list[Message]) -> str:
         "Do not mention that this prompt was transformed.",
         "You are being used only as a model adapter for minimal-agent.",
         "Do not inspect files or run commands yourself.",
-        "If workspace action is needed, return a bash-action block and let minimal-agent execute it.",
+        "If workspace action is needed, return a bash-action or tool-action block and let minimal-agent execute it.",
         "",
     ]
     for message in messages:

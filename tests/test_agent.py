@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from minimal_cli_agent.agent import Agent
 from minimal_cli_agent.constants import LoopEventTypes
@@ -14,6 +16,17 @@ class FakeModel:
 class PlainTextModel:
     def complete(self, messages: list[Message]) -> str:
         return "你好，我可以帮你看代码、改文件或排查问题。"
+
+
+class WriteThenExitModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, messages: list[Message]) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            return 'Writing file.\n```tool-action\n{"tool":"write_file","path":"agent.txt","content":"done"}\n```'
+        return "Done.\n```bash-action\nexit\n```"
 
 
 class AgentTest(unittest.TestCase):
@@ -71,6 +84,18 @@ class AgentTest(unittest.TestCase):
         self.assertEqual(events[-1].type, LoopEventTypes.TURN_COMPLETE)
         self.assertFalse(any(event.type == LoopEventTypes.TOOL_CALL_RESULT for event in events))
         self.assertIn("排查问题", result.final_messages[-1].content)
+
+    def test_agent_loop_can_modify_workspace_file(self) -> None:
+        with TemporaryDirectory() as tmp:
+            config = AgentConfig(cwd=Path(tmp), permission_mode="autoEdit")
+            harness = AgentHarness(config=config, model=WriteThenExitModel())
+            agent = Agent(config=config, harness=harness)
+
+            result = agent.chat("write a file", ChatContext())
+
+            self.assertEqual((Path(tmp) / "agent.txt").read_text(encoding="utf-8"), "done")
+
+        self.assertTrue(result.success)
 
 
 if __name__ == "__main__":

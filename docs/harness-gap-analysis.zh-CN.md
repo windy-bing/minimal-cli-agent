@@ -47,7 +47,7 @@
 | Plan Mode 只靠模型自觉不执行 | 当前 `plan` 权限模式在 policy/pipeline 层返回 `skip`，shell 不会执行 |
 | 权限模式只是提示词约定 | `ToolDecision` 是代码层决策，`deny/skip` 是 hard gate |
 | Codex 登录态误走 Platform API | `codex` profile 检测 Codex auth 后走 Codex CLI adapter，不把 `tokens.access_token` 发到 `api.openai.com` |
-| 提示词过早膨胀 | 当前只有极小 system prompt 和单一 `bash-action` 格式，没有把大量工具教程塞入 prompt |
+| 提示词过早膨胀 | 当前只有极小 system prompt，并只注入 `bash-action` / `tool-action` 的短格式示例，没有把大量工具教程塞入 prompt |
 | 边界不透明 | README/architecture 已拆出 implemented/reserved/not implemented |
 
 ## 优于当前设计、应吸收

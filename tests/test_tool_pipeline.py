@@ -59,6 +59,24 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertIn("available_tools:", result.output)
         self.assertIn("shell", result.output)
 
+    def test_default_mode_asks_before_write_file(self) -> None:
+        with TemporaryDirectory() as tmp:
+            harness = AgentHarness(AgentConfig(cwd=Path(tmp), permission_mode="default"))
+
+            with patch("builtins.input", side_effect=["y"]) as input_mock:
+                observation = harness.execute_tool(
+                    ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": "notes.txt", "content": "hello"}))
+                )
+
+        self.assertEqual(input_mock.call_count, 1)
+        self.assertEqual(observation.result.exit_code, 0)
+
+    def test_sensitive_file_paths_are_hard_denied_even_in_auto_edit(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="autoEdit"))
+
+        with self.assertRaisesRegex(PermissionDenied, "sensitive path"):
+            harness.execute_tool(ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": ".env", "content": "x"})))
+
     def test_default_mode_remembers_approved_shell_command_in_session(self) -> None:
         harness = AgentHarness(AgentConfig(permission_mode="default"))
 

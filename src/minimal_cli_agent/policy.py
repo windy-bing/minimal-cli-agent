@@ -11,6 +11,7 @@ from minimal_cli_agent.constants import (
     PolicyDefaults,
     PolicyFileFields,
     ToolDecisionKinds,
+    ToolPayloadFields,
     Tools,
 )
 from minimal_cli_agent.exceptions import ConfigurationError, PermissionDenied
@@ -58,43 +59,48 @@ class ShellPermissionPolicy:
     def __init__(self, config: AgentConfig, audit_recorder: Callable[[str, dict], None] | None = None) -> None:
         self.config = config
         self.audit_recorder = audit_recorder
-        self.approved_shell_commands: set[str] = set()
+        self.approved_tool_calls: set[tuple[str, str]] = set()
         self.rules = load_shell_policy_rules(config)
 
     def decide(self, action: str, payload: str) -> ToolDecision:
-        if action != Tools.SHELL:
+        if action not in {Tools.SHELL, Tools.READ_FILE, Tools.WRITE_FILE}:
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Unknown action type: {action}")
 
-        lowered = payload.lower()
-        if any(token in lowered for token in self.rules.dangerous_tokens):
+        lowered = permission_target(action, payload).lower()
+        if action == Tools.SHELL and any(token in lowered for token in self.rules.dangerous_tokens):
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked dangerous command: {payload}")
         if any(token in lowered for token in self.rules.sensitive_path_tokens):
-            return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked command touching sensitive path: {payload}")
-        if not self.config.allow_network and any(token in f" {lowered} " for token in self.rules.network_command_tokens):
+            return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked tool touching sensitive path: {payload}")
+        if action == Tools.SHELL and not self.config.allow_network and any(token in f" {lowered} " for token in self.rules.network_command_tokens):
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked network command without --allow-network: {payload}")
+
+        if action == Tools.READ_FILE:
+            return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="read-only file tool")
 
         if self.config.permission_mode == PermissionModes.YOLO:
             return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="yolo mode")
 
         if self.config.permission_mode == PermissionModes.PLAN:
-            return ToolDecision(kind=ToolDecisionKinds.SKIP, reason="plan mode does not execute shell commands")
+            return ToolDecision(kind=ToolDecisionKinds.SKIP, reason=f"plan mode does not execute {action}")
+
+        if action == Tools.WRITE_FILE and self.config.permission_mode == PermissionModes.AUTO_EDIT:
+            return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="autoEdit mode allows file writes")
 
         if self.config.permission_mode in {PermissionModes.DEFAULT, PermissionModes.AUTO_EDIT}:
-            if payload in self.approved_shell_commands:
+            if (action, payload) in self.approved_tool_calls:
                 return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="session approval memory")
-            return ToolDecision(kind=ToolDecisionKinds.ASK, reason=f"{self.config.permission_mode} mode requires shell confirmation")
+            return ToolDecision(kind=ToolDecisionKinds.ASK, reason=f"{self.config.permission_mode} mode requires {action} confirmation")
 
         return ToolDecision(kind=ToolDecisionKinds.ASK, reason="confirmation required")
 
     def confirm(self, action: str, payload: str, decision: ToolDecision) -> ToolDecision:
         if decision.kind != ToolDecisionKinds.ASK:
             return decision
-        answer = input(f"\nAllow command?\n{payload}\n[y/N] ").strip().lower()
+        answer = input(f"\nAllow {action}?\n{payload}\n[y/N] ").strip().lower()
         if answer not in {"y", "yes"}:
             self._record_permission_event(action, payload, ToolDecisionKinds.DENY, "user denied")
-            raise PermissionDenied(f"User denied command: {payload}")
-        if action == Tools.SHELL:
-            self.approved_shell_commands.add(payload)
+            raise PermissionDenied(f"User denied {action}: {payload}")
+        self.approved_tool_calls.add((action, payload))
         reason = f"user approved {action}"
         self._record_permission_event(action, payload, ToolDecisionKinds.ALLOW, reason)
         return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason=reason)
@@ -112,3 +118,14 @@ class ShellPermissionPolicy:
                 PermissionEventFields.PERMISSION_MODE: self.config.permission_mode,
             },
         )
+
+
+def permission_target(action: str, payload: str) -> str:
+    if action in {Tools.READ_FILE, Tools.WRITE_FILE}:
+        try:
+            raw = json.loads(payload)
+        except json.JSONDecodeError:
+            return payload
+        if isinstance(raw, dict):
+            return str(raw.get(ToolPayloadFields.PATH, ""))
+    return payload

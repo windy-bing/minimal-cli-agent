@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from minimal_cli_agent.constants import LoopEventData, LoopEventTypes, Tools
+from minimal_cli_agent.constants import LoopEventData, LoopEventTypes
 from minimal_cli_agent.exceptions import AgentFinished, FormatError, NonTerminatingAgentError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.parser import parse_action
@@ -39,12 +39,12 @@ class Agent:
             messages.append(Message(role="assistant", content=output))
 
             try:
-                command = parse_action(output)
+                call = parse_action(output)
                 yield LoopEvent(
                     type=LoopEventTypes.TOOL_CALL_START,
-                    data={LoopEventData.TOOL: Tools.SHELL, LoopEventData.PAYLOAD: command},
+                    data={LoopEventData.TOOL: call.name, LoopEventData.PAYLOAD: call.payload},
                 )
-                observation = self.harness.execute_shell(command).to_message().content
+                observation = self.harness.execute_tool(call).to_message().content
             except AgentFinished as exc:
                 yield LoopEvent(type=LoopEventTypes.DONE, data={LoopEventData.REASON: str(exc)})
                 return LoopResult(success=True, final_messages=messages)

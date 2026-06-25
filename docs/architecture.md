@@ -4,7 +4,7 @@ The first implementation follows the minimal-agent.com loop:
 
 1. Keep a `messages` list.
 2. Ask the model for the next response.
-3. Parse exactly one `bash-action`.
+3. Parse exactly one `bash-action` or `tool-action`.
 4. Execute the action in an environment.
 5. Append the observation back to messages.
 6. Repeat until `exit` or `max_steps`.
@@ -15,10 +15,11 @@ The first implementation follows the minimal-agent.com loop:
 - `AgentHarness`: owns runtime wiring for model, context manager, session store, policy, tool registry, and environment.
 - `ChatModel`: calls Ollama, OpenAI-compatible, Anthropic, Gemini chat endpoints, or the Codex CLI adapter.
 - `LocalEnvironment`: executes shell commands with timeout and non-interactive env vars.
-- `ShellPermissionPolicy`: approves or rejects shell commands.
+- `ShellPermissionPolicy`: approves, skips, or rejects shell and workspace file tools.
 - `ToolRegistry`: registers executable tools behind one invocation boundary.
 - `ToolExecutionPipeline`: runs Discovery, Validation, Permission, PreHook, ResolveDecision, Confirmation, Execution, PostHook, AutoVerify, and Formatting.
-- `parser`: extracts a single `bash-action` code block.
+- `FileToolEnvironment`: reads and writes UTF-8 files inside the configured workspace.
+- `parser`: extracts a single `bash-action` or `tool-action` code block.
 - `memory`: persists sessions and applies a simple local compaction policy.
 - `interfaces`: defines protocol boundaries for model, tool execution, sessions, context, and policy.
 
@@ -33,9 +34,10 @@ The project is meant to grow into a harness-style agent. The important rule is t
 | Model profiles | `profiles.py` | cc-switch-compatible config discovery |
 | Context window | `CompactingContextManager` | Model-based summarizer, retrieval-backed context |
 | Session persistence | `JsonSessionStore` | SQLite, event log, group session store |
-| Tool invocation | `ToolRegistry` | MCP tools, browser tools, file tools, plugin tools |
+| Tool invocation | `ToolRegistry` | MCP tools, browser tools, plugin tools |
 | Tool lifecycle | `ToolExecutionPipeline` | Hook arbitration, confirmation UI, retries, formatting |
 | Shell execution | `LocalEnvironment` | Docker environment, remote sandbox, workspace fork |
+| File tools | `FileToolEnvironment` | Structured edit/patch tools, format-aware validation |
 | Permissions | `ShellPermissionPolicy` | Rule engine, approvals, audit log, scoped capabilities |
 | Delegation | Not implemented | SubAgent runner and workflow scheduler |
 
@@ -69,6 +71,7 @@ Implemented:
 - Optional model-generated context summaries with `--summarize-context`.
 - JSON session event log for permission approval audit records.
 - `ToolRegistry` for tool discovery.
+- Built-in workspace `read_file` and `write_file` tools.
 - Tool aliases plus recoverable discovery and validation observations.
 - Secret redaction for command output and observations.
 - Network command hard gate with explicit `--allow-network` opt-in.
@@ -87,7 +90,7 @@ Reserved:
 
 - `ResolveDecision` is currently a pass-through stage. It exists so hooks, session approvals, and policy decisions can be arbitrated later.
 - `Confirmation` is currently CLI `input()`. A UI client can replace the policy/harness boundary later.
-- `autoEdit` is present, but with only a shell tool it currently asks for confirmation like `default`.
+- `autoEdit` automatically approves `write_file`; shell commands still ask for confirmation.
 - Tool schema validation is intentionally minimal. It currently supports per-tool expected format and validator callbacks, not full JSON Schema.
 - The event log is JSON-backed. It is durable, but not yet indexed or queryable like SQLite.
 
@@ -153,8 +156,8 @@ Memory should have layers:
 Current product modes are `default`, `autoEdit`, `plan`, and `yolo`.
 
 - `default`: shell commands ask for confirmation.
-- `autoEdit`: reserved for automatic file edits; shell commands still ask.
-- `plan`: skip shell execution and return a skipped observation.
+- `autoEdit`: automatically approves `write_file`; shell commands still ask.
+- `plan`: allows read-only file tools, skips shell execution and file writes.
 - `yolo`: allow execution unless a hard deny rule blocks it.
 
 A production version should add:

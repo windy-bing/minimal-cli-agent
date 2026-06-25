@@ -15,15 +15,24 @@ The project starts intentionally small, but the code is split into replaceable m
 - Supports local Ollama chat models by default.
 - Supports Ollama, Codex CLI login, Claude/Anthropic, and Gemini profiles.
 - Supports OpenAI-compatible `/chat/completions` endpoints directly.
-- Parses exactly one action formatted as:
+- Parses exactly one action formatted as shell or file tool action:
 
 ````text
 ```bash-action
 ls -la
 ```
+
+```tool-action
+{"tool":"read_file","path":"README.md"}
+```
+
+```tool-action
+{"tool":"write_file","path":"notes/todo.txt","content":"hello"}
+```
 ````
 
 - Executes commands with timeout and non-interactive environment variables.
+- Reads and writes workspace files through `read_file` / `write_file` tools instead of forcing file edits through shell commands.
 - Redacts common API keys, bearer tokens, and secret-looking values from command observations.
 - Blocks obvious network shell commands unless `--allow-network` is passed.
 - Supports additional shell policy deny rules through `--policy-file`.
@@ -93,7 +102,9 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 
 Type `/help` to list interactive commands. Type `/`, `/exit`, `/quit`, `exit`, or `quit` for quick command handling. If `--session path/to/session.json` is provided, messages are saved after each turn and loaded again on the next run.
 
-In interactive mode, normal conversation can be answered directly. The model only needs a `bash-action` block when it wants to inspect files or run a command.
+In interactive mode, normal conversation can be answered directly. The model only needs an action block when it wants to inspect files, edit files, or run a command.
+
+Use `--permission autoEdit` when you want the loop to modify project files through `write_file` without asking every time. `plan` remains read-only: it can read files but skips shell commands and file writes.
 
 ## OpenAI-Compatible Endpoint
 
@@ -157,7 +168,7 @@ Policy files add deny rules without weakening the built-in hard gates:
 }
 ```
 
-When using `--profile codex`, the Codex CLI is used only as a model adapter. It is prompted to return the next assistant message, including `bash-action` blocks when workspace work is needed. The minimal-agent loop remains responsible for executing commands and editing files. Increase `--model-timeout` if the adapter needs more time.
+When using `--profile codex`, the Codex CLI is used only as a model adapter. It is prompted to return the next assistant message, including `bash-action` or `tool-action` blocks when workspace work is needed. The minimal-agent loop remains responsible for executing commands and editing files. Increase `--model-timeout` if the adapter needs more time.
 
 ```text
 src/minimal_cli_agent/
@@ -168,8 +179,9 @@ src/minimal_cli_agent/
   tool_pipeline.py staged tool execution pipeline
   policy.py       shell permission policy
   context.py      context preparation boundary
+  file_tools.py   workspace read_file and write_file tools
   model.py        Ollama, OpenAI-compatible, Anthropic, Gemini HTTP clients, and Codex CLI adapter
-  parser.py       bash-action parser
+  parser.py       bash-action and tool-action parser
   environment.py  local shell execution
   memory.py       JSON session store and basic context compaction
   prompts.py      system prompt and format reminder
@@ -195,6 +207,7 @@ Implemented:
 - Stateless `Agent.chat_stream(message, context)` entry point.
 - `LoopEvent` / `LoopResult` for event-oriented loop output.
 - `ToolRegistry` and staged `ToolExecutionPipeline`.
+- Built-in `read_file` and `write_file` tools for workspace file changes.
 - Permission decision type with `allow`, `ask`, `deny`, and `skip`.
 - Product permission modes: `default`, `autoEdit`, `plan`, `yolo`.
 - JSON session event log for permission approval audit records.
@@ -203,7 +216,7 @@ Implemented:
 Reserved but intentionally minimal:
 
 - Context compression defaults to local truncation; model summarization is opt-in.
-- `autoEdit` currently behaves like `default` because no file-edit tools exist yet.
+- `autoEdit` automatically approves `write_file`; shell commands still ask for confirmation.
 - Session persistence is JSON, not SQLite or a queryable event database.
 
 Not implemented yet:

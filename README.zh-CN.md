@@ -15,15 +15,24 @@
 - 默认支持本地 Ollama chat 模型。
 - 支持 Ollama、Codex CLI 登录态、Claude/Anthropic、Gemini profile。
 - 支持直接指定 OpenAI-compatible `/chat/completions` 接口。
-- 解析唯一一个 action，格式如下：
+- 解析唯一一个 action，支持 shell 或文件工具 action：
 
 ````text
 ```bash-action
 ls -la
 ```
+
+```tool-action
+{"tool":"read_file","path":"README.md"}
+```
+
+```tool-action
+{"tool":"write_file","path":"notes/todo.txt","content":"hello"}
+```
 ````
 
 - 执行命令时带超时控制和非交互环境变量。
+- 通过 `read_file` / `write_file` 工具读写工作区文件，不强迫模型用 shell 改文件。
 - 会从命令 observation 中清洗常见 API key、bearer token 和疑似密钥值。
 - 默认阻止明显的网络 shell 命令，除非显式传入 `--allow-network`。
 - 支持通过 `--policy-file` 追加 shell policy deny 规则。
@@ -93,7 +102,9 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 
 输入 `/help` 查看交互命令。输入 `/` 会快速展示常用命令；输入 `/exit`、`/quit`、`exit` 或 `quit` 退出。如果传入 `--session path/to/session.json`，每轮结束后会保存 messages，下次运行时继续加载。
 
-在交互模式下，普通对话可以直接自然语言回复；只有需要查看文件或运行命令时，模型才需要输出 `bash-action`。
+在交互模式下，普通对话可以直接自然语言回复；只有需要查看文件、修改文件或运行命令时，模型才需要输出 action block。
+
+如果希望 loop 能直接修改项目文件，使用 `--permission autoEdit`，这样 `write_file` 不会每次询问。`plan` 仍然是只读模式：可以读文件，但会跳过 shell 命令和文件写入。
 
 ## OpenAI-Compatible 接口
 
@@ -157,7 +168,7 @@ Policy 文件只会追加 deny 规则，不会削弱内置 hard gate：
 }
 ```
 
-使用 `--profile codex` 时，Codex CLI 只作为模型适配器使用。它会被提示只返回下一条 assistant message；如果需要操作工作区，应输出 `bash-action`，仍由 minimal-agent loop 负责执行命令和修改文件。如果适配器耗时较长，可以调大 `--model-timeout`。
+使用 `--profile codex` 时，Codex CLI 只作为模型适配器使用。它会被提示只返回下一条 assistant message；如果需要操作工作区，应输出 `bash-action` 或 `tool-action`，仍由 minimal-agent loop 负责执行命令和修改文件。如果适配器耗时较长，可以调大 `--model-timeout`。
 
 ```text
 src/minimal_cli_agent/
@@ -168,8 +179,9 @@ src/minimal_cli_agent/
   tool_pipeline.py 分阶段工具执行管道
   policy.py        shell 权限策略
   context.py       上下文准备边界
+  file_tools.py    工作区 read_file 和 write_file 工具
   model.py         Ollama、OpenAI-compatible、Anthropic、Gemini HTTP client 和 Codex CLI adapter
-  parser.py        bash-action 解析器
+  parser.py        bash-action 和 tool-action 解析器
   environment.py   本地 shell 执行
   memory.py        JSON session store 和基础上下文压缩
   prompts.py       system prompt 和格式提醒
@@ -195,6 +207,7 @@ src/minimal_cli_agent/
 - 无状态 `Agent.chat_stream(message, context)` 入口。
 - 用于 UI/CLI 集成的 `LoopEvent` / `LoopResult`。
 - `ToolRegistry` 和分阶段 `ToolExecutionPipeline`。
+- 内置 `read_file` 和 `write_file`，支持通过 loop 修改工作区文件。
 - `ToolDecision`：`allow`、`ask`、`deny`、`skip`。
 - 产品权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - JSON session event log，用于记录权限批准审计事件。
@@ -203,7 +216,7 @@ src/minimal_cli_agent/
 已预留但保持最小实现：
 
 - 上下文压缩默认是本地截断；模型总结需要显式启用。
-- `autoEdit` 目前和 `default` 类似，因为还没有文件编辑工具。
+- `autoEdit` 会自动批准 `write_file`；shell 命令仍需要确认。
 - session 持久化目前是 JSON，不是 SQLite 或可查询事件数据库。
 
 暂不实现：

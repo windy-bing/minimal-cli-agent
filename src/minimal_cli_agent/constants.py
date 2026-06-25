@@ -134,6 +134,18 @@ class Tools:
     SHELL: Final = "shell"
     SHELL_ALIASES: Final = ("bash", "sh", "command")
     SHELL_EXPECTED_FORMAT: Final = "A non-empty shell command string, for example: ls -la"
+    READ_FILE: Final = "read_file"
+    READ_FILE_ALIASES: Final = ("read", "readFile")
+    READ_FILE_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt"}'
+    WRITE_FILE: Final = "write_file"
+    WRITE_FILE_ALIASES: Final = ("write", "writeFile")
+    WRITE_FILE_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt","content":"new file content"}'
+
+
+class ToolPayloadFields:
+    TOOL: Final = "tool"
+    PATH: Final = "path"
+    CONTENT: Final = "content"
 
 
 class InteractiveCommands:
