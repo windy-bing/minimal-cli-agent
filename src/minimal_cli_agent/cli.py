@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import os
 import sys
 from pathlib import Path
 
 from minimal_cli_agent.agent import Agent, print_event
 from minimal_cli_agent.constants import Defaults, InteractiveCommands, PermissionModes, Profiles, Providers
+from minimal_cli_agent.context import total_message_chars
 from minimal_cli_agent.exceptions import AgentError
 from minimal_cli_agent.harness import AgentHarness
+from minimal_cli_agent.memory import compact_messages
 from minimal_cli_agent.memory import JsonSessionStore
 from minimal_cli_agent.prompts import INTERACTIVE_SYSTEM_PROMPT
 from minimal_cli_agent.profiles import resolve_profile
@@ -112,6 +115,7 @@ def run_interactive(
     session_store: JsonSessionStore | None = None,
     first_message: str | None = None,
 ) -> int:
+    session = InteractiveSession(agent=agent, context=context, session_store=session_store)
     print("minimal-agent interactive mode. Type /help for commands, /exit to stop.")
     pending = first_message
     while True:
@@ -124,19 +128,30 @@ def run_interactive(
 
         if pending in InteractiveCommands.EXIT_COMMANDS:
             return 0
+        try:
+            command_result = handle_interactive_command(pending, session)
+        except AgentError as exc:
+            print(f"error: {exc}")
+            pending = None
+            continue
+        if command_result.should_exit:
+            return 0
+        if command_result.handled:
+            pending = None
+            continue
         if pending == InteractiveCommands.QUICK_HINT:
             print_quick_command_hint()
         elif pending == InteractiveCommands.HELP:
             print_interactive_help()
-        elif pending.startswith("/") and pending not in InteractiveCommands.DESCRIPTIONS:
+        elif pending.startswith("/") and not is_known_slash_command(pending):
             print(f"Unknown command: {pending}")
             print_quick_command_hint()
         elif pending:
             exit_code = run_turn(
-                agent,
+                session.agent,
                 pending,
-                context,
-                session_store,
+                session.context,
+                session.session_store,
                 LoopOptions(allow_final_text=True, system_prompt=INTERACTIVE_SYSTEM_PROMPT),
             )
             if exit_code != 0:
@@ -145,13 +160,182 @@ def run_interactive(
 
 
 def print_quick_command_hint() -> None:
-    print("Commands: /help, /exit, /quit")
+    print("Commands: /help, /config, /profile, /permission, /context, /review, /exit")
 
 
 def print_interactive_help() -> None:
     print("Interactive commands:")
     for command, description in InteractiveCommands.DESCRIPTIONS.items():
-        print(f"  {command:<8} {description}")
+        print(f"  {command:<12} {description}")
+
+
+@dataclass
+class InteractiveSession:
+    agent: Agent
+    context: ChatContext
+    session_store: JsonSessionStore | None = None
+
+
+@dataclass(frozen=True)
+class InteractiveCommandResult:
+    handled: bool = False
+    should_exit: bool = False
+
+
+def handle_interactive_command(raw: str, session: InteractiveSession) -> InteractiveCommandResult:
+    if not raw.startswith("/") or raw == InteractiveCommands.QUICK_HINT:
+        return InteractiveCommandResult()
+    parts = raw.split(maxsplit=1)
+    command = parts[0]
+    argument = parts[1].strip() if len(parts) > 1 else ""
+
+    if command == InteractiveCommands.HELP:
+        print_interactive_help()
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.CONFIG:
+        print_config(session.agent.config)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.PROFILE:
+        update_profile(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.PROVIDER:
+        update_provider(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.MODEL:
+        update_model(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.BASE_URL:
+        update_base_url(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.PERMISSION:
+        update_permission(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.NETWORK:
+        update_boolean_option(session, "allow_network", argument, "network shell commands")
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.SUMMARIZE:
+        update_boolean_option(session, "summarize_context", argument, "model context summaries")
+        rebuild_agent(session)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.CONTEXT:
+        handle_context_command(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.REVIEW:
+        review_target = argument or "the current project"
+        prompt = (
+            f"Review {review_target}. Prioritize bugs, behavioral risks, missing tests, "
+            "and concrete improvement suggestions. Use tools if workspace facts are needed."
+        )
+        exit_code = run_turn(
+            session.agent,
+            prompt,
+            session.context,
+            session.session_store,
+            LoopOptions(allow_final_text=True, system_prompt=INTERACTIVE_SYSTEM_PROMPT),
+        )
+        if exit_code != 0:
+            print("Review failed. You can adjust options and retry.")
+        return InteractiveCommandResult(handled=True)
+    return InteractiveCommandResult()
+
+
+def is_known_slash_command(raw: str) -> bool:
+    command = raw.split(maxsplit=1)[0]
+    return command in InteractiveCommands.DESCRIPTIONS
+
+
+def update_profile(session: InteractiveSession, profile: str) -> None:
+    if profile not in Profiles.ALL:
+        print(f"Usage: {InteractiveCommands.PROFILE} {'|'.join(Profiles.ALL)}")
+        return
+    config = resolve_profile(session.agent.config, profile, explicit_options={"profile"})
+    rebuild_agent(session, config)
+    print(f"profile: {profile}")
+    print_config(session.agent.config)
+
+
+def update_provider(session: InteractiveSession, provider: str) -> None:
+    if provider not in Providers.ALL:
+        print(f"Usage: {InteractiveCommands.PROVIDER} {'|'.join(Providers.ALL)}")
+        return
+    session.agent.config.provider = provider
+    rebuild_agent(session)
+    print_config(session.agent.config)
+
+
+def update_model(session: InteractiveSession, model: str) -> None:
+    if not model:
+        print(f"Usage: {InteractiveCommands.MODEL} <model-name>")
+        return
+    session.agent.config.model = model
+    rebuild_agent(session)
+    print_config(session.agent.config)
+
+
+def update_base_url(session: InteractiveSession, base_url: str) -> None:
+    if not base_url:
+        print(f"Usage: {InteractiveCommands.BASE_URL} <url>")
+        return
+    session.agent.config.base_url = base_url
+    rebuild_agent(session)
+    print_config(session.agent.config)
+
+
+def update_permission(session: InteractiveSession, mode: str) -> None:
+    if mode not in PermissionModes.ALL:
+        print(f"Usage: {InteractiveCommands.PERMISSION} {'|'.join(PermissionModes.ALL)}")
+        return
+    session.agent.config.permission_mode = mode
+    rebuild_agent(session)
+    print_config(session.agent.config)
+
+
+def update_boolean_option(session: InteractiveSession, field_name: str, value: str, label: str) -> None:
+    if value not in {"on", "off"}:
+        print("Usage: on|off")
+        return
+    setattr(session.agent.config, field_name, value == "on")
+    print(f"{label}: {value}")
+
+
+def handle_context_command(session: InteractiveSession, action: str) -> None:
+    if action == "status" or not action:
+        print(f"context_messages: {len(session.context.messages)}")
+        print(f"context_chars: {total_message_chars(session.context.messages)}")
+        return
+    if action == "clear":
+        session.context.messages = []
+        if session.session_store:
+            session.session_store.save(session.context.messages)
+        print("context cleared")
+        return
+    if action == "compact":
+        before_messages = len(session.context.messages)
+        before_chars = total_message_chars(session.context.messages)
+        session.context.messages = compact_messages(session.context.messages, max(1, session.agent.config.max_context_chars // 2))
+        if session.session_store:
+            session.session_store.save(session.context.messages)
+        print(
+            "context compacted: "
+            f"{before_messages}->{len(session.context.messages)} messages, "
+            f"{before_chars}->{total_message_chars(session.context.messages)} chars"
+        )
+        return
+    print(f"Usage: {InteractiveCommands.CONTEXT} status|compact|clear")
+
+
+def rebuild_agent(session: InteractiveSession, config: AgentConfig | None = None) -> None:
+    config = config or session.agent.config
+    session.agent = Agent(config=config, harness=AgentHarness(config=config, session_store=session.session_store))
+
+
+def print_config(config: AgentConfig) -> None:
+    print(f"provider: {config.provider}")
+    print(f"model: {config.model}")
+    print(f"base_url: {config.base_url}")
+    print(f"permission: {config.permission_mode}")
+    print(f"allow_network: {config.allow_network}")
+    print(f"summarize_context: {config.summarize_context}")
 
 
 def detect_explicit_options(argv: list[str]) -> set[str]:

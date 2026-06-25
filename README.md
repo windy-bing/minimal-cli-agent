@@ -12,6 +12,7 @@ The project starts intentionally small, but the code is split into replaceable m
 
 - Runs as a terminal CLI.
 - Supports multi-turn interactive sessions with `--interactive`; running without a task starts the same REPL.
+- Supports slash commands for runtime profile/model/permission/context/review control.
 - Supports local Ollama chat models by default.
 - Supports Ollama, Codex CLI login, Claude/Anthropic, and Gemini profiles.
 - Supports OpenAI-compatible `/chat/completions` endpoints directly.
@@ -105,6 +106,25 @@ Type `/help` to list interactive commands. Type `/`, `/exit`, `/quit`, `exit`, o
 In interactive mode, normal conversation can be answered directly. The model only needs an action block when it wants to inspect files, edit files, or run a command.
 
 Use `--permission autoEdit` when you want the loop to modify project files through `write_file` without asking every time. `plan` remains read-only: it can read files but skips shell commands and file writes.
+
+Most startup options can also be changed inside the REPL:
+
+```text
+/config
+/profile codex
+/provider ollama
+/model qwen3:4b
+/base-url http://localhost:11434
+/permission autoEdit
+/network on
+/summarize on
+/context status
+/context compact
+/context clear
+/review src/minimal_cli_agent
+```
+
+`/review [path]` runs a review turn through the same agent loop, so it can inspect files with `read_file` and use the current permission mode.
 
 ## OpenAI-Compatible Endpoint
 

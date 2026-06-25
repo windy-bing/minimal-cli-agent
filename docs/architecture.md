@@ -68,6 +68,7 @@ Implemented:
 - `ChatContext` carries session id, messages, and metadata from the caller.
 - `LoopEvent` / `LoopResult` for stream-style UI integration.
 - Multi-turn CLI REPL that reuses one `ChatContext` across turns.
+- REPL slash commands for runtime profile/provider/model/base URL/permission/network/context/review control.
 - Optional model-generated context summaries with `--summarize-context`.
 - JSON session event log for permission approval audit records.
 - `ToolRegistry` for tool discovery.

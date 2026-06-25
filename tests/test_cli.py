@@ -105,7 +105,7 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
-        self.assertIn("Commands: /help, /exit, /quit", printed)
+        self.assertIn("Commands: /help, /config, /profile, /permission, /context, /review, /exit", printed)
 
     def test_detect_explicit_options_supports_space_and_equals_forms(self) -> None:
         explicit = detect_explicit_options([
@@ -172,6 +172,57 @@ class CliTest(unittest.TestCase):
         self.assertIn("temporary model failure", printed)
         self.assertIn("Turn failed", printed)
         self.assertIn("recovered", context.messages[-1].content)
+
+    def test_run_interactive_can_switch_permission_with_slash_command(self) -> None:
+        model = CountingModel()
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+
+        with patch("builtins.input", side_effect=["/permission autoEdit", "/quit"]), patch("builtins.print"):
+            exit_code = run_interactive(agent, ChatContext())
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(agent.config.permission_mode, "autoEdit")
+        self.assertEqual(model.calls, 0)
+
+    def test_run_interactive_can_switch_model_with_slash_command(self) -> None:
+        model = CountingModel()
+        config = AgentConfig(permission_mode="plan", model="old-model")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+
+        with patch("builtins.input", side_effect=["/model new-model", "/quit"]), patch("builtins.print"):
+            exit_code = run_interactive(agent, ChatContext())
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(agent.config.model, "new-model")
+
+    def test_run_interactive_context_status_and_clear(self) -> None:
+        model = CountingModel()
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+        context = ChatContext(messages=[Message(role="user", content="hello")])
+
+        with patch("builtins.input", side_effect=["/context status", "/context clear", "/quit"]), patch("builtins.print") as print_mock:
+            exit_code = run_interactive(agent, context)
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(context.messages, [])
+        self.assertIn("context_messages: 1", printed)
+        self.assertIn("context cleared", printed)
+
+    def test_run_interactive_review_command_runs_agent_turn(self) -> None:
+        model = SequenceModel(["review done"])
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+        context = ChatContext()
+
+        with patch("builtins.input", side_effect=["/quit"]), patch("builtins.print"):
+            exit_code = run_interactive(agent, context, first_message="/review src")
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(model.calls, 1)
+        self.assertTrue(any(message.role == "user" and "Review src" in message.content for message in context.messages))
 
 
 if __name__ == "__main__":

@@ -150,6 +150,16 @@ class ToolPayloadFields:
 
 class InteractiveCommands:
     HELP: Final = "/help"
+    CONFIG: Final = "/config"
+    PROFILE: Final = "/profile"
+    PROVIDER: Final = "/provider"
+    MODEL: Final = "/model"
+    BASE_URL: Final = "/base-url"
+    PERMISSION: Final = "/permission"
+    NETWORK: Final = "/network"
+    SUMMARIZE: Final = "/summarize"
+    CONTEXT: Final = "/context"
+    REVIEW: Final = "/review"
     EXIT: Final = "/exit"
     QUIT: Final = "/quit"
     PLAIN_EXIT: Final = "exit"
@@ -157,9 +167,31 @@ class InteractiveCommands:
     QUICK_HINT: Final = "/"
     DESCRIPTIONS: Final = {
         HELP: "Show interactive commands.",
+        CONFIG: "Show or change runtime config. Usage: /config",
+        PROFILE: "Switch model profile. Usage: /profile codex|ollama|claude|gemini",
+        PROVIDER: "Switch provider. Usage: /provider ollama|codex|openai-compatible|anthropic|gemini",
+        MODEL: "Switch model. Usage: /model <model-name>",
+        BASE_URL: "Switch provider base URL. Usage: /base-url <url>",
+        PERMISSION: "Switch permission mode. Usage: /permission default|autoEdit|plan|yolo",
+        NETWORK: "Toggle network shell commands. Usage: /network on|off",
+        SUMMARIZE: "Toggle model context summaries. Usage: /summarize on|off",
+        CONTEXT: "Manage context. Usage: /context status|compact|clear",
+        REVIEW: "Ask the agent to review the current project or a path. Usage: /review [path]",
         EXIT: "Exit interactive mode.",
         QUIT: "Exit interactive mode.",
         PLAIN_EXIT: "Exit interactive mode.",
         PLAIN_QUIT: "Exit interactive mode.",
     }
     EXIT_COMMANDS: Final = (EXIT, QUIT, PLAIN_EXIT, PLAIN_QUIT)
+    COMMANDS_WITH_ARGS: Final = (
+        CONFIG,
+        PROFILE,
+        PROVIDER,
+        MODEL,
+        BASE_URL,
+        PERMISSION,
+        NETWORK,
+        SUMMARIZE,
+        CONTEXT,
+        REVIEW,
+    )

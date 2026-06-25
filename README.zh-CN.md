@@ -12,6 +12,7 @@
 
 - 作为终端 CLI 运行。
 - 支持 `--interactive` 多轮交互会话；不传 task 时也会进入同一个 REPL。
+- 支持 slash commands，在运行时切换 profile/model/permission/context/review。
 - 默认支持本地 Ollama chat 模型。
 - 支持 Ollama、Codex CLI 登录态、Claude/Anthropic、Gemini profile。
 - 支持直接指定 OpenAI-compatible `/chat/completions` 接口。
@@ -105,6 +106,25 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 在交互模式下，普通对话可以直接自然语言回复；只有需要查看文件、修改文件或运行命令时，模型才需要输出 action block。
 
 如果希望 loop 能直接修改项目文件，使用 `--permission autoEdit`，这样 `write_file` 不会每次询问。`plan` 仍然是只读模式：可以读文件，但会跳过 shell 命令和文件写入。
+
+大部分启动参数也可以在 REPL 内切换：
+
+```text
+/config
+/profile codex
+/provider ollama
+/model qwen3:4b
+/base-url http://localhost:11434
+/permission autoEdit
+/network on
+/summarize on
+/context status
+/context compact
+/context clear
+/review src/minimal_cli_agent
+```
+
+`/review [path]` 会通过同一个 agent loop 发起 review turn，所以它可以用 `read_file` 检查文件，并遵守当前 permission mode。
 
 ## OpenAI-Compatible 接口
 
