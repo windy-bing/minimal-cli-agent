@@ -77,6 +77,23 @@ class ToolPipelineTest(unittest.TestCase):
         with self.assertRaisesRegex(PermissionDenied, "sensitive path"):
             harness.execute_tool(ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": ".env", "content": "x"})))
 
+    def test_plan_mode_allows_read_only_file_tools(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "notes.txt").write_text("hello", encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="plan"))
+
+            observation = harness.execute_tool(ToolCall(name=Tools.READ_FILE, payload=json.dumps({"path": "notes.txt"})))
+
+        self.assertFalse(observation.result.skipped)
+        self.assertEqual(observation.result.output, "hello")
+
+    def test_sensitive_paths_are_hard_denied_for_read_only_tools(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="plan"))
+
+        with self.assertRaisesRegex(PermissionDenied, "sensitive path"):
+            harness.execute_tool(ToolCall(name=Tools.READ_TAIL, payload=json.dumps({"path": ".env", "lines": 10})))
+
     def test_default_mode_remembers_approved_shell_command_in_session(self) -> None:
         harness = AgentHarness(AgentConfig(permission_mode="default"))
 

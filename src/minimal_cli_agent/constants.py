@@ -130,6 +130,18 @@ class Defaults:
     CONTEXT_TAIL_MESSAGES: Final = "8"
 
 
+class FileToolDefaults:
+    TAIL_LINES: Final = 100
+    TAIL_MAX_BYTES: Final = 65536
+    TAIL_MAX_LINES: Final = 2000
+    FORWARD_LIMIT: Final = 8192
+    SEARCH_TOP_K: Final = 20
+    SEARCH_MAX_FILES: Final = 200
+    SEARCH_MAX_TOP_K: Final = 200
+    SEARCH_MAX_FILES_LIMIT: Final = 5000
+    IGNORED_DIRS: Final = (".git", "__pycache__", ".venv", "node_modules", ".mypy_cache", ".pytest_cache")
+
+
 class Tools:
     SHELL: Final = "shell"
     SHELL_ALIASES: Final = ("bash", "sh", "command")
@@ -137,15 +149,32 @@ class Tools:
     READ_FILE: Final = "read_file"
     READ_FILE_ALIASES: Final = ("read", "readFile")
     READ_FILE_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt"}'
+    READ_TAIL: Final = "read_tail"
+    READ_TAIL_ALIASES: Final = ("tail", "readTail")
+    READ_TAIL_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt","lines":100,"max_bytes":65536}'
+    READ_FORWARD: Final = "read_forward"
+    READ_FORWARD_ALIASES: Final = ("readForward",)
+    READ_FORWARD_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt","offset":0,"limit":8192}'
+    SEARCH: Final = "search"
+    SEARCH_ALIASES: Final = ("grep", "rg")
+    SEARCH_EXPECTED_FORMAT: Final = '{"pattern":"needle","path":".","top_k":20,"max_files":200}'
     WRITE_FILE: Final = "write_file"
     WRITE_FILE_ALIASES: Final = ("write", "writeFile")
     WRITE_FILE_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt","content":"new file content"}'
+    READ_ONLY: Final = (READ_FILE, READ_TAIL, READ_FORWARD, SEARCH)
 
 
 class ToolPayloadFields:
     TOOL: Final = "tool"
     PATH: Final = "path"
     CONTENT: Final = "content"
+    LINES: Final = "lines"
+    MAX_BYTES: Final = "max_bytes"
+    OFFSET: Final = "offset"
+    LIMIT: Final = "limit"
+    PATTERN: Final = "pattern"
+    TOP_K: Final = "top_k"
+    MAX_FILES: Final = "max_files"
 
 
 class InteractiveCommands:

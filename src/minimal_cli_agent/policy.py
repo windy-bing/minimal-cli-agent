@@ -63,7 +63,7 @@ class ShellPermissionPolicy:
         self.rules = load_shell_policy_rules(config)
 
     def decide(self, action: str, payload: str) -> ToolDecision:
-        if action not in {Tools.SHELL, Tools.READ_FILE, Tools.WRITE_FILE}:
+        if action not in {Tools.SHELL, Tools.WRITE_FILE, *Tools.READ_ONLY}:
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Unknown action type: {action}")
 
         lowered = permission_target(action, payload).lower()
@@ -74,7 +74,7 @@ class ShellPermissionPolicy:
         if action == Tools.SHELL and not self.config.allow_network and any(token in f" {lowered} " for token in self.rules.network_command_tokens):
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked network command without --allow-network: {payload}")
 
-        if action == Tools.READ_FILE:
+        if action in Tools.READ_ONLY:
             return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="read-only file tool")
 
         if self.config.permission_mode == PermissionModes.YOLO:
@@ -121,7 +121,7 @@ class ShellPermissionPolicy:
 
 
 def permission_target(action: str, payload: str) -> str:
-    if action in {Tools.READ_FILE, Tools.WRITE_FILE}:
+    if action in {Tools.WRITE_FILE, *Tools.READ_ONLY}:
         try:
             raw = json.loads(payload)
         except json.JSONDecodeError:

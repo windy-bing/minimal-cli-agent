@@ -50,6 +50,45 @@ class HarnessTest(unittest.TestCase):
         self.assertTrue(observation.result.skipped)
         self.assertIn("plan mode", observation.result.output)
 
+    def test_read_tail_reads_bounded_last_lines(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "large.txt"
+            path.write_text("\n".join(f"line-{index}" for index in range(200)), encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=Path(tmp), permission_mode="plan"))
+
+            observation = harness.execute_tool(
+                ToolCall(name=Tools.READ_TAIL, payload=json.dumps({"path": "large.txt", "lines": 3}))
+            )
+
+        self.assertEqual(observation.result.output, "line-197\nline-198\nline-199")
+
+    def test_read_forward_reads_bounded_range(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "page.txt"
+            path.write_text("abcdef", encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=Path(tmp), permission_mode="plan"))
+
+            observation = harness.execute_tool(
+                ToolCall(name=Tools.READ_FORWARD, payload=json.dumps({"path": "page.txt", "offset": 2, "limit": 3}))
+            )
+
+        self.assertEqual(observation.result.output, "cde")
+
+    def test_search_returns_top_k_matches(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.txt").write_text("needle one\nmiss\nneedle two\n", encoding="utf-8")
+            (root / "b.txt").write_text("needle three\nneedle four\n", encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="plan"))
+
+            observation = harness.execute_tool(
+                ToolCall(name=Tools.SEARCH, payload=json.dumps({"pattern": "needle", "path": ".", "top_k": 2}))
+            )
+
+        self.assertIn("a.txt:1: needle one", observation.result.output)
+        self.assertIn("a.txt:3: needle two", observation.result.output)
+        self.assertNotIn("needle three", observation.result.output)
+
 
 if __name__ == "__main__":
     unittest.main()

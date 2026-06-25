@@ -28,12 +28,24 @@ ls -la
 ```
 
 ```tool-action
+{"tool":"read_tail","path":"README.md","lines":80}
+```
+
+```tool-action
+{"tool":"read_forward","path":"README.md","offset":0,"limit":8192}
+```
+
+```tool-action
+{"tool":"search","pattern":"permission","path":".","top_k":20}
+```
+
+```tool-action
 {"tool":"write_file","path":"notes/todo.txt","content":"hello"}
 ```
 ````
 
 - Executes commands with timeout and non-interactive environment variables.
-- Reads and writes workspace files through `read_file` / `write_file` tools instead of forcing file edits through shell commands.
+- Reads, pages, tails, searches, and writes workspace files through structured tools instead of forcing file operations through shell commands.
 - Redacts common API keys, bearer tokens, and secret-looking values from command observations.
 - Blocks obvious network shell commands unless `--allow-network` is passed.
 - Supports additional shell policy deny rules through `--policy-file`.
@@ -199,7 +211,7 @@ src/minimal_cli_agent/
   tool_pipeline.py staged tool execution pipeline
   policy.py       shell permission policy
   context.py      context preparation boundary
-  file_tools.py   workspace read_file and write_file tools
+  file_tools.py   workspace read_file, read_tail, read_forward, search, and write_file tools
   model.py        Ollama, OpenAI-compatible, Anthropic, Gemini HTTP clients, and Codex CLI adapter
   parser.py       bash-action and tool-action parser
   environment.py  local shell execution
@@ -227,7 +239,7 @@ Implemented:
 - Stateless `Agent.chat_stream(message, context)` entry point.
 - `LoopEvent` / `LoopResult` for event-oriented loop output.
 - `ToolRegistry` and staged `ToolExecutionPipeline`.
-- Built-in `read_file` and `write_file` tools for workspace file changes.
+- Built-in `read_file`, `read_tail`, `read_forward`, `search`, and `write_file` tools for bounded workspace file access.
 - Permission decision type with `allow`, `ask`, `deny`, and `skip`.
 - Product permission modes: `default`, `autoEdit`, `plan`, `yolo`.
 - JSON session event log for permission approval audit records.

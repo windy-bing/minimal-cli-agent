@@ -18,7 +18,7 @@ The first implementation follows the minimal-agent.com loop:
 - `ShellPermissionPolicy`: approves, skips, or rejects shell and workspace file tools.
 - `ToolRegistry`: registers executable tools behind one invocation boundary.
 - `ToolExecutionPipeline`: runs Discovery, Validation, Permission, PreHook, ResolveDecision, Confirmation, Execution, PostHook, AutoVerify, and Formatting.
-- `FileToolEnvironment`: reads and writes UTF-8 files inside the configured workspace.
+- `FileToolEnvironment`: reads, pages, tails, searches, and writes UTF-8 files inside the configured workspace.
 - `parser`: extracts a single `bash-action` or `tool-action` code block.
 - `memory`: persists sessions and applies a simple local compaction policy.
 - `interfaces`: defines protocol boundaries for model, tool execution, sessions, context, and policy.
@@ -72,7 +72,7 @@ Implemented:
 - Optional model-generated context summaries with `--summarize-context`.
 - JSON session event log for permission approval audit records.
 - `ToolRegistry` for tool discovery.
-- Built-in workspace `read_file` and `write_file` tools.
+- Built-in workspace `read_file`, `read_tail`, `read_forward`, `search`, and `write_file` tools.
 - Tool aliases plus recoverable discovery and validation observations.
 - Secret redaction for command output and observations.
 - Network command hard gate with explicit `--allow-network` opt-in.

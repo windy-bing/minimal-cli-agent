@@ -28,8 +28,8 @@
 | --- | --- | --- |
 | 完整 JSON Schema | 当前已有最小 validator，但还不是 JSON Schema | 引入 typed `ToolCall` 参数 schema，支持字段级错误和正确格式示例 |
 | 工具模糊识别 | 当前已有显式 alias，但没有 fuzzy suggestion | 在 Discovery 阶段增加安全的 fuzzy suggestion，但不自动执行高风险猜测 |
-| 文件读取工具性能 | 未来实现 `readTail/readForward` 时，如果整文件读入会在大文件上退化 | 文件工具必须流式实现：tail 使用 seek/window，forward 支持 byte/line limit 和分页 |
-| grep/search top-k | 巨型项目中无界搜索会比推理更慢 | 搜索工具需要 max results、head query、top-k、ignore rules、超时和渐进输出 |
+| 文件读取工具性能 | 已实现 `read_tail` / `read_forward` 基线，但还没有更细的编码、二进制和分页状态治理 | 继续补 byte/line 双模式、二进制检测和分页游标 |
+| grep/search top-k | 已实现 `search(pattern,path,top_k,max_files)` 基线，但还没有 timeout 和 ignore 文件规则 | 继续补 timeout、ignore rules、渐进输出和 richer ranking |
 | 结构化文本编辑校验 | JSON/XML/YAML 被模型写坏后，后端如果无校验会沉默失败 | 写入后按文件类型 parse/format/validate；失败时阻断并把错误返回给模型 |
 | Plan Mode 上下文隔离 | 探索噪音会污染执行阶段，计划和执行工具集也可能混在一起 | Plan 应该是独立 context、独立 tool allowlist，并输出 typed plan artifact |
 | OS shell adapter | 只假设 bash 会伤害 Windows/Powershell/cmd/Git Bash 场景 | 增加 `ShellAdapter`：bash/zsh/powershell/cmd/git-bash；显式暴露 shell、encoding、path rules 给模型 |
@@ -44,6 +44,7 @@
 | --- | --- |
 | Agent 持有 session 导致多会话混乱 | `Agent.chat_stream(message, context)` 是无状态入口，`ChatContext` 由调用方传入 |
 | 工具调用散落在 Agent loop | `Agent` 只解析 action，执行经过 `AgentHarness`、`ToolRegistry`、`ToolExecutionPipeline` |
+| 文件工具整文件读取风险 | 已有 `read_tail`、`read_forward` 和 `search` 的有界基线，避免所有读取都走 `read_file` |
 | Plan Mode 只靠模型自觉不执行 | 当前 `plan` 权限模式在 policy/pipeline 层返回 `skip`，shell 不会执行 |
 | 权限模式只是提示词约定 | `ToolDecision` 是代码层决策，`deny/skip` 是 hard gate |
 | Codex 登录态误走 Platform API | `codex` profile 检测 Codex auth 后走 Codex CLI adapter，不把 `tokens.access_token` 发到 `api.openai.com` |
@@ -56,7 +57,7 @@
 | --- | --- |
 | 完整 schema validation + repair observation | 当前已有最小 repair observation，下一步要支持 JSON Schema 和字段级错误 |
 | Plan/Execute 双上下文 | Coding agent 的计划噪音和执行历史应该隔离，否则长任务会持续污染上下文 |
-| 文件工具流式读取和搜索 top-k | 这是进入真实大型仓库前必须补的性能底线 |
+| 文件工具流式读取和搜索 top-k | 已有基线，下一步应补 timeout、ignore rules、分页游标和更强 ranking |
 | 结构化编辑校验 | 能直接减少模型幻觉导致的坏 JSON/XML/YAML/配置文件 |
 | ShellAdapter 跨平台设计 | CLI agent 不能长期只假设 bash，尤其不能把 Git Bash 当成 Windows 原生 shell |
 | Prompt budget policy | harness 不只管工具和权限，也要管提示词预算、角色差异和规则注入 |
@@ -77,9 +78,9 @@
 
 目标是先做少量高质量内置工具，而不是堆工具数量。
 
-- `read_tail(path, lines, max_bytes)` 使用流式 tail，不整文件读入。
-- `read_forward(path, offset, limit)` 支持分页和最大输出。
-- `search(pattern, path, top_k, max_files, timeout)` 有明确边界。
+- `read_tail(path, lines, max_bytes)` 已使用尾部窗口读取，不整文件读入。
+- `read_forward(path, offset, limit)` 已支持 byte offset 分页和最大输出。
+- `search(pattern, path, top_k, max_files)` 已有 top-k 和文件数边界；下一步补 timeout 和 ignore rules。
 - `write/edit` 对 JSON/YAML/XML/TOML 做 parse validation。
 
 ### Phase 3: Plan/Execute Separation

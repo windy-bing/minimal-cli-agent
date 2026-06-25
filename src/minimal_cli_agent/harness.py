@@ -5,7 +5,14 @@ from dataclasses import dataclass
 from minimal_cli_agent.context import CompactingContextManager
 from minimal_cli_agent.constants import Tools
 from minimal_cli_agent.environment import LocalEnvironment
-from minimal_cli_agent.file_tools import FileToolEnvironment, read_file_validator, write_file_validator
+from minimal_cli_agent.file_tools import (
+    FileToolEnvironment,
+    read_file_validator,
+    read_forward_validator,
+    read_tail_validator,
+    search_validator,
+    write_file_validator,
+)
 from minimal_cli_agent.interfaces import ContextManager, Model, SessionStore
 from minimal_cli_agent.model import ChatModel
 from minimal_cli_agent.policy import ShellPermissionPolicy
@@ -58,6 +65,36 @@ class AgentHarness:
                 expected_format=Tools.READ_FILE_EXPECTED_FORMAT,
                 aliases=Tools.READ_FILE_ALIASES,
                 validator=read_file_validator,
+            )
+        )
+        self.tool_registry.register(
+            ToolSpec(
+                name=Tools.READ_TAIL,
+                description="Read the last N lines from a UTF-8 text file inside the workspace without loading the whole file.",
+                handler=self.file_environment.read_tail,
+                expected_format=Tools.READ_TAIL_EXPECTED_FORMAT,
+                aliases=Tools.READ_TAIL_ALIASES,
+                validator=read_tail_validator,
+            )
+        )
+        self.tool_registry.register(
+            ToolSpec(
+                name=Tools.READ_FORWARD,
+                description="Read a bounded UTF-8 byte range from a file inside the workspace.",
+                handler=self.file_environment.read_forward,
+                expected_format=Tools.READ_FORWARD_EXPECTED_FORMAT,
+                aliases=Tools.READ_FORWARD_ALIASES,
+                validator=read_forward_validator,
+            )
+        )
+        self.tool_registry.register(
+            ToolSpec(
+                name=Tools.SEARCH,
+                description="Search workspace text files with top-k and file-count limits.",
+                handler=self.file_environment.search,
+                expected_format=Tools.SEARCH_EXPECTED_FORMAT,
+                aliases=Tools.SEARCH_ALIASES,
+                validator=search_validator,
             )
         )
         self.tool_registry.register(

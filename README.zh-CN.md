@@ -28,12 +28,24 @@ ls -la
 ```
 
 ```tool-action
+{"tool":"read_tail","path":"README.md","lines":80}
+```
+
+```tool-action
+{"tool":"read_forward","path":"README.md","offset":0,"limit":8192}
+```
+
+```tool-action
+{"tool":"search","pattern":"permission","path":".","top_k":20}
+```
+
+```tool-action
 {"tool":"write_file","path":"notes/todo.txt","content":"hello"}
 ```
 ````
 
 - 执行命令时带超时控制和非交互环境变量。
-- 通过 `read_file` / `write_file` 工具读写工作区文件，不强迫模型用 shell 改文件。
+- 通过结构化工具读取、分页读取、读取尾部、搜索和写入工作区文件，不强迫模型用 shell 操作文件。
 - 会从命令 observation 中清洗常见 API key、bearer token 和疑似密钥值。
 - 默认阻止明显的网络 shell 命令，除非显式传入 `--allow-network`。
 - 支持通过 `--policy-file` 追加 shell policy deny 规则。
@@ -199,7 +211,7 @@ src/minimal_cli_agent/
   tool_pipeline.py 分阶段工具执行管道
   policy.py        shell 权限策略
   context.py       上下文准备边界
-  file_tools.py    工作区 read_file 和 write_file 工具
+  file_tools.py    工作区 read_file、read_tail、read_forward、search 和 write_file 工具
   model.py         Ollama、OpenAI-compatible、Anthropic、Gemini HTTP client 和 Codex CLI adapter
   parser.py        bash-action 和 tool-action 解析器
   environment.py   本地 shell 执行
@@ -227,7 +239,7 @@ src/minimal_cli_agent/
 - 无状态 `Agent.chat_stream(message, context)` 入口。
 - 用于 UI/CLI 集成的 `LoopEvent` / `LoopResult`。
 - `ToolRegistry` 和分阶段 `ToolExecutionPipeline`。
-- 内置 `read_file` 和 `write_file`，支持通过 loop 修改工作区文件。
+- 内置 `read_file`、`read_tail`、`read_forward`、`search` 和 `write_file`，支持有边界地访问和修改工作区文件。
 - `ToolDecision`：`allow`、`ask`、`deny`、`skip`。
 - 产品权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - JSON session event log，用于记录权限批准审计事件。

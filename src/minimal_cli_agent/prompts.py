@@ -15,6 +15,18 @@ When you need to read or write a file, output exactly one tool action block:
 ```
 
 ```tool-action
+{"tool":"read_tail","path":"relative/path.txt","lines":100}
+```
+
+```tool-action
+{"tool":"read_forward","path":"relative/path.txt","offset":0,"limit":8192}
+```
+
+```tool-action
+{"tool":"search","pattern":"needle","path":".","top_k":20}
+```
+
+```tool-action
 {"tool":"write_file","path":"relative/path.txt","content":"new file content"}
 ```
 
@@ -47,6 +59,18 @@ When you need to read or write a file, output exactly one tool action block:
 
 ```tool-action
 {"tool":"read_file","path":"relative/path.txt"}
+```
+
+```tool-action
+{"tool":"read_tail","path":"relative/path.txt","lines":100}
+```
+
+```tool-action
+{"tool":"read_forward","path":"relative/path.txt","offset":0,"limit":8192}
+```
+
+```tool-action
+{"tool":"search","pattern":"needle","path":".","top_k":20}
 ```
 
 ```tool-action
