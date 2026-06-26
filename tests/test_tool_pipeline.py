@@ -4,11 +4,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from minimal_cli_agent.constants import EventKinds, PermissionEventFields, PermissionModes, Tools
+from minimal_cli_agent.constants import EventKinds, PermissionEventFields, PermissionModes, ToolDecisionKinds, Tools
 from minimal_cli_agent.exceptions import ConfigurationError, PermissionDenied
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import JsonSessionStore
-from minimal_cli_agent.types import AgentConfig, ToolCall
+from minimal_cli_agent.types import AgentConfig, ToolCall, ToolDecision
 
 
 class ToolPipelineTest(unittest.TestCase):
@@ -28,6 +28,26 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertFalse(observation.result.skipped)
         self.assertEqual(observation.result.exit_code, 0)
         self.assertEqual(observation.result.output, "hello")
+
+    def test_decision_hook_can_allow_before_confirmation(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="default"))
+        harness.tool_pipeline.hooks.decision_hooks.append(
+            lambda call, decision: ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="trusted test hook")
+        )
+
+        observation = harness.execute_shell("printf hello")
+
+        self.assertFalse(observation.result.skipped)
+        self.assertEqual(observation.result.output, "hello")
+
+    def test_decision_hook_can_deny_allowed_policy(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="yolo"))
+        harness.tool_pipeline.hooks.decision_hooks.append(
+            lambda call, decision: ToolDecision(kind=ToolDecisionKinds.DENY, reason="hook denied")
+        )
+
+        with self.assertRaisesRegex(PermissionDenied, "hook denied"):
+            harness.execute_shell("printf hello")
 
     def test_validation_error_returns_repair_observation(self) -> None:
         harness = AgentHarness(AgentConfig(permission_mode="yolo"))

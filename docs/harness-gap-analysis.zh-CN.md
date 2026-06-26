@@ -13,7 +13,7 @@
 
 | 主题 | 当前状态 | 下一步 |
 | --- | --- | --- |
-| 工具执行管道 | 已有 `ToolExecutionPipeline` 阶段形状，但 `ResolveDecision` 仍是 pass-through，`AutoVerify` 很薄 | 补参数 schema、决策仲裁、确认 UI 适配、重试和格式化策略 |
+| 工具执行管道 | 已有 `ToolExecutionPipeline` 阶段形状，`ResolveDecision` 已有 decision hook 仲裁基线，但 `AutoVerify` 很薄 | 补 hook 优先级、冲突报告、确认 UI 适配、重试和格式化策略 |
 | 权限 hard gate | 已有 `ShellPermissionPolicy`、`ToolDecision`、`plan` 跳过执行、`yolo` 仍受硬拒绝规则限制 | 增加命令 allow/deny 规则、工作区写入边界、网络访问策略、审计日志 |
 | 上下文压缩 | 当前是本地裁剪加提示，不是语义压缩 | 增加模型总结、原始 transcript 保留、可召回 summary/memory |
 | Memory 管理 | README/architecture 已规划 transcript/working/project/task memory | 实现 EventStore 或 SQLite session log，再做 memory retrieval |
@@ -73,7 +73,7 @@
 - `ToolSpec` 已支持轻量参数 schema；下一步补风险等级、输出 schema 和完整 JSON Schema 子集。
 - `Validation` 阶段已返回可恢复 observation 和字段级错误；下一步补 schema 文档生成和默认值提示。
 - `Formatting` 阶段已有统一 observation 基线，包含 `status`、`exit_code`、`command` 和 `output`；下一步补输出 schema 和机器可解析事件。
-- 为 `ToolExecutionPipeline` 增加 hook 仲裁和测试覆盖。
+- `ToolExecutionPipeline` 已增加 decision hook 仲裁和测试覆盖；下一步补 hook 优先级、冲突报告和审计事件。
 
 ### Phase 2: File Tool Baseline
 

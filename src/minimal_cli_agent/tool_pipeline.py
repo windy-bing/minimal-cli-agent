@@ -11,11 +11,13 @@ from minimal_cli_agent.types import CommandResult, ToolCall, ToolDecision, ToolD
 
 Hook = Callable[[ToolCall], None]
 PostHook = Callable[[ToolCall, CommandResult], None]
+DecisionHook = Callable[[ToolCall, ToolDecision], ToolDecision | None]
 
 
 @dataclass
 class ToolPipelineHooks:
     pre_hooks: list[Hook] = field(default_factory=list)
+    decision_hooks: list[DecisionHook] = field(default_factory=list)
     post_hooks: list[PostHook] = field(default_factory=list)
 
 
@@ -73,7 +75,12 @@ class ToolExecutionPipeline:
             hook(call)
 
     def _resolve_decision(self, call: ToolCall, decision: ToolDecision) -> ToolDecision:
-        return decision
+        resolved = decision
+        for hook in self.hooks.decision_hooks:
+            hook_decision = hook(call, resolved)
+            if hook_decision is not None:
+                resolved = hook_decision
+        return resolved
 
     def _confirmation(self, call: ToolCall, decision: ToolDecision) -> ToolDecision:
         return self.permission_policy.confirm(call.name, call.payload, decision)

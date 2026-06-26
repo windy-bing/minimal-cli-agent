@@ -59,6 +59,7 @@ ls -la
 - Returns recoverable tool discovery and validation observations instead of surfacing raw exceptions.
 - Unknown tools return safe close-match suggestions without automatically executing guesses.
 - Tool parameter validation returns field-level repair observations for structured payloads.
+- Tool pipeline decision hooks can arbitrate `allow` / `ask` / `deny` / `skip` decisions before confirmation.
 - Tool observations use a consistent `status`, `exit_code`, `command`, and `output` format.
 - Keeps the agent loop behind an `AgentHarness` boundary so tools, memory, policy, context, and environments can evolve independently.
 
@@ -247,6 +248,7 @@ Implemented:
 - Built-in `read_file`, `read_tail`, `read_forward`, `search`, and `write_file` tools for bounded workspace file access.
 - Structured write validation for JSON, TOML, XML, and optional PyYAML-backed YAML.
 - `ToolSpec` supports lightweight parameter schemas with field-level validation errors.
+- `ResolveDecision` supports decision hooks that can override policy decisions before confirmation.
 - Permission decision type with `allow`, `ask`, `deny`, and `skip`.
 - Product permission modes: `default`, `autoEdit`, `plan`, `yolo`.
 - JSON session event log for permission approval audit records.

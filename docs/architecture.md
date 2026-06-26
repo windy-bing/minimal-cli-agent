@@ -78,6 +78,7 @@ Implemented:
 - Tool aliases plus recoverable discovery and validation observations.
 - Safe close-match suggestions for unknown tool names, without automatic fuzzy execution.
 - Lightweight `ToolSpec.parameters_schema` validation with field-level repair observations.
+- `ResolveDecision` decision hooks can override policy decisions before confirmation.
 - Consistent tool observation formatting with `status`, `exit_code`, `command`, and `output`.
 - Secret redaction for command output and observations.
 - Network command hard gate with explicit `--allow-network` opt-in.
@@ -94,7 +95,7 @@ Discovery -> Validation -> Permission -> PreHook -> ResolveDecision
 
 Reserved:
 
-- `ResolveDecision` is currently a pass-through stage. It exists so hooks, session approvals, and policy decisions can be arbitrated later.
+- `ResolveDecision` has a decision hook baseline. Richer priority rules, conflict reporting, and session-scoped approval memory remain reserved.
 - `Confirmation` is currently CLI `input()`. A UI client can replace the policy/harness boundary later.
 - `autoEdit` automatically approves `write_file`; shell commands still ask for confirmation.
 - Tool schema validation is intentionally minimal. It currently supports per-tool expected format and validator callbacks, not full JSON Schema.
