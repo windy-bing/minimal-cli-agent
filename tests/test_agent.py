@@ -29,6 +29,21 @@ class WriteThenExitModel:
         return "Done.\n```bash-action\nexit\n```"
 
 
+class MultiActionThenExitModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, messages: list[Message]) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            return (
+                "Read then write.\n"
+                '```tool-action\n{"tool":"read_file","path":"input.txt"}\n```\n'
+                '```tool-action\n{"tool":"write_file","path":"output.txt","content":"done"}\n```'
+            )
+        return "Done.\n```bash-action\nexit\n```"
+
+
 class AgentTest(unittest.TestCase):
     def test_chat_stream_is_context_driven(self) -> None:
         config = AgentConfig(permission_mode="plan")
@@ -96,6 +111,22 @@ class AgentTest(unittest.TestCase):
             self.assertEqual((Path(tmp) / "agent.txt").read_text(encoding="utf-8"), "done")
 
         self.assertTrue(result.success)
+
+    def test_agent_loop_executes_multiple_actions_in_one_model_turn(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "input.txt").write_text("hello", encoding="utf-8")
+            config = AgentConfig(cwd=root, permission_mode="autoEdit")
+            harness = AgentHarness(config=config, model=MultiActionThenExitModel())
+            agent = Agent(config=config, harness=harness)
+
+            result = agent.chat("read and write", ChatContext())
+
+            self.assertEqual((root / "output.txt").read_text(encoding="utf-8"), "done")
+
+        observations = [message.content for message in result.final_messages if message.role == "user"]
+        self.assertTrue(result.success)
+        self.assertTrue(any("read_file" in observation and "write_file" in observation for observation in observations))
 
 
 if __name__ == "__main__":

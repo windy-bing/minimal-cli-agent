@@ -5,7 +5,7 @@ from collections.abc import Generator
 from minimal_cli_agent.constants import LoopEventData, LoopEventTypes
 from minimal_cli_agent.exceptions import AgentFinished, FormatError, NonTerminatingAgentError
 from minimal_cli_agent.harness import AgentHarness
-from minimal_cli_agent.parser import parse_action
+from minimal_cli_agent.parser import parse_actions
 from minimal_cli_agent.prompts import SYSTEM_PROMPT
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, LoopResult, Message
 
@@ -38,13 +38,9 @@ class Agent:
             yield LoopEvent(type=LoopEventTypes.MODEL_OUTPUT, data={LoopEventData.CONTENT: output})
             messages.append(Message(role="assistant", content=output))
 
+            observations: list[str] = []
             try:
-                call = parse_action(output)
-                yield LoopEvent(
-                    type=LoopEventTypes.TOOL_CALL_START,
-                    data={LoopEventData.TOOL: call.name, LoopEventData.PAYLOAD: call.payload},
-                )
-                observation = self.harness.execute_tool(call).to_message().content
+                calls = parse_actions(output)
             except AgentFinished as exc:
                 yield LoopEvent(type=LoopEventTypes.DONE, data={LoopEventData.REASON: str(exc)})
                 return LoopResult(success=True, final_messages=messages)
@@ -53,11 +49,26 @@ class Agent:
                     yield LoopEvent(type=LoopEventTypes.TURN_COMPLETE, data={LoopEventData.REASON: "final text"})
                     return LoopResult(success=True, final_messages=messages)
                 observation = str(exc)
-            except NonTerminatingAgentError as exc:
-                observation = str(exc)
+                observations.append(observation)
+                yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
+            else:
+                for call in calls:
+                    yield LoopEvent(
+                        type=LoopEventTypes.TOOL_CALL_START,
+                        data={LoopEventData.TOOL: call.name, LoopEventData.PAYLOAD: call.payload},
+                    )
+                    try:
+                        observation = self.harness.execute_tool(call).to_message().content
+                    except NonTerminatingAgentError as exc:
+                        observation = str(exc)
+                        observations.append(observation)
+                        yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
+                        break
+                    observations.append(observation)
+                    yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
 
-            yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
-            messages.append(Message(role="user", content=observation))
+            combined_observation = "\n\n".join(observations)
+            messages.append(Message(role="user", content=combined_observation))
 
         messages.append(Message(role="user", content="Max steps reached. Stop and summarize current state."))
         yield LoopEvent(type=LoopEventTypes.MAX_STEPS, data={LoopEventData.MAX_STEPS: self.config.max_steps})

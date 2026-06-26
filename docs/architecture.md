@@ -4,9 +4,9 @@ The first implementation follows the minimal-agent.com loop:
 
 1. Keep a `messages` list.
 2. Ask the model for the next response.
-3. Parse exactly one `bash-action` or `tool-action`.
-4. Execute the action in an environment.
-5. Append the observation back to messages.
+3. Parse one or more `bash-action` or `tool-action` blocks.
+4. Execute actions sequentially in an environment.
+5. Append observations back to messages.
 6. Repeat until `exit` or `max_steps`.
 
 ## Current modules
@@ -67,6 +67,7 @@ Implemented:
 - Stateless `Agent.chat_stream(message, context)` entry point.
 - `ChatContext` carries session id, messages, and metadata from the caller.
 - `LoopEvent` / `LoopResult` for stream-style UI integration.
+- Multiple action blocks per model turn, executed sequentially in output order.
 - Multi-turn CLI REPL that reuses one `ChatContext` across turns.
 - REPL slash commands for runtime profile/provider/model/base URL/permission/network/context/plan/review control.
 - Isolated `/plan` command that creates a typed plan artifact without merging planning transcript into active chat context.
@@ -105,7 +106,7 @@ Reserved:
 
 Not implemented yet:
 
-- Parallel tool calls.
+- Parallel tool execution and file locks.
 - File-level write locks.
 - MCP/plugin/skill discovery.
 - SubAgent runner.

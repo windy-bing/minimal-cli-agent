@@ -16,7 +16,7 @@
 - 默认支持本地 Ollama chat 模型。
 - 支持 Ollama、Codex CLI 登录态、Claude/Anthropic、Gemini profile。
 - 支持直接指定 OpenAI-compatible `/chat/completions` 接口。
-- 解析唯一一个 action，支持 shell 或文件工具 action：
+- 单轮可解析一个或多个 action，支持 shell 或文件工具 action：
 
 ````text
 ```bash-action
@@ -250,6 +250,7 @@ src/minimal_cli_agent/
 
 - 无状态 `Agent.chat_stream(message, context)` 入口。
 - 用于 UI/CLI 集成的 `LoopEvent` / `LoopResult`。
+- 单轮多个 action block 会按输出顺序串行执行。
 - `ToolRegistry` 和分阶段 `ToolExecutionPipeline`。
 - 内置 `read_file`、`read_tail`、`read_forward`、`search` 和 `write_file`，支持有边界地访问和修改工作区文件。
 - `search` 会同时遵守内置忽略目录、显式 `ignore_dirs`、工作区 `.gitignore` / `.agentignore`。
@@ -270,7 +271,6 @@ src/minimal_cli_agent/
 
 暂不实现：
 
-- 单轮多工具调用。
 - 并发工具执行和文件锁。
 - SubAgent 和 GroupSession runtime。
 - MCP、plugin、skill 自动发现。

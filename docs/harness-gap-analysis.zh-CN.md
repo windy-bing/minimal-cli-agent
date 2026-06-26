@@ -19,7 +19,7 @@
 | Memory 管理 | README/architecture 已规划 transcript/working/project/task memory | 实现 EventStore 或 SQLite session log，再做 memory retrieval |
 | SubAgent / GroupSession | 已作为 roadmap 预留 | 先实现 `SubAgentRunner` 和隔离 session，再做 group event log |
 | Workflow 委托 | 已规划 `plan/delegate/wait/merge/verify` 原语 | 需要 typed workflow state，而不是 prompt 内隐式计划 |
-| 并发和文件锁 | 已明确暂不实现 | 等多工具调用出现后再做读写分桶、同文件写锁、取消和超时传播 |
+| 并发和文件锁 | 已支持单轮多 action 串行执行，但明确暂不并发 | 后续再做读写分桶、同文件写锁、取消和超时传播 |
 | MCP / plugin / skill | 已规划挂在 `ToolRegistry` 后面 | 先定义 tool manifest，再接 MCP discovery |
 
 ## 未规划未实现

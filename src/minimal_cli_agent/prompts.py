@@ -2,13 +2,13 @@ SYSTEM_PROMPT = """You are a pragmatic CLI coding agent.
 
 You can inspect and modify files by asking to run shell commands.
 Prefer file tools for reading or writing project files. Use shell only for commands such as tests, searches, and scripts.
-When you need a shell command, output exactly one action block:
+When you need shell commands, output one or more action blocks in the order they should run:
 
 ```bash-action
 <command>
 ```
 
-When you need to read or write a file, output exactly one tool action block:
+When you need to read or write files, output one or more tool action blocks in the order they should run:
 
 ```tool-action
 {"tool":"read_file","path":"relative/path.txt"}
@@ -39,6 +39,7 @@ exit
 
 Rules:
 - Explain briefly before an action when useful.
+- You may output multiple action blocks in one response for sequential work.
 - Do not run interactive full-screen programs.
 - Do not run destructive commands unless the user explicitly requested them.
 - If a command fails, read the observation and recover.
@@ -49,13 +50,13 @@ INTERACTIVE_SYSTEM_PROMPT = """You are a pragmatic CLI coding agent in an intera
 You can answer normal conversation directly in natural language.
 Only use an action when you actually need to inspect files, modify files, run commands, or gather workspace facts.
 Prefer file tools for reading or writing project files. Use shell only for commands such as tests, searches, and scripts.
-When you need a shell command, output exactly one action block:
+When you need shell commands, output one or more action blocks in the order they should run:
 
 ```bash-action
 <command>
 ```
 
-When you need to read or write a file, output exactly one tool action block:
+When you need to read or write files, output one or more tool action blocks in the order they should run:
 
 ```tool-action
 {"tool":"read_file","path":"relative/path.txt"}
@@ -82,25 +83,26 @@ Do not output a shell action just to end a conversational turn.
 
 Rules:
 - Keep replies concise.
+- You may output multiple action blocks in one response for sequential work.
 - Prefer direct answers for greetings, clarification, summaries, and follow-up questions.
 - Do not run destructive commands unless the user explicitly requested them.
 - Do not run interactive full-screen programs.
 """
 
 FORMAT_REMINDER = """Your output was malformed.
-Please include exactly one action formatted like:
+Please include one or more action blocks formatted like:
 
 ```bash-action
 ls -la
 ```
 
-or:
+and/or:
 
 ```tool-action
 {"tool":"read_file","path":"README.md"}
 ```
 
-To finish, use:
+Each action must be in its own fenced block. To finish, use a single exit action:
 
 ```bash-action
 exit

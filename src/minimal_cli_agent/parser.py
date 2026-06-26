@@ -10,25 +10,40 @@ from minimal_cli_agent.types import ToolCall
 
 BASH_ACTION_RE = re.compile(r"```bash-action\s*\n(.*?)\n```", re.DOTALL)
 TOOL_ACTION_RE = re.compile(r"```tool-action\s*\n(.*?)\n```", re.DOTALL)
+ACTION_BLOCK_RE = re.compile(r"```(?P<kind>bash-action|tool-action)\s*\n(?P<body>.*?)\n```", re.DOTALL)
 
 
 def parse_action(model_output: str) -> ToolCall:
-    bash_matches = BASH_ACTION_RE.findall(model_output)
-    tool_matches = TOOL_ACTION_RE.findall(model_output)
-    if len(bash_matches) + len(tool_matches) != 1:
-        raise FormatError(FORMAT_REMINDER)
-
-    if bash_matches:
-        return parse_bash_action(bash_matches[0])
-    return parse_tool_action(tool_matches[0])
+    calls = parse_actions(model_output)
+    if len(calls) != 1:
+        raise FormatError(format_error(f"expected exactly one action block for parse_action, found {len(calls)}"))
+    return calls[0]
 
 
-def parse_bash_action(raw_action: str) -> ToolCall:
+def parse_actions(model_output: str) -> list[ToolCall]:
+    matches = list(ACTION_BLOCK_RE.finditer(model_output))
+    if not matches:
+        raise FormatError(format_error("no bash-action or tool-action code block found"))
+
+    calls: list[ToolCall] = []
+    for match in matches:
+        kind = match.group("kind")
+        body = match.group("body")
+        if kind == "bash-action":
+            calls.append(parse_bash_action(body, total_actions=len(matches)))
+        else:
+            calls.append(parse_tool_action(body))
+    return calls
+
+
+def parse_bash_action(raw_action: str, total_actions: int = 1) -> ToolCall:
     command = raw_action.strip()
     if command == "exit":
+        if total_actions != 1:
+            raise FormatError(format_error("exit must be the only action block in the response"))
         raise AgentFinished("Model requested exit.")
     if not command:
-        raise FormatError(FORMAT_REMINDER)
+        raise FormatError(format_error("bash-action block is empty"))
     return ToolCall(name=Tools.SHELL, payload=command)
 
 
@@ -36,13 +51,17 @@ def parse_tool_action(raw_action: str) -> ToolCall:
     try:
         payload = json.loads(raw_action.strip())
     except json.JSONDecodeError as exc:
-        raise FormatError(FORMAT_REMINDER) from exc
+        raise FormatError(format_error(f"tool-action JSON is invalid: {exc.msg} at line {exc.lineno} column {exc.colno}")) from exc
 
     if not isinstance(payload, dict):
-        raise FormatError(FORMAT_REMINDER)
+        raise FormatError(format_error("tool-action JSON must be an object"))
     tool_name = payload.pop(ToolPayloadFields.TOOL, None)
     if tool_name == "exit":
         raise AgentFinished("Model requested exit.")
     if not isinstance(tool_name, str) or not tool_name.strip():
-        raise FormatError(FORMAT_REMINDER)
+        raise FormatError(format_error('tool-action must include a non-empty string field named "tool"'))
     return ToolCall(name=tool_name.strip(), payload=json.dumps(payload, ensure_ascii=False))
+
+
+def format_error(detail: str) -> str:
+    return f"{FORMAT_REMINDER}\nProblem:\n{detail}"

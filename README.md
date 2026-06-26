@@ -2,7 +2,7 @@
 
 Language: English | [中文](README.zh-CN.md)
 
-A small CLI agent inspired by the [Minimal AI agent tutorial](https://minimal-agent.com/). It implements the core loop from the article: ask a model for one action, parse the action, execute it in a terminal environment, append the observation, and repeat.
+A small CLI agent inspired by the [Minimal AI agent tutorial](https://minimal-agent.com/). It implements the core loop from the article: ask a model for one or more actions, parse the actions, execute them in a terminal environment, append observations, and repeat.
 
 The project starts intentionally small, but the code is split into replaceable modules so it can grow toward sub-agents, group sessions, memory, permissions, skills, MCP, plugins, and workflow delegation.
 
@@ -16,7 +16,7 @@ The project starts intentionally small, but the code is split into replaceable m
 - Supports local Ollama chat models by default.
 - Supports Ollama, Codex CLI login, Claude/Anthropic, and Gemini profiles.
 - Supports OpenAI-compatible `/chat/completions` endpoints directly.
-- Parses exactly one action formatted as shell or file tool action:
+- Parses one or more actions per model turn, formatted as shell or file tool actions:
 
 ````text
 ```bash-action
@@ -250,6 +250,7 @@ Implemented:
 
 - Stateless `Agent.chat_stream(message, context)` entry point.
 - `LoopEvent` / `LoopResult` for event-oriented loop output.
+- Multiple action blocks per model turn are executed sequentially in output order.
 - `ToolRegistry` and staged `ToolExecutionPipeline`.
 - Built-in `read_file`, `read_tail`, `read_forward`, `search`, and `write_file` tools for bounded workspace file access.
 - `search` respects built-in ignore dirs, explicit `ignore_dirs`, and workspace `.gitignore` / `.agentignore` patterns.
@@ -270,8 +271,7 @@ Reserved but intentionally minimal:
 
 Not implemented yet:
 
-- Multiple tool calls per model turn.
-- Concurrent tool execution and file locks.
+- Parallel tool execution and file locks.
 - SubAgent and GroupSession runtime.
 - MCP, plugin, and skill discovery.
 - Workflow scheduler or delegation engine.
