@@ -30,6 +30,10 @@ When you need to read or write files, output one or more tool action blocks in t
 {"tool":"write_file","path":"relative/path.txt","content":"new file content"}
 ```
 
+```tool-action
+{"tool":"edit_file","path":"relative/path.txt","start_line":10,"end_line":12,"content":"replacement lines"}
+```
+
 Use absolute or explicit relative paths. Prefer non-interactive commands.
 When the task is complete, output:
 
@@ -76,6 +80,10 @@ When you need to read or write files, output one or more tool action blocks in t
 
 ```tool-action
 {"tool":"write_file","path":"relative/path.txt","content":"new file content"}
+```
+
+```tool-action
+{"tool":"edit_file","path":"relative/path.txt","start_line":10,"end_line":12,"content":"replacement lines"}
 ```
 
 After tool observations, you may answer directly in natural language to complete the turn.

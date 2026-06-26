@@ -18,3 +18,12 @@ minimal-agent = "minimal_cli_agent.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+reportMissingImports = "warning"
+reportUnknownMemberType = "none"
+reportUnknownVariableType = "none"
+reportUnknownArgumentType = "none"

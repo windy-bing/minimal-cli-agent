@@ -7,11 +7,13 @@ from minimal_cli_agent.constants import Tools
 from minimal_cli_agent.environment import LocalEnvironment
 from minimal_cli_agent.file_tools import (
     FileToolEnvironment,
+    EDIT_FILE_SCHEMA,
     READ_FILE_SCHEMA,
     READ_FORWARD_SCHEMA,
     READ_TAIL_SCHEMA,
     SEARCH_SCHEMA,
     WRITE_FILE_SCHEMA,
+    edit_file_validator,
     read_file_validator,
     read_forward_validator,
     read_tail_validator,
@@ -20,7 +22,7 @@ from minimal_cli_agent.file_tools import (
 )
 from minimal_cli_agent.interfaces import ContextManager, Model, SessionStore
 from minimal_cli_agent.model import ChatModel
-from minimal_cli_agent.policy import ShellPermissionPolicy
+from minimal_cli_agent.policy import ConfirmationHandler, ShellPermissionPolicy
 from minimal_cli_agent.tool_pipeline import ToolExecutionPipeline
 from minimal_cli_agent.tool_registry import ToolRegistry, ToolSpec
 from minimal_cli_agent.types import AgentConfig, CommandResult, EventRecord, Message, ToolCall
@@ -44,12 +46,13 @@ class AgentHarness:
         context_manager: ContextManager | None = None,
         session_store: SessionStore | None = None,
         tool_registry: ToolRegistry | None = None,
+        confirmation_handler: ConfirmationHandler | None = None,
     ) -> None:
         self.config = config
         self.model = model or ChatModel(config)
         self.context_manager = context_manager or CompactingContextManager(config, summarizer=self.model)
         self.session_store = session_store
-        self.policy = ShellPermissionPolicy(config, audit_recorder=self.record_event)
+        self.policy = ShellPermissionPolicy(config, audit_recorder=self.record_event, confirmation_handler=confirmation_handler)
         self.environment = LocalEnvironment(config)
         self.file_environment = FileToolEnvironment(config)
         self.tool_registry = tool_registry or ToolRegistry()
@@ -115,6 +118,17 @@ class AgentHarness:
                 aliases=Tools.WRITE_FILE_ALIASES,
                 validator=write_file_validator,
                 parameters_schema=WRITE_FILE_SCHEMA,
+            )
+        )
+        self.tool_registry.register(
+            ToolSpec(
+                name=Tools.EDIT_FILE,
+                description="Replace a 1-based inclusive line range inside a UTF-8 workspace file.",
+                handler=self.file_environment.edit_file,
+                expected_format=Tools.EDIT_FILE_EXPECTED_FORMAT,
+                aliases=Tools.EDIT_FILE_ALIASES,
+                validator=edit_file_validator,
+                parameters_schema=EDIT_FILE_SCHEMA,
             )
         )
         self.tool_pipeline = ToolExecutionPipeline(registry=self.tool_registry, permission_policy=self.policy)

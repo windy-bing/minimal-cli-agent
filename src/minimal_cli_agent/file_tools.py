@@ -3,6 +3,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import re
+import threading
 import time
 import tomllib
 import xml.etree.ElementTree as ET
@@ -61,10 +62,22 @@ WRITE_FILE_SCHEMA = {
     },
 }
 
+EDIT_FILE_SCHEMA = {
+    "type": "object",
+    "required": [ToolPayloadFields.PATH, ToolPayloadFields.START_LINE, ToolPayloadFields.END_LINE, ToolPayloadFields.CONTENT],
+    "properties": {
+        ToolPayloadFields.PATH: {"type": "string"},
+        ToolPayloadFields.START_LINE: {"type": "integer", "minimum": 1},
+        ToolPayloadFields.END_LINE: {"type": "integer", "minimum": 1},
+        ToolPayloadFields.CONTENT: {"type": "string"},
+    },
+}
+
 
 class FileToolEnvironment:
     def __init__(self, config: AgentConfig) -> None:
         self.config = config
+        self._write_locks: dict[Path, threading.Lock] = {}
 
     def read_file(self, payload: str) -> CommandResult:
         try:
@@ -204,14 +217,59 @@ class FileToolEnvironment:
                 output=structured_error,
                 skipped=True,
             )
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        with self._lock_for(path):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
         relative = path.relative_to(self.config.cwd.resolve())
         return CommandResult(
             command=f"{Tools.WRITE_FILE} {relative}",
             exit_code=0,
             output=f"Wrote {relative} ({len(content)} chars).",
         )
+
+    def edit_file(self, payload: str) -> CommandResult:
+        try:
+            data = parse_payload(payload)
+            path = resolve_workspace_path(self.config.cwd, str(data[ToolPayloadFields.PATH]))
+        except ValueError as exc:
+            return CommandResult(command=f"{Tools.EDIT_FILE} {payload}", exit_code=1, output=str(exc))
+        if not path.exists():
+            return CommandResult(command=f"{Tools.EDIT_FILE} {path}", exit_code=1, output="file does not exist")
+        if not path.is_file():
+            return CommandResult(command=f"{Tools.EDIT_FILE} {path}", exit_code=1, output="path is not a file")
+
+        start_line = read_positive_int(data, ToolPayloadFields.START_LINE, default=1, minimum=1, maximum=10**9)
+        end_line = read_positive_int(data, ToolPayloadFields.END_LINE, default=start_line, minimum=1, maximum=10**9)
+        if end_line < start_line:
+            return CommandResult(command=f"{Tools.EDIT_FILE} {path}", exit_code=2, output="end_line must be >= start_line", skipped=True)
+
+        replacement = str(data[ToolPayloadFields.CONTENT])
+        with self._lock_for(path):
+            original = path.read_text(encoding="utf-8", errors="replace")
+            lines = original.splitlines(keepends=True)
+            if start_line > len(lines) + 1:
+                return CommandResult(command=f"{Tools.EDIT_FILE} {path}", exit_code=2, output="start_line is beyond end of file", skipped=True)
+            if end_line > len(lines):
+                return CommandResult(command=f"{Tools.EDIT_FILE} {path}", exit_code=2, output="end_line is beyond end of file", skipped=True)
+
+            replacement_lines = split_replacement_lines(replacement)
+            edited = "".join(lines[: start_line - 1] + replacement_lines + lines[end_line:])
+            structured_error = validate_structured_content(path, edited)
+            if structured_error is not None:
+                return CommandResult(command=f"{Tools.EDIT_FILE} {path}", exit_code=2, output=structured_error, skipped=True)
+            path.write_text(edited, encoding="utf-8")
+
+        relative = path.relative_to(self.config.cwd.resolve())
+        return CommandResult(
+            command=f"{Tools.EDIT_FILE} {relative}",
+            exit_code=0,
+            output=f"Edited {relative} lines {start_line}-{end_line}.",
+        )
+
+    def _lock_for(self, path: Path):
+        resolved = path.resolve()
+        lock = self._write_locks.setdefault(resolved, threading.Lock())
+        return lock
 
 
 def read_file_validator(payload: str) -> ToolValidationError | None:
@@ -257,6 +315,15 @@ def write_file_validator(payload: str) -> ToolValidationError | None:
         payload=payload,
         required_fields=(ToolPayloadFields.PATH, ToolPayloadFields.CONTENT),
         expected_format=Tools.WRITE_FILE_EXPECTED_FORMAT,
+    )
+
+
+def edit_file_validator(payload: str) -> ToolValidationError | None:
+    return validate_json_fields(
+        tool_name=Tools.EDIT_FILE,
+        payload=payload,
+        required_fields=(ToolPayloadFields.PATH, ToolPayloadFields.START_LINE, ToolPayloadFields.END_LINE, ToolPayloadFields.CONTENT),
+        expected_format=Tools.EDIT_FILE_EXPECTED_FORMAT,
     )
 
 
@@ -320,6 +387,14 @@ def tail_text(path: Path, lines: int, max_bytes: int) -> str:
         data = file.read(read_size)
     text = data.decode("utf-8", errors="replace")
     return "\n".join(text.splitlines()[-lines:])
+
+
+def split_replacement_lines(content: str) -> list[str]:
+    if not content:
+        return []
+    if content.endswith("\n"):
+        return content.splitlines(keepends=True)
+    return content.splitlines(keepends=True) + ["\n"]
 
 
 class SearchResult:

@@ -42,18 +42,24 @@ ls -la
 ```tool-action
 {"tool":"write_file","path":"notes/todo.txt","content":"hello"}
 ```
+
+```tool-action
+{"tool":"edit_file","path":"notes/todo.txt","start_line":2,"end_line":3,"content":"replacement"}
+```
 ````
 
 - Executes commands with timeout and non-interactive environment variables.
 - Reads, pages, tails, searches, and writes workspace files through structured tools instead of forcing file operations through shell commands.
+- Supports `edit_file` for incremental 1-based line range replacement without rewriting an entire file in the model output.
+- Serializes same-file writes inside the file tool environment.
 - Search supports `top_k`, `max_files`, `timeout_ms`, extra `ignore_dirs`, and `include_extensions`.
 - Search reads workspace `.gitignore` and `.agentignore` files for common directory and glob ignore patterns.
-- Validates JSON, TOML, and XML before `write_file` writes them; YAML is validated when PyYAML is available.
+- Validates JSON, TOML, and XML before `write_file` or `edit_file` writes them; YAML is validated when PyYAML is available.
 - Redacts common API keys, bearer tokens, and secret-looking values from command observations.
 - Blocks obvious network shell commands unless `--allow-network` is passed.
 - Supports additional shell policy deny rules through `--policy-file`.
 - Supports product permission modes: `default`, `autoEdit`, `plan`, and `yolo`.
-- Persists session messages and permission audit events to JSON when `--session` is provided.
+- Persists recent session messages, active plan, and permission audit events to JSON when `--session` is provided, using a lock file and atomic replace.
 - Applies a simple context compaction guard when the transcript gets large.
 - Can use model-generated context summaries with `--summarize-context`.
 - Exposes a stateless `Agent.chat_stream(message, context)` API that yields loop events.
@@ -124,7 +130,7 @@ Type `/help` to list interactive commands. Type `/`, `/exit`, `/quit`, `exit`, o
 
 In interactive mode, normal conversation can be answered directly. The model only needs an action block when it wants to inspect files, edit files, or run a command.
 
-Use `--permission autoEdit` when you want the loop to modify project files through `write_file` without asking every time. `plan` remains read-only: it can read files but skips shell commands and file writes.
+Use `--permission autoEdit` when you want the loop to modify project files through file writer tools without asking every time. `plan` remains read-only: it can read files but skips shell commands and file writes.
 
 Most startup options can also be changed inside the REPL:
 
@@ -223,7 +229,7 @@ src/minimal_cli_agent/
   tool_pipeline.py staged tool execution pipeline
   policy.py       shell permission policy
   context.py      context preparation boundary
-  file_tools.py   workspace read_file, read_tail, read_forward, search, and write_file tools
+  file_tools.py   workspace read_file, read_tail, read_forward, search, write_file, and edit_file tools
   model.py        Ollama, OpenAI-compatible, Anthropic, Gemini HTTP clients, and Codex CLI adapter
   parser.py       bash-action and tool-action parser
   environment.py  local shell execution
@@ -252,7 +258,7 @@ Implemented:
 - `LoopEvent` / `LoopResult` for event-oriented loop output.
 - Multiple action blocks per model turn are executed sequentially in output order.
 - `ToolRegistry` and staged `ToolExecutionPipeline`.
-- Built-in `read_file`, `read_tail`, `read_forward`, `search`, and `write_file` tools for bounded workspace file access.
+- Built-in `read_file`, `read_tail`, `read_forward`, `search`, `write_file`, and `edit_file` tools for bounded workspace file access.
 - `search` respects built-in ignore dirs, explicit `ignore_dirs`, and workspace `.gitignore` / `.agentignore` patterns.
 - Structured write validation for JSON, TOML, XML, and optional PyYAML-backed YAML.
 - `ToolSpec` supports lightweight parameter schemas with field-level validation errors.
@@ -260,18 +266,21 @@ Implemented:
 - Permission decision type with `allow`, `ask`, `deny`, and `skip`.
 - Product permission modes: `default`, `autoEdit`, `plan`, `yolo`.
 - JSON session event log for permission approval audit records.
+- JSON session writes are lock-protected, atomically replaced, and capped to recent messages.
+- Permission confirmation is injectable through a confirmation handler; CLI `input()` is only the default handler.
+- `pyproject.toml` includes a Pyright `basic` type-checking configuration for `src` and `tests`.
 - `/plan` creates an isolated typed plan artifact that can be shown, cleared, and persisted in the session file.
 - Optional model-generated context summaries with `--summarize-context`.
 
 Reserved but intentionally minimal:
 
 - Context compression defaults to local truncation; model summarization is opt-in.
-- `autoEdit` automatically approves `write_file`; shell commands still ask for confirmation.
+- `autoEdit` automatically approves file writer tools; shell commands still ask for confirmation.
 - Session persistence is JSON, not SQLite or a queryable event database.
 
 Not implemented yet:
 
-- Parallel tool execution and file locks.
+- Parallel tool execution and cross-process file edit locks.
 - SubAgent and GroupSession runtime.
 - MCP, plugin, and skill discovery.
 - Workflow scheduler or delegation engine.

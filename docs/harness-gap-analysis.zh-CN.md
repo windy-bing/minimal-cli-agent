@@ -16,10 +16,10 @@
 | 工具执行管道 | 已有 `ToolExecutionPipeline` 阶段形状，`ResolveDecision` 已有 decision hook 仲裁基线，但 `AutoVerify` 很薄 | 补 hook 优先级、冲突报告、确认 UI 适配、重试和格式化策略 |
 | 权限 hard gate | 已有 `ShellPermissionPolicy`、`ToolDecision`、`plan` 跳过执行、`yolo` 仍受硬拒绝规则限制 | 增加命令 allow/deny 规则、工作区写入边界、网络访问策略、审计日志 |
 | 上下文压缩 | 当前是本地裁剪加提示，不是语义压缩 | 增加模型总结、原始 transcript 保留、可召回 summary/memory |
-| Memory 管理 | README/architecture 已规划 transcript/working/project/task memory | 实现 EventStore 或 SQLite session log，再做 memory retrieval |
+| Memory 管理 | JSON session 已支持 lock 保护、原子写、最近消息裁剪和 active plan 持久化 | 后续实现 EventStore 或 SQLite session log，再做 memory retrieval |
 | SubAgent / GroupSession | 已作为 roadmap 预留 | 先实现 `SubAgentRunner` 和隔离 session，再做 group event log |
 | Workflow 委托 | 已规划 `plan/delegate/wait/merge/verify` 原语 | 需要 typed workflow state，而不是 prompt 内隐式计划 |
-| 并发和文件锁 | 已支持单轮多 action 串行执行，但明确暂不并发 | 后续再做读写分桶、同文件写锁、取消和超时传播 |
+| 并发和文件锁 | 已支持单轮多 action 串行执行和同进程同文件写锁，但明确暂不并发 | 后续再做读写分桶、跨进程文件编辑锁、取消和超时传播 |
 | MCP / plugin / skill | 已规划挂在 `ToolRegistry` 后面 | 先定义 tool manifest，再接 MCP discovery |
 
 ## 未规划未实现
@@ -30,7 +30,7 @@
 | 工具模糊识别 | 已在 Discovery 阶段返回安全的相近工具名建议，但不会自动执行猜测 | 后续可加入风险等级过滤和更细的提示文案 |
 | 文件读取工具性能 | 已实现 `read_tail` / `read_forward` 基线，但还没有更细的编码、二进制和分页状态治理 | 继续补 byte/line 双模式、二进制检测和分页游标 |
 | grep/search top-k | 已实现 `search(pattern,path,top_k,max_files,timeout_ms)`，支持额外 ignore dirs、extension filter 和项目 ignore 文件解析 | 继续补渐进输出和 richer ranking |
-| 结构化文本编辑校验 | 已有 JSON/TOML/XML 写入前校验，YAML 在 PyYAML 可用时校验；还没有 schema 级校验和自动格式化 | 下一步补 JSON Schema、YAML schema、格式化建议和字段级 repair observation |
+| 结构化文本编辑校验 | `write_file`/`edit_file` 已有 JSON/TOML/XML 写入前校验，YAML 在 PyYAML 可用时校验；还没有 schema 级校验和自动格式化 | 下一步补 JSON Schema、YAML schema、格式化建议和字段级 repair observation |
 | Plan Mode 上下文隔离 | `/plan` 已使用独立 context 和 `plan` 权限生成 typed plan artifact，不合并计划 transcript | 下一步让 execute 阶段显式读取 active plan，并按计划约束 tool allowlist |
 | OS shell adapter | 只假设 bash 会伤害 Windows/Powershell/cmd/Git Bash 场景 | 增加 `ShellAdapter`：bash/zsh/powershell/cmd/git-bash；显式暴露 shell、encoding、path rules 给模型 |
 | 环境变量刷新 | 长会话里环境变化不能被 runtime 感知 | Environment 每次执行前重建 env snapshot，并记录差异或允许 hook 更新 |
@@ -82,7 +82,7 @@
 - `read_tail(path, lines, max_bytes)` 已使用尾部窗口读取，不整文件读入。
 - `read_forward(path, offset, limit)` 已支持 byte offset 分页和最大输出。
 - `search(pattern, path, top_k, max_files, timeout_ms)` 已有 top-k、文件数、超时、额外忽略目录、扩展名过滤和 `.gitignore` / `.agentignore` 解析；下一步补 richer ranking。
-- `write_file` 已对 JSON/TOML/XML 做 parse validation，YAML 在 PyYAML 可用时校验；下一步补 schema validation 和自动格式化。
+- `write_file` 和 `edit_file` 已对 JSON/TOML/XML 做 parse validation，YAML 在 PyYAML 可用时校验；下一步补 schema validation 和自动格式化。
 
 ### Phase 3: Plan/Execute Separation
 

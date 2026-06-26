@@ -42,18 +42,24 @@ ls -la
 ```tool-action
 {"tool":"write_file","path":"notes/todo.txt","content":"hello"}
 ```
+
+```tool-action
+{"tool":"edit_file","path":"notes/todo.txt","start_line":2,"end_line":3,"content":"replacement"}
+```
 ````
 
 - 执行命令时带超时控制和非交互环境变量。
 - 通过结构化工具读取、分页读取、读取尾部、搜索和写入工作区文件，不强迫模型用 shell 操作文件。
+- 支持 `edit_file` 做 1-based 行号范围增量替换，不需要让模型重写整个文件。
+- 文件工具环境会串行化同文件写入。
 - 搜索支持 `top_k`、`max_files`、`timeout_ms`、额外 `ignore_dirs` 和 `include_extensions`。
 - 搜索会读取工作区 `.gitignore` 和 `.agentignore`，支持常见目录和 glob 忽略模式。
-- `write_file` 写入 JSON、TOML、XML 前会先校验格式；YAML 在安装 PyYAML 时也会校验。
+- `write_file` 或 `edit_file` 写入 JSON、TOML、XML 前会先校验格式；YAML 在安装 PyYAML 时也会校验。
 - 会从命令 observation 中清洗常见 API key、bearer token 和疑似密钥值。
 - 默认阻止明显的网络 shell 命令，除非显式传入 `--allow-network`。
 - 支持通过 `--policy-file` 追加 shell policy deny 规则。
 - 支持产品化权限模式：`default`、`autoEdit`、`plan`、`yolo`。
-- 传入 `--session` 时，可以把 session messages 和权限审计事件持久化到 JSON。
+- 传入 `--session` 时，可以把最近 session messages、active plan 和权限审计事件持久化到 JSON，并使用 lock 文件和原子替换写入。
 - transcript 变大时，会应用一个简单的本地上下文压缩保护。
 - 可以通过 `--summarize-context` 使用模型生成旧上下文摘要。
 - 暴露无状态 API：`Agent.chat_stream(message, context)`，以事件流形式产出 loop event。
@@ -124,7 +130,7 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 
 在交互模式下，普通对话可以直接自然语言回复；只有需要查看文件、修改文件或运行命令时，模型才需要输出 action block。
 
-如果希望 loop 能直接修改项目文件，使用 `--permission autoEdit`，这样 `write_file` 不会每次询问。`plan` 仍然是只读模式：可以读文件，但会跳过 shell 命令和文件写入。
+如果希望 loop 能直接修改项目文件，使用 `--permission autoEdit`，这样文件写入类工具不会每次询问。`plan` 仍然是只读模式：可以读文件，但会跳过 shell 命令和文件写入。
 
 大部分启动参数也可以在 REPL 内切换：
 
@@ -223,7 +229,7 @@ src/minimal_cli_agent/
   tool_pipeline.py 分阶段工具执行管道
   policy.py        shell 权限策略
   context.py       上下文准备边界
-  file_tools.py    工作区 read_file、read_tail、read_forward、search 和 write_file 工具
+  file_tools.py    工作区 read_file、read_tail、read_forward、search、write_file 和 edit_file 工具
   model.py         Ollama、OpenAI-compatible、Anthropic、Gemini HTTP client 和 Codex CLI adapter
   parser.py        bash-action 和 tool-action 解析器
   environment.py   本地 shell 执行
@@ -252,7 +258,7 @@ src/minimal_cli_agent/
 - 用于 UI/CLI 集成的 `LoopEvent` / `LoopResult`。
 - 单轮多个 action block 会按输出顺序串行执行。
 - `ToolRegistry` 和分阶段 `ToolExecutionPipeline`。
-- 内置 `read_file`、`read_tail`、`read_forward`、`search` 和 `write_file`，支持有边界地访问和修改工作区文件。
+- 内置 `read_file`、`read_tail`、`read_forward`、`search`、`write_file` 和 `edit_file`，支持有边界地访问和修改工作区文件。
 - `search` 会同时遵守内置忽略目录、显式 `ignore_dirs`、工作区 `.gitignore` / `.agentignore`。
 - 对 JSON、TOML、XML 和可选 PyYAML 支持的 YAML 做结构化写入校验。
 - `ToolSpec` 支持轻量参数 schema，并返回字段级校验错误。
@@ -260,18 +266,21 @@ src/minimal_cli_agent/
 - `ToolDecision`：`allow`、`ask`、`deny`、`skip`。
 - 产品权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - JSON session event log，用于记录权限批准审计事件。
+- JSON session 写入带文件锁、原子替换，并会裁剪到最近消息。
+- 权限确认可通过 confirmation handler 替换，CLI `input()` 只是默认实现。
+- `pyproject.toml` 已包含面向 `src` 和 `tests` 的 Pyright `basic` 类型检查配置。
 - `/plan` 会创建隔离的 typed plan artifact，可查看、清除，并可持久化到 session 文件。
 - 通过 `--summarize-context` 可选启用模型生成式上下文摘要。
 
 已预留但保持最小实现：
 
 - 上下文压缩默认是本地截断；模型总结需要显式启用。
-- `autoEdit` 会自动批准 `write_file`；shell 命令仍需要确认。
+- `autoEdit` 会自动批准文件写入类工具；shell 命令仍需要确认。
 - session 持久化目前是 JSON，不是 SQLite 或可查询事件数据库。
 
 暂不实现：
 
-- 并发工具执行和文件锁。
+- 并发工具执行和跨进程文件编辑锁。
 - SubAgent 和 GroupSession runtime。
 - MCP、plugin、skill 自动发现。
 - workflow scheduler 或 delegation engine。

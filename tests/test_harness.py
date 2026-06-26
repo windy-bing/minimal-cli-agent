@@ -187,6 +187,39 @@ class HarnessTest(unittest.TestCase):
 
         self.assertEqual(observation.result.exit_code, 0)
 
+    def test_edit_file_replaces_line_range(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "notes.txt"
+            path.write_text("one\ntwo\nthree\n", encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="autoEdit"))
+
+            observation = harness.execute_tool(
+                ToolCall(name=Tools.EDIT_FILE, payload=json.dumps({"path": "notes.txt", "start_line": 2, "end_line": 2, "content": "TWO"}))
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "one\nTWO\nthree\n")
+
+        self.assertEqual(observation.result.exit_code, 0)
+        self.assertIn("Edited notes.txt lines 2-2", observation.result.output)
+
+    def test_edit_file_rejects_invalid_json_without_writing(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "config.json"
+            path.write_text('{"ok": true}\n', encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="autoEdit"))
+
+            observation = harness.execute_tool(
+                ToolCall(name=Tools.EDIT_FILE, payload=json.dumps({"path": "config.json", "start_line": 1, "end_line": 1, "content": '{"bad":'}))
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), '{"ok": true}\n')
+
+        self.assertTrue(observation.result.skipped)
+        self.assertEqual(observation.result.exit_code, 2)
+        self.assertIn("Structured file validation failed", observation.result.output)
+
     def test_write_file_rejects_invalid_toml_without_writing(self) -> None:
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "pyproject.toml"

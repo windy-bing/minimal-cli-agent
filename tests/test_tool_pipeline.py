@@ -132,6 +132,25 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertEqual(input_mock.call_count, 1)
         self.assertEqual(observation.result.exit_code, 0)
 
+    def test_default_mode_can_use_confirmation_callback(self) -> None:
+        approvals: list[tuple[str, str]] = []
+
+        def approve(action: str, payload: str) -> bool:
+            approvals.append((action, payload))
+            return True
+
+        with TemporaryDirectory() as tmp:
+            harness = AgentHarness(
+                AgentConfig(cwd=Path(tmp), permission_mode="default"),
+                confirmation_handler=approve,
+            )
+            observation = harness.execute_tool(
+                ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": "notes.txt", "content": "hello"}))
+            )
+
+        self.assertEqual(observation.result.exit_code, 0)
+        self.assertEqual(approvals[0][0], Tools.WRITE_FILE)
+
     def test_sensitive_file_paths_are_hard_denied_even_in_auto_edit(self) -> None:
         harness = AgentHarness(AgentConfig(permission_mode="autoEdit"))
 

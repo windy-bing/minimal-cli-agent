@@ -18,6 +18,8 @@ from minimal_cli_agent.exceptions import ConfigurationError, PermissionDenied
 from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.types import AgentConfig, ToolDecision
 
+ConfirmationHandler = Callable[[str, str], bool]
+
 
 @dataclass(frozen=True)
 class ShellPolicyRules:
@@ -56,14 +58,20 @@ def read_token_list(raw: dict, field: str) -> tuple[str, ...]:
 
 
 class ShellPermissionPolicy:
-    def __init__(self, config: AgentConfig, audit_recorder: Callable[[str, dict], None] | None = None) -> None:
+    def __init__(
+        self,
+        config: AgentConfig,
+        audit_recorder: Callable[[str, dict], None] | None = None,
+        confirmation_handler: ConfirmationHandler | None = None,
+    ) -> None:
         self.config = config
         self.audit_recorder = audit_recorder
+        self.confirmation_handler = confirmation_handler or input_confirmation_handler
         self.approved_tool_calls: set[tuple[str, str]] = set()
         self.rules = load_shell_policy_rules(config)
 
     def decide(self, action: str, payload: str) -> ToolDecision:
-        if action not in {Tools.SHELL, Tools.WRITE_FILE, *Tools.READ_ONLY}:
+        if action not in {Tools.SHELL, *Tools.WRITERS, *Tools.READ_ONLY}:
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Unknown action type: {action}")
 
         lowered = permission_target(action, payload).lower()
@@ -83,8 +91,8 @@ class ShellPermissionPolicy:
         if self.config.permission_mode == PermissionModes.PLAN:
             return ToolDecision(kind=ToolDecisionKinds.SKIP, reason=f"plan mode does not execute {action}")
 
-        if action == Tools.WRITE_FILE and self.config.permission_mode == PermissionModes.AUTO_EDIT:
-            return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="autoEdit mode allows file writes")
+        if action in Tools.WRITERS and self.config.permission_mode == PermissionModes.AUTO_EDIT:
+            return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="autoEdit mode allows file edits")
 
         if self.config.permission_mode in {PermissionModes.DEFAULT, PermissionModes.AUTO_EDIT}:
             if (action, payload) in self.approved_tool_calls:
@@ -96,8 +104,7 @@ class ShellPermissionPolicy:
     def confirm(self, action: str, payload: str, decision: ToolDecision) -> ToolDecision:
         if decision.kind != ToolDecisionKinds.ASK:
             return decision
-        answer = input(f"\nAllow {action}?\n{payload}\n[y/N] ").strip().lower()
-        if answer not in {"y", "yes"}:
+        if not self.confirmation_handler(action, payload):
             self._record_permission_event(action, payload, ToolDecisionKinds.DENY, "user denied")
             raise PermissionDenied(f"User denied {action}: {payload}")
         self.approved_tool_calls.add((action, payload))
@@ -121,7 +128,7 @@ class ShellPermissionPolicy:
 
 
 def permission_target(action: str, payload: str) -> str:
-    if action in {Tools.WRITE_FILE, *Tools.READ_ONLY}:
+    if action in {*Tools.WRITERS, *Tools.READ_ONLY}:
         try:
             raw = json.loads(payload)
         except json.JSONDecodeError:
@@ -129,3 +136,8 @@ def permission_target(action: str, payload: str) -> str:
         if isinstance(raw, dict):
             return str(raw.get(ToolPayloadFields.PATH, ""))
     return payload
+
+
+def input_confirmation_handler(action: str, payload: str) -> bool:
+    answer = input(f"\nAllow {action}?\n{payload}\n[y/N] ").strip().lower()
+    return answer in {"y", "yes"}

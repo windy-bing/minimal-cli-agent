@@ -33,11 +33,11 @@ The project is meant to grow into a harness-style agent. The important rule is t
 | Model calls | `ChatModel` through `AgentHarness` | LiteLLM, OpenAI Responses, more local models |
 | Model profiles | `profiles.py` | cc-switch-compatible config discovery |
 | Context window | `CompactingContextManager` | Model-based summarizer, retrieval-backed context |
-| Session persistence | `JsonSessionStore` | SQLite, event log, group session store |
+| Session persistence | `JsonSessionStore` with lock-protected atomic JSON writes | SQLite, indexed event log, group session store |
 | Tool invocation | `ToolRegistry` | MCP tools, browser tools, plugin tools |
 | Tool lifecycle | `ToolExecutionPipeline` | Hook arbitration, confirmation UI, retries, formatting |
 | Shell execution | `LocalEnvironment` | Docker environment, remote sandbox, workspace fork |
-| File tools | `FileToolEnvironment` | Structured edit/patch tools, format-aware validation |
+| File tools | `FileToolEnvironment` | Patch hunks, format-aware validation, cross-process file locks |
 | Permissions | `ShellPermissionPolicy` | Rule engine, approvals, audit log, scoped capabilities |
 | Delegation | Not implemented | SubAgent runner and workflow scheduler |
 
@@ -73,8 +73,9 @@ Implemented:
 - Isolated `/plan` command that creates a typed plan artifact without merging planning transcript into active chat context.
 - Optional model-generated context summaries with `--summarize-context`.
 - JSON session event log for permission approval audit records.
+- Lock-protected atomic JSON session writes with recent-message retention.
 - `ToolRegistry` for tool discovery.
-- Built-in workspace `read_file`, `read_tail`, `read_forward`, `search`, and `write_file` tools.
+- Built-in workspace `read_file`, `read_tail`, `read_forward`, `search`, `write_file`, and `edit_file` tools.
 - `search` has top-k, max-files, timeout, ignore-dir, extension, and `.gitignore` / `.agentignore` filters.
 - Structured write validation for JSON, TOML, XML, and YAML when PyYAML is available.
 - Tool aliases plus recoverable discovery and validation observations.
@@ -86,6 +87,8 @@ Implemented:
 - Network command hard gate with explicit `--allow-network` opt-in.
 - Configurable additional shell deny rules through `--policy-file`.
 - Typed plan artifact stored in `ChatContext.metadata` and persisted in JSON sessions.
+- Injectable permission confirmation handler; CLI input is the default adapter.
+- Pyright `basic` type-checking configuration for `src` and `tests`.
 - `ToolExecutionPipeline` with the full stage shape:
 
 ```text
@@ -99,14 +102,14 @@ Discovery -> Validation -> Permission -> PreHook -> ResolveDecision
 Reserved:
 
 - `ResolveDecision` has a decision hook baseline. Richer priority rules, conflict reporting, and session-scoped approval memory remain reserved.
-- `Confirmation` is currently CLI `input()`. A UI client can replace the policy/harness boundary later.
-- `autoEdit` automatically approves `write_file`; shell commands still ask for confirmation.
+- `Confirmation` uses an injectable handler. CLI `input()` is the default adapter, and UI clients can provide their own handler.
+- `autoEdit` automatically approves file writer tools; shell commands still ask for confirmation.
 - Tool schema validation is intentionally minimal. It currently supports per-tool expected format and validator callbacks, not full JSON Schema.
 - The event log is JSON-backed. It is durable, but not yet indexed or queryable like SQLite.
 
 Not implemented yet:
 
-- Parallel tool execution and file locks.
+- Parallel tool execution and cross-process file edit locks.
 - File-level write locks.
 - MCP/plugin/skill discovery.
 - SubAgent runner.
@@ -166,7 +169,7 @@ Memory should have layers:
 Current product modes are `default`, `autoEdit`, `plan`, and `yolo`.
 
 - `default`: shell commands ask for confirmation.
-- `autoEdit`: automatically approves `write_file`; shell commands still ask.
+- `autoEdit`: automatically approves file writer tools; shell commands still ask.
 - `plan`: allows read-only file tools, skips shell execution and file writes.
 - `yolo`: allow execution unless a hard deny rule blocks it.
 

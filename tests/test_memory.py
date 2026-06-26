@@ -61,6 +61,20 @@ class MemoryTest(unittest.TestCase):
         self.assertEqual(plan.steps, ["code", "test"])
         self.assertIsNone(cleared)
 
+    def test_json_session_store_keeps_recent_messages(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.json"
+            store = JsonSessionStore(path, max_messages=2)
+            store.save([
+                Message(role="user", content="one"),
+                Message(role="assistant", content="two"),
+                Message(role="user", content="three"),
+            ])
+
+            messages = store.load()
+
+        self.assertEqual([message.content for message in messages], ["two", "three"])
+
 
 if __name__ == "__main__":
     unittest.main()

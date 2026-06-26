@@ -129,6 +129,7 @@ class Defaults:
     COMMAND_TIMEOUT: Final = "30"
     MODEL_TIMEOUT: Final = "300"
     CONTEXT_TAIL_MESSAGES: Final = "8"
+    SESSION_MAX_MESSAGES: Final = "200"
 
 
 class FileToolDefaults:
@@ -169,13 +170,19 @@ class Tools:
     WRITE_FILE: Final = "write_file"
     WRITE_FILE_ALIASES: Final = ("write", "writeFile")
     WRITE_FILE_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt","content":"new file content"}'
+    EDIT_FILE: Final = "edit_file"
+    EDIT_FILE_ALIASES: Final = ("edit", "patch_file", "patchFile")
+    EDIT_FILE_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt","start_line":10,"end_line":12,"content":"replacement"}'
     READ_ONLY: Final = (READ_FILE, READ_TAIL, READ_FORWARD, SEARCH)
+    WRITERS: Final = (WRITE_FILE, EDIT_FILE)
 
 
 class ToolPayloadFields:
     TOOL: Final = "tool"
     PATH: Final = "path"
     CONTENT: Final = "content"
+    START_LINE: Final = "start_line"
+    END_LINE: Final = "end_line"
     LINES: Final = "lines"
     MAX_BYTES: Final = "max_bytes"
     OFFSET: Final = "offset"
