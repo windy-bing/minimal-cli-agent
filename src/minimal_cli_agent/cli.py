@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 from dataclasses import dataclass
 import os
 import sys
@@ -13,6 +14,7 @@ from minimal_cli_agent.exceptions import AgentError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import compact_messages
 from minimal_cli_agent.memory import JsonSessionStore
+from minimal_cli_agent.plan import PLAN_METADATA_KEY, build_plan_prompt, create_plan_artifact, format_plan_artifact
 from minimal_cli_agent.prompts import INTERACTIVE_SYSTEM_PROMPT
 from minimal_cli_agent.profiles import resolve_profile
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions
@@ -77,6 +79,10 @@ def main(argv: list[str] | None = None) -> int:
         session_store = JsonSessionStore(args.session) if args.session else None
         harness = AgentHarness(config=config, session_store=session_store)
         context = ChatContext(messages=session_store.load() if session_store else [])
+        if session_store:
+            plan = session_store.load_plan()
+            if plan is not None:
+                context.metadata[PLAN_METADATA_KEY] = plan
         agent = Agent(config=config, harness=harness)
         if args.interactive or not task:
             return run_interactive(agent, context, session_store, first_message=task or None)
@@ -160,7 +166,7 @@ def run_interactive(
 
 
 def print_quick_command_hint() -> None:
-    print("Commands: /help, /config, /profile, /permission, /context, /review, /exit")
+    print("Commands: /help, /config, /profile, /permission, /context, /plan, /review, /exit")
 
 
 def print_interactive_help() -> None:
@@ -219,6 +225,9 @@ def handle_interactive_command(raw: str, session: InteractiveSession) -> Interac
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.CONTEXT:
         handle_context_command(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.PLAN:
+        handle_plan_command(session, argument)
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.REVIEW:
         review_target = argument or "the current project"
@@ -322,6 +331,48 @@ def handle_context_command(session: InteractiveSession, action: str) -> None:
         )
         return
     print(f"Usage: {InteractiveCommands.CONTEXT} status|compact|clear")
+
+
+def handle_plan_command(session: InteractiveSession, argument: str) -> None:
+    if not argument or argument == "show":
+        plan = session.context.metadata.get(PLAN_METADATA_KEY)
+        if plan is None:
+            print("no active plan")
+            return
+        print(format_plan_artifact(plan))
+        return
+    if argument == "clear":
+        session.context.metadata.pop(PLAN_METADATA_KEY, None)
+        if session.session_store:
+            session.session_store.save_plan(None)
+        print("plan cleared")
+        return
+
+    planning_config = copy.copy(session.agent.config)
+    planning_config.permission_mode = PermissionModes.PLAN
+    planning_agent = Agent(
+        config=planning_config,
+        harness=AgentHarness(config=planning_config, model=session.agent.harness.model),
+    )
+    planning_context = ChatContext()
+    exit_code = run_turn(
+        planning_agent,
+        build_plan_prompt(argument),
+        planning_context,
+        session_store=None,
+        options=LoopOptions(allow_final_text=True, system_prompt=INTERACTIVE_SYSTEM_PROMPT),
+    )
+    if exit_code != 0:
+        print("Plan creation failed. You can adjust options and retry.")
+        return
+
+    assistant_messages = [message.content for message in planning_context.messages if message.role == "assistant"]
+    plan = create_plan_artifact(argument, assistant_messages[-1] if assistant_messages else "")
+    session.context.metadata[PLAN_METADATA_KEY] = plan
+    if session.session_store:
+        session.session_store.save_plan(plan)
+    print("plan saved")
+    print(format_plan_artifact(plan))
 
 
 def rebuild_agent(session: InteractiveSession, config: AgentConfig | None = None) -> None:

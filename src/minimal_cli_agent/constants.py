@@ -59,6 +59,7 @@ class LoopEventData:
 class SessionFields:
     MESSAGES: Final = "messages"
     EVENTS: Final = "events"
+    PLAN: Final = "plan"
     ROLE: Final = "role"
     CONTENT: Final = "content"
     KIND: Final = "kind"
@@ -198,6 +199,7 @@ class InteractiveCommands:
     NETWORK: Final = "/network"
     SUMMARIZE: Final = "/summarize"
     CONTEXT: Final = "/context"
+    PLAN: Final = "/plan"
     REVIEW: Final = "/review"
     EXIT: Final = "/exit"
     QUIT: Final = "/quit"
@@ -215,6 +217,7 @@ class InteractiveCommands:
         NETWORK: "Toggle network shell commands. Usage: /network on|off",
         SUMMARIZE: "Toggle model context summaries. Usage: /summarize on|off",
         CONTEXT: "Manage context. Usage: /context status|compact|clear",
+        PLAN: "Create, show, or clear an isolated plan. Usage: /plan <goal>|show|clear",
         REVIEW: "Ask the agent to review the current project or a path. Usage: /review [path]",
         EXIT: "Exit interactive mode.",
         QUIT: "Exit interactive mode.",
@@ -232,5 +235,6 @@ class InteractiveCommands:
         NETWORK,
         SUMMARIZE,
         CONTEXT,
+        PLAN,
         REVIEW,
     )

@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 
 from minimal_cli_agent.constants import EventKinds, PermissionEventFields
 from minimal_cli_agent.memory import JsonSessionStore, compact_messages
+from minimal_cli_agent.plan import PlanArtifact
 from minimal_cli_agent.types import EventRecord, Message
 
 
@@ -41,6 +42,24 @@ class MemoryTest(unittest.TestCase):
         self.assertEqual(messages, [Message(role="user", content="hello")])
         self.assertEqual(events[0].kind, EventKinds.PERMISSION_DECISION)
         self.assertEqual(events[0].data[PermissionEventFields.DECISION], "allow")
+
+    def test_json_session_store_persists_and_clears_plan(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.json"
+            store = JsonSessionStore(path)
+            store.save([Message(role="user", content="hello")])
+            store.save_plan(PlanArtifact(goal="ship feature", summary="Implement in small steps", steps=["code", "test"]))
+
+            plan = store.load_plan()
+            messages = store.load()
+            store.save_plan(None)
+            cleared = store.load_plan()
+
+        self.assertEqual(messages, [Message(role="user", content="hello")])
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan.goal, "ship feature")
+        self.assertEqual(plan.steps, ["code", "test"])
+        self.assertIsNone(cleared)
 
 
 if __name__ == "__main__":

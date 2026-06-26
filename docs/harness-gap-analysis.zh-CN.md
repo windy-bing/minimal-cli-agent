@@ -31,7 +31,7 @@
 | 文件读取工具性能 | 已实现 `read_tail` / `read_forward` 基线，但还没有更细的编码、二进制和分页状态治理 | 继续补 byte/line 双模式、二进制检测和分页游标 |
 | grep/search top-k | 已实现 `search(pattern,path,top_k,max_files,timeout_ms)`，支持额外 ignore dirs、extension filter 和项目 ignore 文件解析 | 继续补渐进输出和 richer ranking |
 | 结构化文本编辑校验 | 已有 JSON/TOML/XML 写入前校验，YAML 在 PyYAML 可用时校验；还没有 schema 级校验和自动格式化 | 下一步补 JSON Schema、YAML schema、格式化建议和字段级 repair observation |
-| Plan Mode 上下文隔离 | 探索噪音会污染执行阶段，计划和执行工具集也可能混在一起 | Plan 应该是独立 context、独立 tool allowlist，并输出 typed plan artifact |
+| Plan Mode 上下文隔离 | `/plan` 已使用独立 context 和 `plan` 权限生成 typed plan artifact，不合并计划 transcript | 下一步让 execute 阶段显式读取 active plan，并按计划约束 tool allowlist |
 | OS shell adapter | 只假设 bash 会伤害 Windows/Powershell/cmd/Git Bash 场景 | 增加 `ShellAdapter`：bash/zsh/powershell/cmd/git-bash；显式暴露 shell、encoding、path rules 给模型 |
 | 环境变量刷新 | 长会话里环境变化不能被 runtime 感知 | Environment 每次执行前重建 env snapshot，并记录差异或允许 hook 更新 |
 | 编码和换行 | Windows/codepage/二进制输出可能破坏 observation | 统一 stdout/stderr decoding 策略，保留 raw bytes 截断摘要 |
@@ -57,7 +57,7 @@
 | 能力 | 为什么优先 |
 | --- | --- |
 | 完整 schema validation + repair observation | 已有字段级 schema validation 基线，下一步补完整 JSON Schema 子集和 schema 文档生成 |
-| Plan/Execute 双上下文 | Coding agent 的计划噪音和执行历史应该隔离，否则长任务会持续污染上下文 |
+| Plan/Execute 双上下文 | 已有 `/plan` 隔离 context 和 typed plan artifact；execute 阶段还未强制消费 active plan |
 | 文件工具流式读取和搜索 top-k | 已有 timeout、显式 ignore/filter 和项目 ignore 文件解析基线，下一步应补分页游标和更强 ranking |
 | 结构化编辑校验 | 已有写入前 parse validation 基线，下一步做 schema/format/repair 增强 |
 | ShellAdapter 跨平台设计 | CLI agent 不能长期只假设 bash，尤其不能把 Git Bash 当成 Windows 原生 shell |
@@ -88,9 +88,10 @@
 
 目标是让 Plan Mode 变成真正的 harness 能力。
 
-- `plan` 阶段只能用只读工具和 `WritePlan`。
-- `execute` 阶段读取 typed plan artifact，并使用不同 tool allowlist。
-- plan transcript 不直接并入 execute context，只保留计划摘要、决策和必要证据。
+- `/plan` 阶段只使用 `plan` 权限和只读工具，产出 typed plan artifact。
+- `/plan` 已使用独立 context 和 `plan` 权限生成 typed plan artifact。
+- plan transcript 不直接并入 execute context，只保留计划摘要、步骤和必要证据。
+- 下一步让 `execute` 阶段读取 typed plan artifact，并使用不同 tool allowlist。
 
 ### Phase 4: Cross-platform Environment
 

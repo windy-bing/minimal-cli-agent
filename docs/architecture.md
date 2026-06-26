@@ -68,7 +68,8 @@ Implemented:
 - `ChatContext` carries session id, messages, and metadata from the caller.
 - `LoopEvent` / `LoopResult` for stream-style UI integration.
 - Multi-turn CLI REPL that reuses one `ChatContext` across turns.
-- REPL slash commands for runtime profile/provider/model/base URL/permission/network/context/review control.
+- REPL slash commands for runtime profile/provider/model/base URL/permission/network/context/plan/review control.
+- Isolated `/plan` command that creates a typed plan artifact without merging planning transcript into active chat context.
 - Optional model-generated context summaries with `--summarize-context`.
 - JSON session event log for permission approval audit records.
 - `ToolRegistry` for tool discovery.
@@ -83,6 +84,7 @@ Implemented:
 - Secret redaction for command output and observations.
 - Network command hard gate with explicit `--allow-network` opt-in.
 - Configurable additional shell deny rules through `--policy-file`.
+- Typed plan artifact stored in `ChatContext.metadata` and persisted in JSON sessions.
 - `ToolExecutionPipeline` with the full stage shape:
 
 ```text

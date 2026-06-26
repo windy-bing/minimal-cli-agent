@@ -5,6 +5,7 @@ from minimal_cli_agent.agent import Agent
 from minimal_cli_agent.cli import detect_explicit_options, run_interactive, run_turn
 from minimal_cli_agent.exceptions import ModelRequestError
 from minimal_cli_agent.harness import AgentHarness
+from minimal_cli_agent.plan import PLAN_METADATA_KEY
 from minimal_cli_agent.types import AgentConfig, ChatContext, Message
 
 
@@ -105,7 +106,7 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
-        self.assertIn("Commands: /help, /config, /profile, /permission, /context, /review, /exit", printed)
+        self.assertIn("Commands: /help, /config, /profile, /permission, /context, /plan, /review, /exit", printed)
 
     def test_detect_explicit_options_supports_space_and_equals_forms(self) -> None:
         explicit = detect_explicit_options([
@@ -223,6 +224,43 @@ class CliTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 1)
         self.assertTrue(any(message.role == "user" and "Review src" in message.content for message in context.messages))
+
+    def test_run_interactive_plan_command_uses_isolated_context(self) -> None:
+        model = SequenceModel([
+            "Summary: Improve test coverage.\nSteps:\n- Inspect tests\n- Add focused cases\nEvidence:\n- docs/architecture.md"
+        ])
+        config = AgentConfig(permission_mode="autoEdit")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+        context = ChatContext(messages=[Message(role="user", content="existing chat")])
+
+        with patch("builtins.input", side_effect=["/plan show", "/quit"]), patch("builtins.print") as print_mock:
+            exit_code = run_interactive(agent, context, first_message="/plan improve tests")
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        plan = context.metadata[PLAN_METADATA_KEY]
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(model.calls, 1)
+        self.assertEqual(agent.config.permission_mode, "autoEdit")
+        self.assertEqual([message.content for message in context.messages], ["existing chat"])
+        self.assertEqual(plan.goal, "improve tests")
+        self.assertIn("Inspect tests", plan.steps)
+        self.assertIn("plan saved", printed)
+        self.assertIn("goal: improve tests", printed)
+
+    def test_run_interactive_plan_clear_removes_active_plan(self) -> None:
+        model = SequenceModel(["Summary: Keep it small.\nSteps:\n- One"])
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+        context = ChatContext()
+
+        with patch("builtins.input", side_effect=["/plan clear", "/plan show", "/quit"]), patch("builtins.print") as print_mock:
+            exit_code = run_interactive(agent, context, first_message="/plan small change")
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertNotIn(PLAN_METADATA_KEY, context.metadata)
+        self.assertIn("plan cleared", printed)
+        self.assertIn("no active plan", printed)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ The project starts intentionally small, but the code is split into replaceable m
 
 - Runs as a terminal CLI.
 - Supports multi-turn interactive sessions with `--interactive`; running without a task starts the same REPL.
-- Supports slash commands for runtime profile/model/permission/context/review control.
+- Supports slash commands for runtime profile/model/permission/context/plan/review control.
 - Supports local Ollama chat models by default.
 - Supports Ollama, Codex CLI login, Claude/Anthropic, and Gemini profiles.
 - Supports OpenAI-compatible `/chat/completions` endpoints directly.
@@ -140,8 +140,13 @@ Most startup options can also be changed inside the REPL:
 /context status
 /context compact
 /context clear
+/plan improve test coverage
+/plan show
+/plan clear
 /review src/minimal_cli_agent
 ```
+
+`/plan <goal>` runs an isolated planning turn with `plan` permissions, saves a typed plan artifact, and does not merge the planning transcript into the active chat context. With `--session`, the active plan is persisted alongside messages and audit events.
 
 `/review [path]` runs a review turn through the same agent loop, so it can inspect files with `read_file` and use the current permission mode.
 
@@ -254,6 +259,7 @@ Implemented:
 - Permission decision type with `allow`, `ask`, `deny`, and `skip`.
 - Product permission modes: `default`, `autoEdit`, `plan`, `yolo`.
 - JSON session event log for permission approval audit records.
+- `/plan` creates an isolated typed plan artifact that can be shown, cleared, and persisted in the session file.
 - Optional model-generated context summaries with `--summarize-context`.
 
 Reserved but intentionally minimal:

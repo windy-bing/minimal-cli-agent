@@ -12,7 +12,7 @@
 
 - 作为终端 CLI 运行。
 - 支持 `--interactive` 多轮交互会话；不传 task 时也会进入同一个 REPL。
-- 支持 slash commands，在运行时切换 profile/model/permission/context/review。
+- 支持 slash commands，在运行时切换 profile/model/permission/context/plan/review。
 - 默认支持本地 Ollama chat 模型。
 - 支持 Ollama、Codex CLI 登录态、Claude/Anthropic、Gemini profile。
 - 支持直接指定 OpenAI-compatible `/chat/completions` 接口。
@@ -140,8 +140,13 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 /context status
 /context compact
 /context clear
+/plan improve test coverage
+/plan show
+/plan clear
 /review src/minimal_cli_agent
 ```
+
+`/plan <goal>` 会用 `plan` 权限运行一次隔离的计划 turn，保存 typed plan artifact，并且不会把计划阶段 transcript 合并进当前聊天上下文。传入 `--session` 时，active plan 会和 messages、审计事件一起持久化。
 
 `/review [path]` 会通过同一个 agent loop 发起 review turn，所以它可以用 `read_file` 检查文件，并遵守当前 permission mode。
 
@@ -254,6 +259,7 @@ src/minimal_cli_agent/
 - `ToolDecision`：`allow`、`ask`、`deny`、`skip`。
 - 产品权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - JSON session event log，用于记录权限批准审计事件。
+- `/plan` 会创建隔离的 typed plan artifact，可查看、清除，并可持久化到 session 文件。
 - 通过 `--summarize-context` 可选启用模型生成式上下文摘要。
 
 已预留但保持最小实现：
