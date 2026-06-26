@@ -47,6 +47,7 @@ ls -la
 - Executes commands with timeout and non-interactive environment variables.
 - Reads, pages, tails, searches, and writes workspace files through structured tools instead of forcing file operations through shell commands.
 - Search supports `top_k`, `max_files`, `timeout_ms`, extra `ignore_dirs`, and `include_extensions`.
+- Search reads workspace `.gitignore` and `.agentignore` files for common directory and glob ignore patterns.
 - Validates JSON, TOML, and XML before `write_file` writes them; YAML is validated when PyYAML is available.
 - Redacts common API keys, bearer tokens, and secret-looking values from command observations.
 - Blocks obvious network shell commands unless `--allow-network` is passed.
@@ -246,6 +247,7 @@ Implemented:
 - `LoopEvent` / `LoopResult` for event-oriented loop output.
 - `ToolRegistry` and staged `ToolExecutionPipeline`.
 - Built-in `read_file`, `read_tail`, `read_forward`, `search`, and `write_file` tools for bounded workspace file access.
+- `search` respects built-in ignore dirs, explicit `ignore_dirs`, and workspace `.gitignore` / `.agentignore` patterns.
 - Structured write validation for JSON, TOML, XML, and optional PyYAML-backed YAML.
 - `ToolSpec` supports lightweight parameter schemas with field-level validation errors.
 - `ResolveDecision` supports decision hooks that can override policy decisions before confirmation.

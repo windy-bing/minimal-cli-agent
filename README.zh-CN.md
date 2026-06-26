@@ -47,6 +47,7 @@ ls -la
 - 执行命令时带超时控制和非交互环境变量。
 - 通过结构化工具读取、分页读取、读取尾部、搜索和写入工作区文件，不强迫模型用 shell 操作文件。
 - 搜索支持 `top_k`、`max_files`、`timeout_ms`、额外 `ignore_dirs` 和 `include_extensions`。
+- 搜索会读取工作区 `.gitignore` 和 `.agentignore`，支持常见目录和 glob 忽略模式。
 - `write_file` 写入 JSON、TOML、XML 前会先校验格式；YAML 在安装 PyYAML 时也会校验。
 - 会从命令 observation 中清洗常见 API key、bearer token 和疑似密钥值。
 - 默认阻止明显的网络 shell 命令，除非显式传入 `--allow-network`。
@@ -246,6 +247,7 @@ src/minimal_cli_agent/
 - 用于 UI/CLI 集成的 `LoopEvent` / `LoopResult`。
 - `ToolRegistry` 和分阶段 `ToolExecutionPipeline`。
 - 内置 `read_file`、`read_tail`、`read_forward`、`search` 和 `write_file`，支持有边界地访问和修改工作区文件。
+- `search` 会同时遵守内置忽略目录、显式 `ignore_dirs`、工作区 `.gitignore` / `.agentignore`。
 - 对 JSON、TOML、XML 和可选 PyYAML 支持的 YAML 做结构化写入校验。
 - `ToolSpec` 支持轻量参数 schema，并返回字段级校验错误。
 - `ResolveDecision` 支持 decision hooks，可以在确认前覆盖 policy 决策。

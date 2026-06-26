@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import json
 import re
 import time
@@ -166,6 +167,7 @@ class FileToolEnvironment:
         )
         ignore_dirs = FileToolDefaults.IGNORED_DIRS + read_string_tuple(data, ToolPayloadFields.IGNORE_DIRS)
         include_extensions = normalize_extensions(read_string_tuple(data, ToolPayloadFields.INCLUDE_EXTENSIONS))
+        ignore_patterns = load_ignore_patterns(self.config.cwd.resolve(), root)
         try:
             regex = re.compile(pattern)
         except re.error:
@@ -179,6 +181,7 @@ class FileToolEnvironment:
             workspace=self.config.cwd.resolve(),
             timeout_ms=timeout_ms,
             ignore_dirs=ignore_dirs,
+            ignore_patterns=ignore_patterns,
             include_extensions=include_extensions,
         )
         output = "\n".join(result.matches) if result.matches else "no matches"
@@ -334,10 +337,22 @@ def search_text(
     workspace: Path,
     timeout_ms: int,
     ignore_dirs: tuple[str, ...],
+    ignore_patterns: tuple[str, ...],
     include_extensions: tuple[str, ...],
 ) -> SearchResult:
     deadline = time.monotonic() + (timeout_ms / 1000)
-    files = [root] if root.is_file() else iter_text_files(root, max_files=max_files, ignore_dirs=ignore_dirs, include_extensions=include_extensions)
+    files = (
+        [root]
+        if root.is_file()
+        else iter_text_files(
+            root,
+            max_files=max_files,
+            workspace=workspace,
+            ignore_dirs=ignore_dirs,
+            ignore_patterns=ignore_patterns,
+            include_extensions=include_extensions,
+        )
+    )
     matches: list[str] = []
     scanned = 0
     timed_out = False
@@ -364,16 +379,78 @@ def search_text(
     return SearchResult(matches=matches, scanned_files=scanned, timed_out=timed_out)
 
 
-def iter_text_files(root: Path, max_files: int, ignore_dirs: tuple[str, ...], include_extensions: tuple[str, ...]):
+def iter_text_files(
+    root: Path,
+    max_files: int,
+    workspace: Path,
+    ignore_dirs: tuple[str, ...],
+    ignore_patterns: tuple[str, ...],
+    include_extensions: tuple[str, ...],
+):
     yielded = 0
     for path in sorted(root.rglob("*")):
         if yielded >= max_files:
             break
-        if any(part in ignore_dirs for part in path.parts):
+        if should_ignore_path(path, workspace=workspace, ignore_dirs=ignore_dirs, ignore_patterns=ignore_patterns):
             continue
         if path.is_file() and (not include_extensions or path.suffix in include_extensions):
             yielded += 1
             yield path
+
+
+def load_ignore_patterns(workspace: Path, root: Path) -> tuple[str, ...]:
+    search_dirs = [workspace]
+    if root.is_dir() and root.resolve() != workspace:
+        search_dirs.append(root.resolve())
+
+    patterns: list[str] = []
+    seen_files: set[Path] = set()
+    for directory in search_dirs:
+        for name in FileToolDefaults.IGNORE_FILES:
+            path = directory / name
+            if path in seen_files or not path.is_file():
+                continue
+            seen_files.add(path)
+            patterns.extend(parse_ignore_file(path))
+    return tuple(patterns)
+
+
+def parse_ignore_file(path: Path) -> list[str]:
+    patterns: list[str] = []
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return patterns
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("!"):
+            continue
+        patterns.append(stripped)
+    return patterns
+
+
+def should_ignore_path(path: Path, workspace: Path, ignore_dirs: tuple[str, ...], ignore_patterns: tuple[str, ...]) -> bool:
+    relative = path.relative_to(workspace).as_posix()
+    parts = relative.split("/")
+    if any(part in ignore_dirs for part in parts):
+        return True
+
+    for pattern in ignore_patterns:
+        normalized = pattern.strip().lstrip("/")
+        if not normalized:
+            continue
+        if normalized.endswith("/"):
+            directory = normalized.rstrip("/")
+            if directory in parts or relative.startswith(f"{directory}/"):
+                return True
+            continue
+        if "/" in normalized:
+            if fnmatch.fnmatch(relative, normalized):
+                return True
+            continue
+        if fnmatch.fnmatch(path.name, normalized) or any(fnmatch.fnmatch(part, normalized) for part in parts):
+            return True
+    return False
 
 
 def validate_structured_content(path: Path, content: str) -> str | None:

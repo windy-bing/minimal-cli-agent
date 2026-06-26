@@ -29,7 +29,7 @@
 | 完整 JSON Schema | 已有轻量 `ToolSpec.parameters_schema` 和字段级 repair observation；还不是完整 JSON Schema | 继续补 nested object、enum、oneOf、默认值和 schema 文档生成 |
 | 工具模糊识别 | 已在 Discovery 阶段返回安全的相近工具名建议，但不会自动执行猜测 | 后续可加入风险等级过滤和更细的提示文案 |
 | 文件读取工具性能 | 已实现 `read_tail` / `read_forward` 基线，但还没有更细的编码、二进制和分页状态治理 | 继续补 byte/line 双模式、二进制检测和分页游标 |
-| grep/search top-k | 已实现 `search(pattern,path,top_k,max_files,timeout_ms)`，支持额外 ignore dirs 和 extension filter | 继续补项目 ignore 文件解析、渐进输出和 richer ranking |
+| grep/search top-k | 已实现 `search(pattern,path,top_k,max_files,timeout_ms)`，支持额外 ignore dirs、extension filter 和项目 ignore 文件解析 | 继续补渐进输出和 richer ranking |
 | 结构化文本编辑校验 | 已有 JSON/TOML/XML 写入前校验，YAML 在 PyYAML 可用时校验；还没有 schema 级校验和自动格式化 | 下一步补 JSON Schema、YAML schema、格式化建议和字段级 repair observation |
 | Plan Mode 上下文隔离 | 探索噪音会污染执行阶段，计划和执行工具集也可能混在一起 | Plan 应该是独立 context、独立 tool allowlist，并输出 typed plan artifact |
 | OS shell adapter | 只假设 bash 会伤害 Windows/Powershell/cmd/Git Bash 场景 | 增加 `ShellAdapter`：bash/zsh/powershell/cmd/git-bash；显式暴露 shell、encoding、path rules 给模型 |
@@ -58,7 +58,7 @@
 | --- | --- |
 | 完整 schema validation + repair observation | 已有字段级 schema validation 基线，下一步补完整 JSON Schema 子集和 schema 文档生成 |
 | Plan/Execute 双上下文 | Coding agent 的计划噪音和执行历史应该隔离，否则长任务会持续污染上下文 |
-| 文件工具流式读取和搜索 top-k | 已有 timeout 和显式 ignore/filter 基线，下一步应补项目 ignore 文件解析、分页游标和更强 ranking |
+| 文件工具流式读取和搜索 top-k | 已有 timeout、显式 ignore/filter 和项目 ignore 文件解析基线，下一步应补分页游标和更强 ranking |
 | 结构化编辑校验 | 已有写入前 parse validation 基线，下一步做 schema/format/repair 增强 |
 | ShellAdapter 跨平台设计 | CLI agent 不能长期只假设 bash，尤其不能把 Git Bash 当成 Windows 原生 shell |
 | Prompt budget policy | harness 不只管工具和权限，也要管提示词预算、角色差异和规则注入 |
@@ -81,7 +81,7 @@
 
 - `read_tail(path, lines, max_bytes)` 已使用尾部窗口读取，不整文件读入。
 - `read_forward(path, offset, limit)` 已支持 byte offset 分页和最大输出。
-- `search(pattern, path, top_k, max_files, timeout_ms)` 已有 top-k、文件数、超时、额外忽略目录和扩展名过滤；下一步补项目 ignore 文件解析和 richer ranking。
+- `search(pattern, path, top_k, max_files, timeout_ms)` 已有 top-k、文件数、超时、额外忽略目录、扩展名过滤和 `.gitignore` / `.agentignore` 解析；下一步补 richer ranking。
 - `write_file` 已对 JSON/TOML/XML 做 parse validation，YAML 在 PyYAML 可用时校验；下一步补 schema validation 和自动格式化。
 
 ### Phase 3: Plan/Execute Separation

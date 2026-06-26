@@ -142,6 +142,7 @@ class FileToolDefaults:
     SEARCH_TIMEOUT_MS: Final = 2000
     SEARCH_MAX_TIMEOUT_MS: Final = 30000
     IGNORED_DIRS: Final = (".git", "__pycache__", ".venv", "node_modules", ".mypy_cache", ".pytest_cache")
+    IGNORE_FILES: Final = (".gitignore", ".agentignore")
     JSON_SUFFIXES: Final = (".json",)
     TOML_SUFFIXES: Final = (".toml",)
     XML_SUFFIXES: Final = (".xml",)

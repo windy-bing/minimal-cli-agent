@@ -108,6 +108,25 @@ class HarnessTest(unittest.TestCase):
         self.assertIn("visible.txt:1: needle visible", observation.result.output)
         self.assertNotIn("hidden", observation.result.output)
 
+    def test_search_respects_project_ignore_files(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".gitignore").write_text("ignored/\n*.log\n", encoding="utf-8")
+            (root / "visible.txt").write_text("needle visible\n", encoding="utf-8")
+            (root / "debug.log").write_text("needle log\n", encoding="utf-8")
+            ignored = root / "ignored"
+            ignored.mkdir()
+            (ignored / "hidden.txt").write_text("needle hidden\n", encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="plan"))
+
+            observation = harness.execute_tool(
+                ToolCall(name=Tools.SEARCH, payload=json.dumps({"pattern": "needle", "path": "."}))
+            )
+
+        self.assertIn("visible.txt:1: needle visible", observation.result.output)
+        self.assertNotIn("debug.log", observation.result.output)
+        self.assertNotIn("hidden", observation.result.output)
+
     def test_search_respects_include_extensions(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
