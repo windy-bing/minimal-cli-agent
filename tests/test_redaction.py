@@ -38,6 +38,26 @@ class RedactionTest(unittest.TestCase):
         self.assertNotIn("super-secret-token", observation)
         self.assertIn("<redacted", observation)
 
+    def test_command_result_observation_has_structured_fields(self) -> None:
+        result = CommandResult(command="echo hello", exit_code=0, output="hello")
+
+        observation = result.as_observation()
+
+        self.assertIn("Command finished with exit code 0:", observation)
+        self.assertIn("status: success", observation)
+        self.assertIn("exit_code: 0", observation)
+        self.assertIn("command:\n```text\necho hello\n```", observation)
+        self.assertIn("output:\n```text\nhello\n```", observation)
+
+    def test_skipped_command_result_observation_has_structured_fields(self) -> None:
+        result = CommandResult(command="echo hello", exit_code=0, output="plan mode", skipped=True)
+
+        observation = result.as_observation()
+
+        self.assertIn("Command skipped:", observation)
+        self.assertIn("status: skipped", observation)
+        self.assertIn("output:\n```text\nplan mode\n```", observation)
+
 
 if __name__ == "__main__":
     unittest.main()

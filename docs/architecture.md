@@ -78,6 +78,7 @@ Implemented:
 - Tool aliases plus recoverable discovery and validation observations.
 - Safe close-match suggestions for unknown tool names, without automatic fuzzy execution.
 - Lightweight `ToolSpec.parameters_schema` validation with field-level repair observations.
+- Consistent tool observation formatting with `status`, `exit_code`, `command`, and `output`.
 - Secret redaction for command output and observations.
 - Network command hard gate with explicit `--allow-network` opt-in.
 - Configurable additional shell deny rules through `--policy-file`.

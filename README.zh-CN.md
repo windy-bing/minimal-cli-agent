@@ -59,6 +59,7 @@ ls -la
 - 工具发现和参数校验失败时返回可恢复 observation，而不是直接把原始异常抛给用户。
 - 未知工具会返回安全的相近工具名建议，但不会自动猜测并执行。
 - 工具参数校验会对结构化 payload 返回字段级 repair observation。
+- 工具 observation 统一包含 `status`、`exit_code`、`command` 和 `output`。
 - Agent loop 运行在 `AgentHarness` 边界后面，tools、memory、policy、context、environment 可以独立演进。
 
 ## 为什么这样开始

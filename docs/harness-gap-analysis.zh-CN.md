@@ -72,7 +72,7 @@
 
 - `ToolSpec` 已支持轻量参数 schema；下一步补风险等级、输出 schema 和完整 JSON Schema 子集。
 - `Validation` 阶段已返回可恢复 observation 和字段级错误；下一步补 schema 文档生成和默认值提示。
-- `Formatting` 阶段统一 observation 格式，避免模型收到散乱异常文本。
+- `Formatting` 阶段已有统一 observation 基线，包含 `status`、`exit_code`、`command` 和 `output`；下一步补输出 schema 和机器可解析事件。
 - 为 `ToolExecutionPipeline` 增加 hook 仲裁和测试覆盖。
 
 ### Phase 2: File Tool Baseline

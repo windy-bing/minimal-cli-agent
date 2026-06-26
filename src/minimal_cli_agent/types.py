@@ -146,9 +146,17 @@ class CommandResult:
     def as_observation(self) -> str:
         command = redact_text(self.command)
         output = redact_text(self.output)
+        status = "skipped" if self.skipped else "success" if self.exit_code == 0 else "failed"
         if self.skipped:
-            return f"Command skipped:\n{command}\n\n{output}"
+            header = "Command skipped:"
+        else:
+            header = f"Command finished with exit code {self.exit_code}:"
         return (
-            f"Command finished with exit code {self.exit_code}:\n"
+            f"{header}\n"
+            f"status: {status}\n"
+            f"exit_code: {self.exit_code}\n"
+            "command:\n"
+            f"```text\n{command}\n```\n"
+            "output:\n"
             f"```text\n{output}\n```"
         )

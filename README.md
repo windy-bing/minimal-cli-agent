@@ -59,6 +59,7 @@ ls -la
 - Returns recoverable tool discovery and validation observations instead of surfacing raw exceptions.
 - Unknown tools return safe close-match suggestions without automatically executing guesses.
 - Tool parameter validation returns field-level repair observations for structured payloads.
+- Tool observations use a consistent `status`, `exit_code`, `command`, and `output` format.
 - Keeps the agent loop behind an `AgentHarness` boundary so tools, memory, policy, context, and environments can evolve independently.
 
 ## Why Start This Way
