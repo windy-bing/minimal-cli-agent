@@ -4,8 +4,8 @@ from tempfile import TemporaryDirectory
 
 from minimal_cli_agent.agent import Agent
 from minimal_cli_agent.constants import LoopEventTypes
-from minimal_cli_agent.harness import AgentHarness
-from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message
+from minimal_cli_agent.harness import AgentHarness, Observation
+from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message, ToolCall
 
 
 class FakeModel:
@@ -54,6 +54,16 @@ class MultiActionThenExitModel:
                 '```tool-action\n{"tool":"write_file","path":"output.txt","content":"done"}\n```'
             )
         return "Done.\n```bash-action\nexit\n```"
+
+
+class RecordingBatchHarness(AgentHarness):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.batches: list[list[str]] = []
+
+    def execute_tools(self, calls: list[ToolCall]) -> list[Observation]:
+        self.batches.append([call.name for call in calls])
+        return super().execute_tools(calls)
 
 
 class AgentTest(unittest.TestCase):
@@ -151,7 +161,7 @@ class AgentTest(unittest.TestCase):
             root = Path(tmp)
             (root / "input.txt").write_text("hello", encoding="utf-8")
             config = AgentConfig(cwd=root, permission_mode="autoEdit")
-            harness = AgentHarness(config=config, model=MultiActionThenExitModel())
+            harness = RecordingBatchHarness(config=config, model=MultiActionThenExitModel())
             agent = Agent(config=config, harness=harness)
 
             result = agent.chat("read and write", ChatContext())
@@ -160,6 +170,7 @@ class AgentTest(unittest.TestCase):
 
         observations = [message.content for message in result.final_messages if message.role == "user"]
         self.assertTrue(result.success)
+        self.assertEqual(harness.batches[0], ["read_file", "write_file"])
         self.assertTrue(any("read_file" in observation and "write_file" in observation for observation in observations))
 
 

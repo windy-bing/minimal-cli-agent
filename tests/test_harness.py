@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from minimal_cli_agent.constants import Tools
-from minimal_cli_agent.harness import AgentHarness
+from minimal_cli_agent.harness import AgentHarness, bucket_tool_calls
 from minimal_cli_agent.types import AgentConfig, ToolCall
 
 
@@ -73,6 +73,38 @@ class HarnessTest(unittest.TestCase):
             )
 
         self.assertEqual(observation.result.output, "cde")
+
+    def test_bucket_tool_calls_groups_reads_around_write_barriers(self) -> None:
+        calls = [
+            ToolCall(name=Tools.READ_FILE, payload='{"path":"a.txt"}'),
+            ToolCall(name=Tools.READ_TAIL, payload='{"path":"a.txt"}'),
+            ToolCall(name=Tools.WRITE_FILE, payload='{"path":"a.txt","content":"x"}'),
+            ToolCall(name=Tools.SEARCH, payload='{"pattern":"x","path":"."}'),
+        ]
+
+        buckets = bucket_tool_calls(calls)
+
+        self.assertEqual(
+            [[call.name for call in bucket] for bucket in buckets],
+            [["read_file", "read_tail"], ["write_file"], ["search"]],
+        )
+
+    def test_execute_tools_runs_read_batches_and_preserves_order(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.txt").write_text("alpha", encoding="utf-8")
+            (root / "b.txt").write_text("beta", encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="plan"))
+
+            observations = harness.execute_tools(
+                [
+                    ToolCall(name="read", payload=json.dumps({"path": "a.txt"})),
+                    ToolCall(name=Tools.READ_FILE, payload=json.dumps({"path": "b.txt"})),
+                ]
+            )
+
+        self.assertEqual([observation.action for observation in observations], ["read", "read_file"])
+        self.assertEqual([observation.result.output for observation in observations], ["alpha", "beta"])
 
     def test_read_forward_line_mode_returns_paging_metadata(self) -> None:
         with TemporaryDirectory() as tmp:

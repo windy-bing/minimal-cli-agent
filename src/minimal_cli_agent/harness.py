@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from minimal_cli_agent.context import CompactingContextManager
@@ -180,3 +182,52 @@ class AgentHarness:
 
     def execute_tool(self, call: ToolCall) -> Observation:
         return Observation(action=call.name, payload=call.payload, result=self.tool_pipeline.execute(call))
+
+    def execute_tools(self, calls: list[ToolCall]) -> list[Observation]:
+        observations: list[Observation] = []
+        for batch in bucket_tool_calls(calls, self.is_parallel_safe):
+            if len(batch) > 1:
+                observations.extend(self._execute_parallel_batch(batch))
+            else:
+                observations.extend(self.execute_tool(call) for call in batch)
+        return observations
+
+    def is_parallel_safe(self, call: ToolCall) -> bool:
+        try:
+            spec = self.tool_registry.require(call.name)
+        except KeyError:
+            return False
+        return spec.name in Tools.READ_ONLY
+
+    def _execute_parallel_batch(self, calls: list[ToolCall]) -> list[Observation]:
+        with ThreadPoolExecutor(max_workers=len(calls)) as executor:
+            futures = [executor.submit(self.execute_tool, call) for call in calls]
+            observations: list[Observation] = []
+            try:
+                for future in futures:
+                    observations.append(future.result())
+            except BaseException:
+                for future in futures:
+                    future.cancel()
+                raise
+            return observations
+
+
+def bucket_tool_calls(
+    calls: list[ToolCall],
+    is_parallel_safe: Callable[[ToolCall], bool] | None = None,
+) -> list[list[ToolCall]]:
+    is_parallel_safe = is_parallel_safe or (lambda call: call.name in Tools.READ_ONLY)
+    buckets: list[list[ToolCall]] = []
+    read_bucket: list[ToolCall] = []
+    for call in calls:
+        if is_parallel_safe(call):
+            read_bucket.append(call)
+            continue
+        if read_bucket:
+            buckets.append(read_bucket)
+            read_bucket = []
+        buckets.append([call])
+    if read_bucket:
+        buckets.append(read_bucket)
+    return buckets

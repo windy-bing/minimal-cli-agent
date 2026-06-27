@@ -57,15 +57,17 @@ class Agent:
                         type=LoopEventTypes.TOOL_CALL_START,
                         data={LoopEventData.TOOL: call.name, LoopEventData.PAYLOAD: call.payload},
                     )
-                    try:
-                        observation = self.harness.execute_tool(call).to_message().content
-                    except NonTerminatingAgentError as exc:
-                        observation = str(exc)
-                        observations.append(observation)
-                        yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
-                        break
+                try:
+                    tool_observations = self.harness.execute_tools(calls)
+                except NonTerminatingAgentError as exc:
+                    observation = str(exc)
                     observations.append(observation)
                     yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
+                else:
+                    for tool_observation in tool_observations:
+                        observation = tool_observation.to_message().content
+                        observations.append(observation)
+                        yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
 
             combined_observation = "\n\n".join(observations)
             messages.append(Message(role="user", content=combined_observation))
