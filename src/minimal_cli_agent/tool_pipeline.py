@@ -6,18 +6,27 @@ from typing import Callable
 from minimal_cli_agent.interfaces import PermissionPolicy
 from minimal_cli_agent.tool_registry import ToolRegistry
 from minimal_cli_agent.exceptions import PermissionDenied
-from minimal_cli_agent.constants import ToolDecisionKinds
+from minimal_cli_agent.constants import EventKinds, ToolDecisionEventFields, ToolDecisionKinds
+from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.types import CommandResult, ToolCall, ToolDecision, ToolDiscoveryError
 
 Hook = Callable[[ToolCall], None]
 PostHook = Callable[[ToolCall, CommandResult], None]
 DecisionHook = Callable[[ToolCall, ToolDecision], ToolDecision | None]
+AuditRecorder = Callable[[str, dict], None]
+
+
+@dataclass(frozen=True)
+class DecisionHookSpec:
+    hook: DecisionHook
+    name: str = "decision_hook"
+    priority: int = 100
 
 
 @dataclass
 class ToolPipelineHooks:
     pre_hooks: list[Hook] = field(default_factory=list)
-    decision_hooks: list[DecisionHook] = field(default_factory=list)
+    decision_hooks: list[DecisionHook | DecisionHookSpec] = field(default_factory=list)
     post_hooks: list[PostHook] = field(default_factory=list)
 
 
@@ -29,10 +38,12 @@ class ToolExecutionPipeline:
         registry: ToolRegistry,
         permission_policy: PermissionPolicy,
         hooks: ToolPipelineHooks | None = None,
+        audit_recorder: AuditRecorder | None = None,
     ) -> None:
         self.registry = registry
         self.permission_policy = permission_policy
         self.hooks = hooks or ToolPipelineHooks()
+        self.audit_recorder = audit_recorder
 
     def execute(self, call: ToolCall) -> CommandResult:
         try:
@@ -48,6 +59,7 @@ class ToolExecutionPipeline:
         validation_error = self._validation(canonical_call)
         if validation_error is not None:
             return CommandResult(command=call.payload, exit_code=2, output=validation_error.as_observation(), skipped=True)
+        canonical_call = ToolCall(name=spec.name, payload=spec.prepare_payload(canonical_call.payload))
         decision = self._permission(canonical_call)
         self._pre_hook(canonical_call)
         decision = self._resolve_decision(canonical_call, decision)
@@ -76,11 +88,48 @@ class ToolExecutionPipeline:
 
     def _resolve_decision(self, call: ToolCall, decision: ToolDecision) -> ToolDecision:
         resolved = decision
-        for hook in self.hooks.decision_hooks:
-            hook_decision = hook(call, resolved)
+        applied: list[dict[str, str | int]] = []
+        conflicting_kinds: set[str] = {decision.kind}
+        for hook_spec in sorted_decision_hooks(self.hooks.decision_hooks):
+            hook_decision = hook_spec.hook(call, resolved)
             if hook_decision is not None:
+                conflicting_kinds.add(hook_decision.kind)
+                applied.append(
+                    {
+                        "name": hook_spec.name,
+                        "priority": hook_spec.priority,
+                        "from": resolved.kind,
+                        "to": hook_decision.kind,
+                        "reason": hook_decision.reason,
+                    }
+                )
                 resolved = hook_decision
+        if applied:
+            self._record_decision_event(call, decision, resolved, applied, conflicting_kinds)
         return resolved
+
+    def _record_decision_event(
+        self,
+        call: ToolCall,
+        initial: ToolDecision,
+        final: ToolDecision,
+        hooks: list[dict[str, str | int]],
+        decision_kinds: set[str],
+    ) -> None:
+        if not self.audit_recorder:
+            return
+        kind = EventKinds.TOOL_DECISION_CONFLICT if len(decision_kinds) > 1 else EventKinds.TOOL_DECISION
+        self.audit_recorder(
+            kind,
+            {
+                ToolDecisionEventFields.ACTION: call.name,
+                ToolDecisionEventFields.INITIAL_DECISION: initial.kind,
+                ToolDecisionEventFields.FINAL_DECISION: final.kind,
+                ToolDecisionEventFields.REASON: final.reason,
+                ToolDecisionEventFields.HOOKS: hooks,
+                ToolDecisionEventFields.PAYLOAD: redact_text(call.payload),
+            },
+        )
 
     def _confirmation(self, call: ToolCall, decision: ToolDecision) -> ToolDecision:
         return self.permission_policy.confirm(call.name, call.payload, decision)
@@ -98,3 +147,14 @@ class ToolExecutionPipeline:
 
     def _formatting(self, result: CommandResult) -> CommandResult:
         return result
+
+
+def sorted_decision_hooks(hooks: list[DecisionHook | DecisionHookSpec]) -> list[DecisionHookSpec]:
+    normalized: list[DecisionHookSpec] = []
+    for index, hook in enumerate(hooks):
+        if isinstance(hook, DecisionHookSpec):
+            normalized.append(hook)
+            continue
+        hook_name = getattr(hook, "__name__", f"decision_hook_{index}")
+        normalized.append(DecisionHookSpec(hook=hook, name=str(hook_name), priority=100))
+    return sorted(normalized, key=lambda spec: (spec.priority, spec.name))

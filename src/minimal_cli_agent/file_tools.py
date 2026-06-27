@@ -27,8 +27,13 @@ READ_TAIL_SCHEMA = {
     "required": [ToolPayloadFields.PATH],
     "properties": {
         ToolPayloadFields.PATH: {"type": "string"},
-        ToolPayloadFields.LINES: {"type": "integer", "minimum": 1, "maximum": FileToolDefaults.TAIL_MAX_LINES},
-        ToolPayloadFields.MAX_BYTES: {"type": "integer", "minimum": 1},
+        ToolPayloadFields.LINES: {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": FileToolDefaults.TAIL_MAX_LINES,
+            "default": FileToolDefaults.TAIL_LINES,
+        },
+        ToolPayloadFields.MAX_BYTES: {"type": "integer", "minimum": 1, "default": FileToolDefaults.TAIL_MAX_BYTES},
     },
 }
 
@@ -37,11 +42,15 @@ READ_FORWARD_SCHEMA = {
     "required": [ToolPayloadFields.PATH],
     "properties": {
         ToolPayloadFields.PATH: {"type": "string"},
-        ToolPayloadFields.MODE: {"type": "string", "enum": ["bytes", "lines"]},
-        ToolPayloadFields.OFFSET: {"type": "integer", "minimum": 0},
-        ToolPayloadFields.LIMIT: {"type": "integer", "minimum": 1},
+        ToolPayloadFields.MODE: {"type": "string", "enum": ["bytes", "lines"], "default": "bytes"},
+        ToolPayloadFields.OFFSET: {"type": "integer", "minimum": 0, "default": 0},
+        ToolPayloadFields.LIMIT: {"type": "integer", "minimum": 1, "default": FileToolDefaults.FORWARD_LIMIT},
         ToolPayloadFields.LINE_OFFSET: {"type": "integer", "minimum": 0},
-        ToolPayloadFields.LINE_LIMIT: {"type": "integer", "minimum": 1, "maximum": FileToolDefaults.TAIL_MAX_LINES},
+        ToolPayloadFields.LINE_LIMIT: {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": FileToolDefaults.TAIL_MAX_LINES,
+        },
     },
 }
 
@@ -50,10 +59,25 @@ SEARCH_SCHEMA = {
     "required": [ToolPayloadFields.PATTERN],
     "properties": {
         ToolPayloadFields.PATTERN: {"type": "string"},
-        ToolPayloadFields.PATH: {"type": "string"},
-        ToolPayloadFields.TOP_K: {"type": "integer", "minimum": 1, "maximum": FileToolDefaults.SEARCH_MAX_TOP_K},
-        ToolPayloadFields.MAX_FILES: {"type": "integer", "minimum": 1, "maximum": FileToolDefaults.SEARCH_MAX_FILES_LIMIT},
-        ToolPayloadFields.TIMEOUT_MS: {"type": "integer", "minimum": 1, "maximum": FileToolDefaults.SEARCH_MAX_TIMEOUT_MS},
+        ToolPayloadFields.PATH: {"type": "string", "default": "."},
+        ToolPayloadFields.TOP_K: {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": FileToolDefaults.SEARCH_MAX_TOP_K,
+            "default": FileToolDefaults.SEARCH_TOP_K,
+        },
+        ToolPayloadFields.MAX_FILES: {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": FileToolDefaults.SEARCH_MAX_FILES_LIMIT,
+            "default": FileToolDefaults.SEARCH_MAX_FILES,
+        },
+        ToolPayloadFields.TIMEOUT_MS: {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": FileToolDefaults.SEARCH_MAX_TIMEOUT_MS,
+            "default": FileToolDefaults.SEARCH_TIMEOUT_MS,
+        },
         ToolPayloadFields.IGNORE_DIRS: {"type": "array", "items": {"type": "string"}},
         ToolPayloadFields.INCLUDE_EXTENSIONS: {"type": "array", "items": {"type": "string"}},
     },

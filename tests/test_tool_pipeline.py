@@ -8,7 +8,9 @@ from minimal_cli_agent.constants import EventKinds, PermissionEventFields, Permi
 from minimal_cli_agent.exceptions import ConfigurationError, PermissionDenied
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import JsonSessionStore
-from minimal_cli_agent.types import AgentConfig, ToolCall, ToolDecision
+from minimal_cli_agent.tool_pipeline import DecisionHookSpec
+from minimal_cli_agent.tool_registry import ToolRegistry, ToolSpec
+from minimal_cli_agent.types import AgentConfig, CommandResult, ToolCall, ToolDecision
 
 
 class ToolPipelineTest(unittest.TestCase):
@@ -48,6 +50,73 @@ class ToolPipelineTest(unittest.TestCase):
 
         with self.assertRaisesRegex(PermissionDenied, "hook denied"):
             harness.execute_shell("printf hello")
+
+    def test_decision_hooks_run_by_priority_and_record_conflict(self) -> None:
+        with TemporaryDirectory() as tmp:
+            store = JsonSessionStore(Path(tmp) / "session.json")
+            harness = AgentHarness(AgentConfig(permission_mode="yolo"), session_store=store)
+            seen: list[str] = []
+
+            def first(call: ToolCall, decision: ToolDecision) -> ToolDecision:
+                seen.append("first")
+                return ToolDecision(kind=ToolDecisionKinds.ASK, reason="review")
+
+            def second(call: ToolCall, decision: ToolDecision) -> ToolDecision:
+                seen.append("second")
+                return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="trusted")
+
+            harness.tool_pipeline.hooks.decision_hooks.extend(
+                [
+                    DecisionHookSpec(hook=second, name="second", priority=20),
+                    DecisionHookSpec(hook=first, name="first", priority=10),
+                ]
+            )
+
+            observation = harness.execute_shell("printf hello")
+            events = store.load_events()
+
+        self.assertEqual(seen, ["first", "second"])
+        self.assertEqual(observation.result.output, "hello")
+        self.assertEqual(events[0].kind, EventKinds.TOOL_DECISION_CONFLICT)
+        self.assertEqual(events[0].data["hooks"][0]["name"], "first")
+
+    def test_schema_defaults_are_applied_before_execution(self) -> None:
+        registry = ToolRegistry()
+        captured: list[str] = []
+        registry.register(
+            ToolSpec(
+                name="demo",
+                description="Demo tool.",
+                expected_format='{"path":"x","limit":5}',
+                parameters_schema={
+                    "type": "object",
+                    "required": ["path"],
+                    "properties": {
+                        "path": {"type": "string"},
+                        "limit": {"type": "integer", "default": 5},
+                    },
+                },
+                handler=lambda payload: captured.append(payload) or CommandResult("demo", 0, "ok"),
+            )
+        )
+        harness = AgentHarness(AgentConfig(permission_mode="yolo"), tool_registry=registry)
+        harness.tool_pipeline.hooks.decision_hooks.append(
+            lambda call, decision: ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="test tool")
+        )
+
+        result = harness.tool_pipeline.execute(ToolCall(name="demo", payload=json.dumps({"path": "x"})))
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(json.loads(captured[0]), {"path": "x", "limit": 5})
+
+    def test_tool_descriptions_include_schema_documentation(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="plan"))
+
+        descriptions = harness.tool_registry.descriptions()
+
+        self.assertIn("read_tail", descriptions)
+        self.assertIn("default=100", descriptions)
+        self.assertIn("mode(string, default=\"bytes\", enum=\"bytes\"|\"lines\")", descriptions)
 
     def test_validation_error_returns_repair_observation(self) -> None:
         harness = AgentHarness(AgentConfig(permission_mode="yolo"))

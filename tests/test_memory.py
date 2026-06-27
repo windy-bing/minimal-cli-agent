@@ -39,6 +39,33 @@ class MemoryTest(unittest.TestCase):
 
         self.assertEqual(messages, [Message(role="user", content="hello")])
 
+    def test_json_session_store_skips_malformed_message_records(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.json"
+            path.write_text(
+                '{"messages":[{"role":"user","content":"hello"},{"role":"bad","content":"x"},{"role":"assistant"}]}',
+                encoding="utf-8",
+            )
+            store = JsonSessionStore(path)
+
+            messages = store.load()
+
+        self.assertEqual(messages, [Message(role="user", content="hello")])
+
+    def test_json_session_store_skips_malformed_event_records(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.json"
+            path.write_text(
+                '{"events":[{"kind":"ok","timestamp":"2026-01-01T00:00:00+00:00","data":{}},{"kind":"bad"}]}',
+                encoding="utf-8",
+            )
+            store = JsonSessionStore(path)
+
+            events = store.load_events()
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].kind, "ok")
+
     def test_json_session_store_persists_messages_and_events(self) -> None:
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "session.json"

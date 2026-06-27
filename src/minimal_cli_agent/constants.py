@@ -70,6 +70,8 @@ class SessionFields:
 
 class EventKinds:
     PERMISSION_DECISION: Final = "permission_decision"
+    TOOL_DECISION: Final = "tool_decision"
+    TOOL_DECISION_CONFLICT: Final = "tool_decision_conflict"
 
 
 class PermissionEventFields:
@@ -78,6 +80,15 @@ class PermissionEventFields:
     REASON: Final = "reason"
     PAYLOAD: Final = "payload"
     PERMISSION_MODE: Final = "permission_mode"
+
+
+class ToolDecisionEventFields:
+    ACTION: Final = "action"
+    INITIAL_DECISION: Final = "initial_decision"
+    FINAL_DECISION: Final = "final_decision"
+    REASON: Final = "reason"
+    HOOKS: Final = "hooks"
+    PAYLOAD: Final = "payload"
 
 
 class PolicyDefaults:

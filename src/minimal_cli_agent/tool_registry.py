@@ -43,6 +43,16 @@ class ToolSpec:
         validator = self.validator or non_empty_payload_validator(self.name, self.expected_format)
         return validator(payload)
 
+    def prepare_payload(self, payload: str) -> str:
+        if self.parameters_schema is None:
+            return payload
+        return apply_schema_defaults_to_payload(payload, self.parameters_schema)
+
+    def schema_documentation(self) -> str:
+        if self.parameters_schema is None:
+            return self.expected_format
+        return describe_schema(self.parameters_schema)
+
 
 class ToolRegistry:
     def __init__(self) -> None:
@@ -76,7 +86,7 @@ class ToolRegistry:
         return self._tools[canonical_name].handler(payload)
 
     def descriptions(self) -> str:
-        return "\n".join(f"- {spec.name}: {spec.description}" for spec in self._tools.values())
+        return "\n".join(f"- {spec.name}: {spec.description} Parameters: {spec.schema_documentation()}" for spec in self._tools.values())
 
 
 def validate_payload_schema(
@@ -106,6 +116,64 @@ def validate_payload_schema(
         received=payload,
         field_errors=tuple(errors),
     )
+
+
+def apply_schema_defaults_to_payload(payload: str, schema: dict[str, Any]) -> str:
+    try:
+        data = json.loads(payload or "{}")
+    except json.JSONDecodeError:
+        return payload
+    prepared = apply_schema_defaults(data, schema)
+    if prepared == data:
+        return payload
+    return json.dumps(prepared, ensure_ascii=False)
+
+
+def apply_schema_defaults(value: Any, schema: dict[str, Any]) -> Any:
+    if not isinstance(schema, dict):
+        return value
+    if schema.get("type") == "object" and isinstance(value, dict):
+        prepared = dict(value)
+        properties = schema.get("properties", {})
+        if isinstance(properties, dict):
+            for field_name, field_schema in properties.items():
+                if not isinstance(field_schema, dict):
+                    continue
+                if field_name not in prepared and "default" in field_schema:
+                    prepared[field_name] = field_schema["default"]
+                elif field_name in prepared:
+                    prepared[field_name] = apply_schema_defaults(prepared[field_name], field_schema)
+        return prepared
+    if schema.get("type") == "array" and isinstance(value, list):
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            return [apply_schema_defaults(item, item_schema) for item in value]
+    return value
+
+
+def describe_schema(schema: dict[str, Any]) -> str:
+    if schema.get("type") != "object":
+        return json.dumps(schema, ensure_ascii=False, sort_keys=True)
+    required = set(schema.get("required", [])) if isinstance(schema.get("required"), list) else set()
+    properties = schema.get("properties", {})
+    if not isinstance(properties, dict) or not properties:
+        return "{}"
+    fields = []
+    for field_name, rules in properties.items():
+        if not isinstance(rules, dict):
+            continue
+        parts = [str(rules.get("type", "any"))]
+        if field_name in required:
+            parts.append("required")
+        if "default" in rules:
+            parts.append(f"default={json.dumps(rules['default'], ensure_ascii=False)}")
+        if isinstance(rules.get("enum"), list):
+            parts.append("enum=" + "|".join(json.dumps(item, ensure_ascii=False) for item in rules["enum"]))
+        bounds = describe_bounds(rules)
+        if bounds:
+            parts.append(bounds)
+        fields.append(f"{field_name}({', '.join(parts)})")
+    return "{" + ", ".join(fields) + "}"
 
 
 def validate_object_schema(data: Any, schema: dict[str, Any]) -> list[str]:
@@ -229,6 +297,29 @@ def validate_number_bounds(path: str, value: int | float, schema: dict[str, Any]
     if isinstance(maximum, (int, float)) and value > maximum:
         errors.append(f"{path}: must be <= {maximum}")
     return errors
+
+
+def describe_bounds(schema: dict[str, Any]) -> str:
+    bounds = []
+    minimum = schema.get("minimum")
+    maximum = schema.get("maximum")
+    min_length = schema.get("minLength")
+    max_length = schema.get("maxLength")
+    min_items = schema.get("minItems")
+    max_items = schema.get("maxItems")
+    if isinstance(minimum, (int, float)):
+        bounds.append(f">={minimum}")
+    if isinstance(maximum, (int, float)):
+        bounds.append(f"<={maximum}")
+    if isinstance(min_length, int):
+        bounds.append(f"len>={min_length}")
+    if isinstance(max_length, int):
+        bounds.append(f"len<={max_length}")
+    if isinstance(min_items, int):
+        bounds.append(f"items>={min_items}")
+    if isinstance(max_items, int):
+        bounds.append(f"items<={max_items}")
+    return " ".join(bounds)
 
 
 def matches_json_type(value: Any, expected_type: str) -> bool:

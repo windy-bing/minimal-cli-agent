@@ -13,7 +13,7 @@
 
 | 主题 | 当前状态 | 下一步 |
 | --- | --- | --- |
-| 工具执行管道 | 已有 `ToolExecutionPipeline` 阶段形状，`ResolveDecision` 已有 decision hook 仲裁基线，但 `AutoVerify` 很薄 | 补 hook 优先级、冲突报告、确认 UI 适配、重试和格式化策略 |
+| 工具执行管道 | 已有 `ToolExecutionPipeline` 阶段形状，`ResolveDecision` 已支持 decision hook 优先级、冲突报告和 session 审计事件，但 `AutoVerify` 很薄 | 补确认 UI 适配、重试和格式化策略 |
 | 权限 hard gate | 已有 `ShellPermissionPolicy`、`ToolDecision`、`plan` 跳过执行、`yolo` 仍受硬拒绝规则限制；policy 文件支持命令 allow 前缀、追加 deny token 和写入 allow/deny 路径范围 | 后续增加更丰富的策略报告、角色化能力和可查询审计日志 |
 | 上下文压缩 | 当前是本地裁剪加提示，不是语义压缩 | 增加模型总结、原始 transcript 保留、可召回 summary/memory |
 | Memory 管理 | JSON session 已支持 lock 保护、原子写、最近消息裁剪、active plan、typed workflow state 和 `/events` 最近事件查询 | 后续实现 SQLite session log 和 memory retrieval |
@@ -26,7 +26,7 @@
 
 | 主题 | 风险 | 建议 |
 | --- | --- | --- |
-| 完整 JSON Schema | 已有聚焦 JSON Schema 子集，支持 nested object、array、enum、oneOf/anyOf、边界约束和字段级 repair observation | 后续补默认值、schema 文档生成和更完整 Draft 兼容 |
+| 完整 JSON Schema | 已有聚焦 JSON Schema 子集，支持 nested object、array、enum、oneOf/anyOf、边界约束、默认值注入、schema 文档生成和字段级 repair observation | 后续补更完整 Draft 兼容 |
 | 工具模糊识别 | 已在 Discovery 阶段返回安全的相近工具名建议，但不会自动执行猜测 | 后续可加入风险等级过滤和更细的提示文案 |
 | 文件读取工具性能 | 已实现 `read_tail` / `read_forward` 基线，`read_forward` 支持 byte/line 双模式，读文件 observation 会带分页 metadata，并会拒绝疑似二进制文件 | 后续补编码策略、二进制专用摘要和持久分页游标 |
 | grep/search top-k | 已实现 `search(pattern,path,top_k,max_files,timeout_ms)`，支持额外 ignore dirs、extension filter、项目 ignore 文件解析和相关性 ranking | 后续补渐进输出和更丰富的 ranking 特征 |
@@ -70,10 +70,10 @@
 
 目标是让工具错误可恢复、可审计、可验证。
 
-- `ToolSpec` 已支持聚焦 JSON Schema 子集；下一步补风险等级、输出 schema、默认值提示和 schema 文档生成。
+- `ToolSpec` 已支持聚焦 JSON Schema 子集、默认值注入和 schema 文档生成；下一步补风险等级和输出 schema。
 - `Validation` 阶段已返回可恢复 observation 和字段级错误。
 - `Formatting` 阶段已有统一 observation 基线，包含 `status`、`exit_code`、`command` 和 `output`；下一步补输出 schema 和机器可解析事件。
-- `ToolExecutionPipeline` 已增加 decision hook 仲裁和测试覆盖；下一步补 hook 优先级、冲突报告和审计事件。
+- `ToolExecutionPipeline` 已增加 decision hook 优先级、冲突报告、审计事件和测试覆盖；下一步补重试策略和更丰富的自动校验。
 
 ### Phase 2: File Tool Baseline
 

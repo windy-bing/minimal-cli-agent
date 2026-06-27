@@ -19,14 +19,7 @@ class JsonSessionStore:
         self.max_messages = max_messages
 
     def load(self) -> list[Message]:
-        raw = self._read_raw()
-        if raw is None:
-            return []
-        raw_messages = raw[SessionFields.MESSAGES] if isinstance(raw, dict) else raw
-        return [
-            Message(role=item[SessionFields.ROLE], content=item[SessionFields.CONTENT])
-            for item in raw_messages
-        ]
+        return parse_messages(self._read_raw())
 
     def save(self, messages: list[Message]) -> None:
         with self._locked():
@@ -133,10 +126,13 @@ class JsonSessionStore:
 def parse_messages(raw) -> list[Message]:
     if raw is None:
         return []
-    raw_messages = raw[SessionFields.MESSAGES] if isinstance(raw, dict) else raw
+    raw_messages = raw.get(SessionFields.MESSAGES, []) if isinstance(raw, dict) else raw
+    if not isinstance(raw_messages, list):
+        return []
     return [
         Message(role=item[SessionFields.ROLE], content=item[SessionFields.CONTENT])
         for item in raw_messages
+        if is_message_record(item)
     ]
 
 
@@ -144,6 +140,8 @@ def parse_events(raw) -> list[EventRecord]:
     if not isinstance(raw, dict):
         return []
     raw_events = raw.get(SessionFields.EVENTS, [])
+    if not isinstance(raw_events, list):
+        return []
     return [
         EventRecord(
             kind=item[SessionFields.KIND],
@@ -151,6 +149,7 @@ def parse_events(raw) -> list[EventRecord]:
             timestamp=item[SessionFields.TIMESTAMP],
         )
         for item in raw_events
+        if is_event_record(item)
     ]
 
 
@@ -170,6 +169,23 @@ def parse_workflow(raw) -> WorkflowArtifact | None:
     if not isinstance(raw_workflow, dict):
         return None
     return WorkflowArtifact.from_dict(raw_workflow)
+
+
+def is_message_record(item) -> bool:
+    return (
+        isinstance(item, dict)
+        and item.get(SessionFields.ROLE) in {"system", "user", "assistant"}
+        and isinstance(item.get(SessionFields.CONTENT), str)
+    )
+
+
+def is_event_record(item) -> bool:
+    return (
+        isinstance(item, dict)
+        and isinstance(item.get(SessionFields.KIND), str)
+        and isinstance(item.get(SessionFields.TIMESTAMP), str)
+        and isinstance(item.get(SessionFields.DATA, {}), dict)
+    )
 
 
 def compact_messages(messages: list[Message], max_chars: int) -> list[Message]:

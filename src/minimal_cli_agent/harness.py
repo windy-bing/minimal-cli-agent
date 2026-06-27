@@ -134,7 +134,11 @@ class AgentHarness:
         )
         if self.config.mcp_config is not None:
             register_mcp_tools(self.tool_registry, load_mcp_config(self.config.mcp_config))
-        self.tool_pipeline = ToolExecutionPipeline(registry=self.tool_registry, permission_policy=self.policy)
+        self.tool_pipeline = ToolExecutionPipeline(
+            registry=self.tool_registry,
+            permission_policy=self.policy,
+            audit_recorder=self.record_event,
+        )
 
     def load_messages(self) -> list[Message]:
         return self.session_store.load() if self.session_store else []

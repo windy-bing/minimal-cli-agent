@@ -228,7 +228,15 @@ def parse_mcp_config(raw: Any) -> list[MCPServerConfig]:
     if isinstance(raw.get("mcpServers"), dict):
         server_map = raw["mcpServers"]
     elif isinstance(raw.get("servers"), list):
-        return [parse_server_entry(str(item.get("name") or ""), item) for item in raw["servers"] if isinstance(item, dict)]
+        configs = []
+        for index, item in enumerate(raw["servers"]):
+            if not isinstance(item, dict):
+                raise ConfigurationError(f"MCP servers[{index}] must be an object.")
+            name = item.get("name")
+            if not isinstance(name, str) or not name.strip():
+                raise ConfigurationError(f"MCP servers[{index}] requires a non-empty name.")
+            configs.append(parse_server_entry(name, item))
+        return configs
     else:
         server_map = raw
     return [parse_server_entry(name, value) for name, value in server_map.items() if isinstance(value, dict)]
@@ -236,7 +244,7 @@ def parse_mcp_config(raw: Any) -> list[MCPServerConfig]:
 
 def parse_server_entry(name: str, value: dict[str, Any]) -> MCPServerConfig:
     server_type = str(value.get("type") or "streamablehttp")
-    if server_type.lower() not in {"streamablehttp", "streamable-http", "http"}:
+    if normalize_mcp_server_type(server_type) not in {"streamablehttp", "http"}:
         raise ConfigurationError(f"Unsupported MCP server type for {name}: {server_type}")
     url = value.get("url")
     if not isinstance(url, str) or not url:
@@ -245,14 +253,22 @@ def parse_server_entry(name: str, value: dict[str, Any]) -> MCPServerConfig:
     if not isinstance(headers, dict):
         raise ConfigurationError(f"MCP server {name} headers must be an object.")
     timeout = value.get("timeout", int(Defaults.MCP_TIMEOUT))
-    discover_tools = bool(value.get("discoverTools", False))
+    if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
+        raise ConfigurationError(f"MCP server {name} timeout must be a positive integer.")
+    discover_tools = value.get("discoverTools", False)
+    if not isinstance(discover_tools, bool):
+        raise ConfigurationError(f"MCP server {name} discoverTools must be a boolean.")
     return MCPServerConfig(
         name=name,
         url=expand_env_vars(url),
         headers={str(key): expand_env_vars(str(val)) for key, val in headers.items()},
-        timeout=int(timeout),
+        timeout=timeout,
         discover_tools=discover_tools,
     )
+
+
+def normalize_mcp_server_type(value: str) -> str:
+    return re.sub(r"[^a-z]", "", value.lower())
 
 
 def parse_mcp_response(body: str) -> dict[str, Any]:

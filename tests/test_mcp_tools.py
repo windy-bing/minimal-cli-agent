@@ -14,6 +14,7 @@ from minimal_cli_agent.mcp_tools import (
     parse_mcp_config,
     parse_sse_json,
 )
+from minimal_cli_agent.exceptions import ConfigurationError
 
 
 class MCPToolsTest(unittest.TestCase):
@@ -22,7 +23,7 @@ class MCPToolsTest(unittest.TestCase):
             {
                 "mcpServers": {
                     "my-coffee": {
-                        "type": "streamablehttp",
+                        "type": "streamableHttp",
                         "url": "https://example.test/mcp",
                         "headers": {"Authorization": "Bearer ${TOKEN}"},
                     }
@@ -33,6 +34,18 @@ class MCPToolsTest(unittest.TestCase):
         self.assertEqual(len(config), 1)
         self.assertEqual(config[0].name, "my-coffee")
         self.assertEqual(config[0].url, "https://example.test/mcp")
+
+    def test_parse_servers_list_requires_name(self) -> None:
+        with self.assertRaisesRegex(ConfigurationError, "non-empty name"):
+            parse_mcp_config({"servers": [{"url": "https://example.test/mcp"}]})
+
+    def test_parse_server_entry_rejects_invalid_timeout(self) -> None:
+        with self.assertRaisesRegex(ConfigurationError, "timeout"):
+            parse_mcp_config({"mcpServers": {"coffee": {"url": "https://example.test/mcp", "timeout": 0}}})
+
+    def test_parse_server_entry_requires_boolean_discovery(self) -> None:
+        with self.assertRaisesRegex(ConfigurationError, "discoverTools"):
+            parse_mcp_config({"mcpServers": {"coffee": {"url": "https://example.test/mcp", "discoverTools": "yes"}}})
 
     def test_load_mcp_config_from_file(self) -> None:
         with TemporaryDirectory() as tmp:
