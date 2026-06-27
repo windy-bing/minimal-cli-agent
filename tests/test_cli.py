@@ -142,7 +142,7 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
-        self.assertIn("Commands: /help, /config, /profile, /permission, /mcp, /skill, /context, /plan, /review, /exit", printed)
+        self.assertIn("Commands: /help, /config, /profile, /permission, /mcp, /skill, /context, /history, /plan, /review, /exit", printed)
 
     def test_detect_explicit_options_supports_space_and_equals_forms(self) -> None:
         explicit = detect_explicit_options([
@@ -301,7 +301,43 @@ class CliTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(context.messages, [])
         self.assertIn("context_messages: 1", printed)
+        self.assertIn("context_estimated_tokens:", printed)
         self.assertIn("context cleared", printed)
+
+    def test_run_interactive_history_lists_and_replays_prompts(self) -> None:
+        model = CountingModel()
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+        context = ChatContext()
+
+        with patch("builtins.input", side_effect=["/history", "/history 1", "/quit"]), patch("builtins.print") as print_mock:
+            exit_code = run_interactive(agent, context, first_message="first task")
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(model.calls, 2)
+        self.assertIn("1: first task", printed)
+        self.assertIn("replay history[1]: first task", printed)
+
+    def test_run_interactive_history_seeds_from_session_user_prompts_only(self) -> None:
+        model = CountingModel()
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+        context = ChatContext(
+            messages=[
+                Message(role="user", content="real question"),
+                Message(role="user", content="Command finished with exit code 0:\nstatus: success"),
+            ]
+        )
+
+        with patch("builtins.input", side_effect=["/history", "/quit"]), patch("builtins.print") as print_mock:
+            exit_code = run_interactive(agent, context)
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(model.calls, 0)
+        self.assertIn("1: real question", printed)
+        self.assertNotIn("Command finished", printed)
 
     def test_run_interactive_review_command_runs_agent_turn(self) -> None:
         model = SequenceModel(["review done"])

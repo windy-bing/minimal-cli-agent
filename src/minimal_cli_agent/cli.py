@@ -2,16 +2,21 @@ from __future__ import annotations
 
 import argparse
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 import re
 import sys
 from pathlib import Path
 
+try:
+    import readline
+except ImportError:  # pragma: no cover - readline is platform-dependent.
+    readline = None
+
 from minimal_cli_agent.agent import Agent, print_event
 from minimal_cli_agent.constants import Defaults, InteractiveCommands, LoopEventData, LoopEventTypes, PermissionModes, Profiles, Providers, ToolDecisionKinds, ToolPayloadFields, Tools
-from minimal_cli_agent.context import total_message_chars
+from minimal_cli_agent.context import estimate_context_tokens, total_message_chars
 from minimal_cli_agent.exceptions import AgentError, ConfigurationError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import compact_messages
@@ -63,6 +68,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mcp-config", type=Path, help="JSON config file with MCP servers.")
     parser.add_argument("--skill", action="append", default=[], help="Load a skill by path or by name under skills/<name>.")
     parser.add_argument("--summarize-context", action="store_true", help="Use the model to summarize old context when compacting.")
+    parser.add_argument("--model-context-tokens", type=int, default=parse_optional_int_env("AGENT_MODEL_CONTEXT_TOKENS"), help="Approximate model context window. Context is compacted near this budget.")
+    parser.add_argument("--context-compression-ratio", type=float, default=float(os.getenv("AGENT_CONTEXT_COMPRESSION_RATIO", Defaults.CONTEXT_COMPRESSION_RATIO)), help="Fraction of model context tokens that triggers compaction.")
     parser.add_argument("--show-config", action="store_true", help="Print resolved provider/model/base URL without secrets.")
     parser.add_argument(
         "--permission",
@@ -116,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
             mcp_config=args.mcp_config.resolve() if args.mcp_config else None,
             skill_paths=resolve_skill_paths(args.skill, args.cwd.resolve()),
             summarize_context=args.summarize_context,
+            model_context_tokens=args.model_context_tokens,
+            context_compression_ratio=args.context_compression_ratio,
         ), args.profile, explicit_options=explicit_options)
         if args.show_config:
             print(f"profile: {args.profile or '<none>'}")
@@ -131,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"usage_ledger: {config.usage_ledger_path or '<none>'}")
             print(f"usage_subject: {config.usage_subject}")
             print(f"usage_tenant: {config.usage_tenant}")
+            print(f"model_context_tokens: {config.model_context_tokens or '<none>'}")
+            print(f"context_compression_ratio: {config.context_compression_ratio}")
             return 0
 
         task = " ".join(args.task).strip()
@@ -275,7 +286,13 @@ def run_interactive(
     session_store: JsonSessionStore | None = None,
     first_message: str | None = None,
 ) -> int:
-    session = InteractiveSession(agent=agent, context=context, session_store=session_store)
+    session = InteractiveSession(
+        agent=agent,
+        context=context,
+        session_store=session_store,
+        user_history=build_user_history(context.messages),
+    )
+    configure_readline_history(session.user_history)
     print("minimal-agent interactive mode. Type /help for commands, /exit to stop.")
     pending = first_message
     while True:
@@ -297,6 +314,9 @@ def run_interactive(
         if command_result.should_exit:
             return 0
         if command_result.handled:
+            if command_result.replay_message:
+                pending = command_result.replay_message
+                continue
             pending = None
             continue
         if pending == InteractiveCommands.QUICK_HINT:
@@ -307,6 +327,7 @@ def run_interactive(
             print(f"Unknown command: {pending}")
             print_quick_command_hint()
         elif pending:
+            remember_user_prompt(session, pending)
             summary = run_turn_with_summary(
                 session.agent,
                 pending,
@@ -481,8 +502,60 @@ def retry_in_auto_edit(session: InteractiveSession, message: str) -> str:
     return message
 
 
+def configure_readline_history(history: list[str]) -> None:
+    if readline is None:
+        return
+    try:
+        readline.clear_history()
+        for item in history:
+            readline.add_history(item)
+    except (AttributeError, OSError):
+        return
+
+
+def remember_user_prompt(session: InteractiveSession, prompt: str) -> None:
+    if not is_user_prompt_history_entry(prompt):
+        return
+    if session.user_history and session.user_history[-1] == prompt:
+        return
+    session.user_history.append(prompt)
+    if readline is not None:
+        try:
+            readline.add_history(prompt)
+        except (AttributeError, OSError):
+            return
+
+
+def build_user_history(messages: list[Message], limit: int = 100) -> list[str]:
+    history: list[str] = []
+    for message in messages:
+        if message.role != "user" or not is_user_prompt_history_entry(message.content):
+            continue
+        if not history or history[-1] != message.content:
+            history.append(message.content)
+    return history[-limit:]
+
+
+def is_user_prompt_history_entry(content: str) -> bool:
+    stripped = content.strip()
+    if not stripped:
+        return False
+    if stripped.startswith("/"):
+        return False
+    observation_prefixes = (
+        "Command finished",
+        "Command skipped",
+        "Tool validation failed.",
+        "Tool discovery failed.",
+        "Context was compacted locally.",
+        "Context summary from earlier messages:",
+        "Max steps reached.",
+    )
+    return not any(stripped.startswith(prefix) for prefix in observation_prefixes)
+
+
 def print_quick_command_hint() -> None:
-    print("Commands: /help, /config, /profile, /permission, /mcp, /skill, /context, /plan, /review, /exit")
+    print("Commands: /help, /config, /profile, /permission, /mcp, /skill, /context, /history, /plan, /review, /exit")
 
 
 def print_interactive_help() -> None:
@@ -496,12 +569,14 @@ class InteractiveSession:
     agent: Agent
     context: ChatContext
     session_store: JsonSessionStore | None = None
+    user_history: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class InteractiveCommandResult:
     handled: bool = False
     should_exit: bool = False
+    replay_message: str | None = None
 
 
 def handle_interactive_command(raw: str, session: InteractiveSession) -> InteractiveCommandResult:
@@ -542,6 +617,9 @@ def handle_interactive_command(raw: str, session: InteractiveSession) -> Interac
     if command == InteractiveCommands.CONTEXT:
         handle_context_command(session, argument)
         return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.HISTORY:
+        replay = handle_history_command(session, argument)
+        return InteractiveCommandResult(handled=True, replay_message=replay)
     if command == InteractiveCommands.PLAN:
         handle_plan_command(session, argument)
         return InteractiveCommandResult(handled=True)
@@ -658,6 +736,12 @@ def handle_context_command(session: InteractiveSession, action: str) -> None:
     if action == "status" or not action:
         print(f"context_messages: {len(session.context.messages)}")
         print(f"context_chars: {total_message_chars(session.context.messages)}")
+        estimated_tokens = estimate_context_tokens(session.context.messages)
+        print(f"context_estimated_tokens: {estimated_tokens}")
+        if session.agent.config.model_context_tokens is not None:
+            threshold = int(session.agent.config.model_context_tokens * session.agent.config.context_compression_ratio)
+            print(f"context_token_threshold: {threshold}")
+            print(f"context_token_budget: {session.agent.config.model_context_tokens}")
         return
     if action == "clear":
         session.context.messages = []
@@ -678,6 +762,28 @@ def handle_context_command(session: InteractiveSession, action: str) -> None:
         )
         return
     print(f"Usage: {InteractiveCommands.CONTEXT} status|compact|clear")
+
+
+def handle_history_command(session: InteractiveSession, argument: str) -> str | None:
+    if not session.user_history:
+        print("history is empty")
+        return None
+    if argument:
+        try:
+            index = int(argument)
+        except ValueError:
+            print(f"Usage: {InteractiveCommands.HISTORY} [number]")
+            return None
+        if index < 1 or index > len(session.user_history):
+            print(f"history index out of range: {index}")
+            return None
+        prompt = session.user_history[index - 1]
+        print(f"replay history[{index}]: {prompt}")
+        return prompt
+
+    for index, prompt in enumerate(session.user_history[-20:], start=max(1, len(session.user_history) - 19)):
+        print(f"{index}: {prompt}")
+    return None
 
 
 def handle_plan_command(session: InteractiveSession, argument: str) -> None:
@@ -741,6 +847,8 @@ def print_config(config: AgentConfig) -> None:
     print(f"usage_ledger: {config.usage_ledger_path or '<none>'}")
     print(f"usage_subject: {config.usage_subject}")
     print(f"usage_tenant: {config.usage_tenant}")
+    print(f"model_context_tokens: {config.model_context_tokens or '<none>'}")
+    print(f"context_compression_ratio: {config.context_compression_ratio}")
     print(f"mcp_config: {config.mcp_config or '<none>'}")
     skills = ", ".join(path.parent.name for path in config.skill_paths) if config.skill_paths else "<none>"
     print(f"skills: {skills}")

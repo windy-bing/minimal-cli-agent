@@ -50,6 +50,38 @@ class ContextTest(unittest.TestCase):
 
         self.assertEqual(model.calls, 1)
 
+    def test_context_does_not_compact_until_model_token_threshold(self) -> None:
+        model = SummaryModel()
+        config = AgentConfig(
+            max_context_chars=10,
+            model_context_tokens=10_000,
+            context_compression_ratio=0.85,
+            summarize_context=True,
+        )
+        manager = CompactingContextManager(config, summarizer=model)
+
+        prepared = manager.prepare(build_messages())
+
+        self.assertEqual(prepared, build_messages())
+        self.assertEqual(model.calls, 0)
+
+    def test_context_compacts_when_model_token_threshold_is_reached(self) -> None:
+        model = SummaryModel()
+        config = AgentConfig(
+            max_context_chars=10_000,
+            model_context_tokens=20,
+            context_compression_ratio=0.5,
+            summarize_context=True,
+            context_tail_messages=2,
+        )
+        manager = CompactingContextManager(config, summarizer=model)
+
+        prepared = manager.prepare(build_messages())
+
+        self.assertEqual(model.calls, 1)
+        self.assertIn("Initial user goal:", prepared[1].content)
+        self.assertIn("old user", prepared[1].content)
+
 
 def build_messages() -> list[Message]:
     return [

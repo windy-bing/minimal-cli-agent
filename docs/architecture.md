@@ -74,9 +74,11 @@ Implemented:
 - `LoopEvent` / `LoopResult` for stream-style UI integration.
 - Multiple action blocks per model turn, executed sequentially in output order.
 - Multi-turn CLI REPL that reuses one `ChatContext` across turns.
-- REPL slash commands for runtime profile/provider/model/base URL/permission/network/context/plan/review control.
+- REPL slash commands for runtime profile/provider/model/base URL/permission/network/context/history/plan/review control.
 - Isolated `/plan` command that creates a typed plan artifact without merging planning transcript into active chat context.
+- Context compaction triggers near the configured model context budget and preserves the initial user goal in compacted summaries.
 - Optional model-generated context summaries with `--summarize-context`.
+- Interactive prompt history is available through readline arrow keys and `/history [number]`.
 - `ModelGateway` for provider/model abstraction, fallback routes, bounded retries, per-route concurrency, circuit breaking, usage ledgers, token/cost quotas, prompt version metadata, and API key pool rotation.
 - JSON session event log for permission approval audit records.
 - Lock-protected atomic JSON session writes with recent-message retention.
@@ -138,11 +140,12 @@ See [Harness Gap Analysis](harness-gap-analysis.zh-CN.md) for a more detailed co
 
 ### Context Compression
 
-The default `compact_messages` function trims older messages and inserts a local note. When `--summarize-context` is enabled, the harness uses the active model to summarize older messages, then sends system prompt + summary + recent tail messages as working context.
+The default `compact_messages` function trims older messages and inserts a local note only when the transcript approaches the configured context budget. When `--summarize-context` is enabled, the harness uses the active model to summarize older messages, then sends system prompt + summary + recent tail messages as working context.
 
 - Keep system prompt, user goal, recent tool observations, and explicit decisions.
 - Summarize older command/output history into a structured state block when enabled.
 - Store both raw transcript and compacted working context.
+- Use `--model-context-tokens` and `--context-compression-ratio` to compact by approximate model window instead of a fixed character threshold.
 
 ### SubAgent
 

@@ -133,6 +133,7 @@ class Defaults:
     MODEL_TIMEOUT: Final = "300"
     MCP_TIMEOUT: Final = "30"
     CONTEXT_TAIL_MESSAGES: Final = "8"
+    CONTEXT_COMPRESSION_RATIO: Final = "0.85"
     SESSION_MAX_MESSAGES: Final = "200"
 
 
@@ -216,6 +217,7 @@ class InteractiveCommands:
     NETWORK: Final = "/network"
     SUMMARIZE: Final = "/summarize"
     CONTEXT: Final = "/context"
+    HISTORY: Final = "/history"
     PLAN: Final = "/plan"
     REVIEW: Final = "/review"
     MCP: Final = "/mcp"
@@ -236,6 +238,7 @@ class InteractiveCommands:
         NETWORK: "Toggle network shell commands. Usage: /network on|off",
         SUMMARIZE: "Toggle model context summaries. Usage: /summarize on|off",
         CONTEXT: "Manage context. Usage: /context status|compact|clear",
+        HISTORY: "Show or replay user prompt history. Usage: /history [number]",
         PLAN: "Create, show, or clear an isolated plan. Usage: /plan <goal>|show|clear",
         REVIEW: "Ask the agent to review the current project or a path. Usage: /review [path]",
         MCP: "Load an MCP config file and rebuild tools. Usage: /mcp path/to/mcp.json",
@@ -256,6 +259,7 @@ class InteractiveCommands:
         NETWORK,
         SUMMARIZE,
         CONTEXT,
+        HISTORY,
         PLAN,
         REVIEW,
         MCP,

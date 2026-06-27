@@ -15,10 +15,10 @@ class CompactingContextManager:
         self.summary_cache: dict[str, Message] = {}
 
     def prepare(self, messages: list[Message]) -> list[Message]:
+        if not should_compact_context(messages, self.config):
+            return messages
         if not self.config.summarize_context or self.summarizer is None:
             return compact_messages(messages, self.config.max_context_chars)
-        if total_message_chars(messages) <= self.config.max_context_chars:
-            return messages
 
         system = [message for message in messages if message.role == "system"][:1]
         tail = messages[-self.config.context_tail_messages :]
@@ -29,9 +29,23 @@ class CompactingContextManager:
         cache_key = context_cache_key(older)
         summary = self.summary_cache.get(cache_key)
         if summary is None:
-            summary = Message(role="user", content=build_summary_message(self.summarizer.complete(build_summary_prompt(older))))
+            initial_goal = first_user_content(messages)
+            summary = Message(role="user", content=build_summary_message(self.summarizer.complete(build_summary_prompt(older)), initial_goal))
             self.summary_cache[cache_key] = summary
         return system + [summary] + tail
+
+
+def should_compact_context(messages: list[Message], config: AgentConfig) -> bool:
+    if len(messages) <= 4:
+        return False
+    if config.model_context_tokens is not None:
+        threshold = max(1, int(config.model_context_tokens * config.context_compression_ratio))
+        return estimate_context_tokens(messages) >= threshold
+    return total_message_chars(messages) > config.max_context_chars
+
+
+def estimate_context_tokens(messages: list[Message]) -> int:
+    return sum(max(1, (len(message.content) + 3) // 4) + 4 for message in messages)
 
 
 def total_message_chars(messages: list[Message]) -> int:
@@ -52,9 +66,23 @@ def build_summary_prompt(messages: list[Message]) -> list[Message]:
     transcript = "\n\n".join(f"{message.role}: {message.content}" for message in messages)
     return [
         Message(role="system", content=CONTEXT_SUMMARY_SYSTEM_PROMPT),
-        Message(role="user", content=f"Summarize this prior transcript:\n\n{transcript}"),
+        Message(
+            role="user",
+            content=(
+                "Summarize this prior transcript. Preserve the original user goal, open decisions, files touched, "
+                f"and current next step:\n\n{transcript}"
+            ),
+        ),
     ]
 
 
-def build_summary_message(summary: str) -> str:
-    return f"Context summary from earlier messages:\n{summary.strip()}"
+def build_summary_message(summary: str, initial_goal: str = "") -> str:
+    goal = f"Initial user goal:\n{initial_goal.strip()}\n\n" if initial_goal.strip() else ""
+    return f"{goal}Context summary from earlier messages:\n{summary.strip()}"
+
+
+def first_user_content(messages: list[Message]) -> str:
+    for message in messages:
+        if message.role == "user" and message.content.strip():
+            return message.content
+    return ""

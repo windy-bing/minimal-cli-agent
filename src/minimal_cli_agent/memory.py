@@ -141,11 +141,21 @@ def compact_messages(messages: list[Message], max_chars: int) -> list[Message]:
     system = [message for message in messages if message.role == "system"][:1]
     tail = messages[-8:]
     omitted = len(messages) - len(system) - len(tail)
+    initial_goal = first_user_content(messages)
+    goal_text = f" Initial user goal: {initial_goal}" if initial_goal else ""
     summary = Message(
         role="user",
         content=(
             f"Context was compacted locally. {omitted} older messages were omitted. "
-            "Continue using the latest observations and task state."
+            f"Continue using the latest observations and task state.{goal_text}"
         ),
     )
     return system + [summary] + tail
+
+
+def first_user_content(messages: list[Message], limit: int = 500) -> str:
+    for message in messages:
+        if message.role == "user" and message.content.strip():
+            content = " ".join(message.content.split())
+            return content if len(content) <= limit else content[: limit - 3] + "..."
+    return ""

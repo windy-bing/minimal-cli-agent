@@ -12,7 +12,7 @@ The project starts intentionally small, but the code is split into replaceable m
 
 - Runs as a terminal CLI.
 - Supports multi-turn interactive sessions with `--interactive`; running without a task starts the same REPL.
-- Supports slash commands for runtime profile/model/permission/context/plan/review control.
+- Supports slash commands for runtime profile/model/permission/context/history/plan/review control.
 - Supports MCP HTTP servers through `--mcp-config`, with MCP tools registered into the same `ToolRegistry`.
 - Supports local instruction skills through `--skill`, including the bundled Luckin Coffee `my-coffee` skill.
 - Supports local Ollama chat models by default.
@@ -62,8 +62,10 @@ ls -la
 - Supports shell policy allow prefixes, additional deny rules, and workspace write scopes through `--policy-file`.
 - Supports product permission modes: `default`, `autoEdit`, `plan`, and `yolo`.
 - Persists recent session messages, active plan, and permission audit events to JSON when `--session` is provided, using a lock file and atomic replace.
-- Applies a simple context compaction guard when the transcript gets large.
+- Applies context compaction only when the transcript approaches the configured context budget.
 - Can use model-generated context summaries with `--summarize-context`.
+- Preserves the initial user goal when context is compacted.
+- Supports interactive prompt history through arrow keys when readline is available and `/history [number]`.
 - Exposes a stateless `Agent.chat_stream(message, context)` API that yields loop events.
 - Returns recoverable tool discovery and validation observations instead of surfacing raw exceptions.
 - Unknown tools return safe close-match suggestions without automatically executing guesses.
@@ -154,6 +156,8 @@ Most startup options can also be changed inside the REPL:
 /context status
 /context compact
 /context clear
+/history
+/history 1
 /plan improve test coverage
 /plan show
 /plan clear
@@ -281,6 +285,8 @@ Explicit CLI options such as `--model`, `--base-url`, and `--api-key` take prece
 --mcp-config     JSON file with MCP servers
 --skill          skill name under skills/<name> or a direct SKILL.md path
 --summarize-context use the model to summarize old context when compacting
+--model-context-tokens approximate model context window for compaction
+--context-compression-ratio context budget ratio that triggers compaction
 --interactive    start a multi-turn interactive CLI session
 --permission     default, autoEdit, plan, or yolo
 --session        JSON file for persisted messages
@@ -378,7 +384,9 @@ Implemented:
 - Permission confirmation is injectable through a confirmation handler; CLI `input()` is only the default handler.
 - `pyproject.toml` includes a Pyright `basic` type-checking configuration for `src` and `tests`.
 - `/plan` creates an isolated typed plan artifact that can be shown, cleared, and persisted in the session file.
+- Context compaction is triggered near the configured model context budget, and compacted summaries preserve the initial user goal.
 - Optional model-generated context summaries with `--summarize-context`.
+- Interactive prompt history is available through readline arrow keys and `/history [number]`.
 
 Reserved but intentionally minimal:
 

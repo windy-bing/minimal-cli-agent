@@ -12,7 +12,7 @@
 
 - 作为终端 CLI 运行。
 - 支持 `--interactive` 多轮交互会话；不传 task 时也会进入同一个 REPL。
-- 支持 slash commands，在运行时切换 profile/model/permission/context/plan/review。
+- 支持 slash commands，在运行时切换 profile/model/permission/context/history/plan/review。
 - 支持通过 `--mcp-config` 接入 HTTP MCP server，并把 MCP 工具注册到同一个 `ToolRegistry`。
 - 支持通过 `--skill` 加载本地 instruction skill，包括已安装的瑞幸咖啡 `my-coffee` skill。
 - 默认支持本地 Ollama chat 模型。
@@ -62,8 +62,10 @@ ls -la
 - 支持通过 `--policy-file` 配置 shell allow 前缀、追加 deny 规则和工作区写入范围。
 - 支持产品化权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - 传入 `--session` 时，可以把最近 session messages、active plan 和权限审计事件持久化到 JSON，并使用 lock 文件和原子替换写入。
-- transcript 变大时，会应用一个简单的本地上下文压缩保护。
+- transcript 接近配置的上下文预算时，才会触发上下文压缩。
 - 可以通过 `--summarize-context` 使用模型生成旧上下文摘要。
+- 上下文压缩会保留初始用户目标，降低压缩后忘记原任务的风险。
+- 交互模式支持 readline 方向键历史，以及 `/history [number]` 查看和重放用户问题。
 - 暴露无状态 API：`Agent.chat_stream(message, context)`，以事件流形式产出 loop event。
 - 工具发现和参数校验失败时返回可恢复 observation，而不是直接把原始异常抛给用户。
 - 未知工具会返回安全的相近工具名建议，但不会自动猜测并执行。
@@ -154,6 +156,8 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 /context status
 /context compact
 /context clear
+/history
+/history 1
 /plan improve test coverage
 /plan show
 /plan clear
@@ -281,6 +285,8 @@ Profile 行为：
 --mcp-config     包含 MCP servers 的 JSON 配置文件
 --skill          skills/<name> 下的技能名，或直接传入 SKILL.md 路径
 --summarize-context 使用模型总结旧上下文
+--model-context-tokens 用于触发压缩的近似模型上下文窗口
+--context-compression-ratio 触发上下文压缩的预算比例
 --interactive    启动多轮交互 CLI 会话
 --permission     default、autoEdit、plan 或 yolo
 --session        用于持久化 messages 的 JSON 文件
@@ -378,7 +384,9 @@ src/minimal_cli_agent/
 - 权限确认可通过 confirmation handler 替换，CLI `input()` 只是默认实现。
 - `pyproject.toml` 已包含面向 `src` 和 `tests` 的 Pyright `basic` 类型检查配置。
 - `/plan` 会创建隔离的 typed plan artifact，可查看、清除，并可持久化到 session 文件。
+- 上下文压缩会在接近配置的模型上下文预算时触发，并在压缩摘要中保留初始用户目标。
 - 通过 `--summarize-context` 可选启用模型生成式上下文摘要。
+- 交互模式支持 readline 方向键历史和 `/history [number]`。
 
 已预留但保持最小实现：
 

@@ -100,6 +100,8 @@ class AgentConfig:
     context_tail_messages: int = int(Defaults.CONTEXT_TAIL_MESSAGES)
     max_output_chars: int = 12000
     max_context_chars: int = 60000
+    model_context_tokens: int | None = None
+    context_compression_ratio: float = float(Defaults.CONTEXT_COMPRESSION_RATIO)
     model_fallbacks: tuple[ModelRoute, ...] = field(default_factory=tuple)
     model_max_retries: int = 0
     model_max_concurrency: int = 4

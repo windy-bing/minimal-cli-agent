@@ -311,6 +311,8 @@ class ModelGateway:
             context_tail_messages=self.config.context_tail_messages,
             max_output_chars=self.config.max_output_chars,
             max_context_chars=self.config.max_context_chars,
+            model_context_tokens=self.config.model_context_tokens,
+            context_compression_ratio=self.config.context_compression_ratio,
             max_output_tokens=self.config.max_output_tokens,
         )
         return self.model_factory(route_config)
