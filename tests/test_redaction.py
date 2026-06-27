@@ -24,6 +24,17 @@ class RedactionTest(unittest.TestCase):
         self.assertIn("OPENAI_API_KEY=<redacted>", redacted)
         self.assertIn("Authorization: <redacted>", redacted)
 
+    def test_redacts_secret_url_query_parameters(self) -> None:
+        text = "https://example.test/path?key=AIzaabcdefghijklmnopqrstuvwxyz&token=super-secret-token&safe=ok"
+
+        redacted = redact_text(text)
+
+        self.assertNotIn("AIzaabcdefghijklmnopqrstuvwxyz", redacted)
+        self.assertNotIn("super-secret-token", redacted)
+        self.assertIn("key=<redacted>", redacted)
+        self.assertIn("token=<redacted>", redacted)
+        self.assertIn("safe=ok", redacted)
+
     def test_command_result_redacts_command_and_output_observation(self) -> None:
         result = CommandResult(
             command="printf sk-abcdefghijklmnopqrstuvwxyz123456",

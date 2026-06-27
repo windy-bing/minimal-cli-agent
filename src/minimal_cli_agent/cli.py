@@ -35,6 +35,7 @@ from minimal_cli_agent.plugins import (
 )
 from minimal_cli_agent.prompts import INTERACTIVE_SYSTEM_PROMPT, SYSTEM_PROMPT
 from minimal_cli_agent.profiles import resolve_profile
+from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.skills import build_system_prompt, discover_skill_paths, resolve_skill_path, resolve_skill_paths
 from minimal_cli_agent.subagent import SUBAGENT_ROLES, SubAgentRunner
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, Message, ModelRoute, ToolCall, ToolDecision
@@ -369,7 +370,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"profile: {profile or '<none>'}")
             print(f"provider: {config.provider}")
             print(f"model: {config.model}")
-            print(f"base_url: {config.base_url}")
+            print(f"base_url: {redact_text(config.base_url)}")
             print(f"api_key_present: {bool(config.api_key)}")
             print(f"api_key_length: {len(config.api_key or '')}")
             print(f"fallback_routes: {len(config.model_fallbacks)}")
@@ -1283,8 +1284,8 @@ def doctor_check_model(session: InteractiveSession) -> dict[str, str]:
     if not config.model.strip():
         return doctor_item("model", "error", "model name is empty")
     if config.provider in {Providers.OPENAI_COMPATIBLE, Providers.ANTHROPIC, Providers.GEMINI} and not config.api_key:
-        return doctor_item("model", "warn", f"{config.provider} usually requires an API key")
-    return doctor_item("model", "ok", f"{config.provider}:{config.model} base_url={config.base_url}")
+        return doctor_item("model", "warn", f"{config.provider} usually requires an API key base_url={redact_text(config.base_url)}")
+    return doctor_item("model", "ok", f"{config.provider}:{config.model} base_url={redact_text(config.base_url)}")
 
 
 def doctor_check_policy(session: InteractiveSession) -> dict[str, str]:
@@ -1310,7 +1311,7 @@ def doctor_check_mcp(session: InteractiveSession) -> list[dict[str, str]]:
     checks = []
     for server in servers:
         status = "warn" if server.has_unresolved_placeholders() else "ok"
-        detail = f"{server.name} url={server.url} discover_tools={server.discover_tools}"
+        detail = f"{server.name} url={redact_text(server.url)} discover_tools={server.discover_tools}"
         if status == "warn":
             detail += " unresolved environment placeholders"
         checks.append(doctor_item("mcp", status, detail))
@@ -1692,7 +1693,7 @@ def rebuild_agent(session: InteractiveSession, config: AgentConfig | None = None
 def print_config(config: AgentConfig) -> None:
     print(f"provider: {config.provider}")
     print(f"model: {config.model}")
-    print(f"base_url: {config.base_url}")
+    print(f"base_url: {redact_text(config.base_url)}")
     print(f"permission: {config.permission_mode}")
     print(f"shell: {config.shell_kind}")
     print(f"allow_network: {config.allow_network}")

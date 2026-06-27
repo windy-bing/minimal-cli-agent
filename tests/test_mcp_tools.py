@@ -99,22 +99,25 @@ class MCPToolsTest(unittest.TestCase):
 
     def test_register_mcp_tools_records_registration_events(self) -> None:
         events = []
-        configs = parse_mcp_config(
-            {
-                "mcpServers": {
-                    "coffee": {
-                        "url": "https://example.test/mcp",
-                        "headers": {"Authorization": "Bearer ${MISSING_TOKEN}"},
-                        "discoverTools": True,
+        with patch.dict(os.environ, {"TOKEN": "super-secret-token"}, clear=False):
+            configs = parse_mcp_config(
+                {
+                    "mcpServers": {
+                        "coffee": {
+                            "url": "https://example.test/mcp?token=${TOKEN}",
+                            "headers": {"Authorization": "Bearer ${MISSING_TOKEN}"},
+                            "discoverTools": True,
+                        }
                     }
                 }
-            }
-        )
+            )
 
         register_mcp_tools(ToolRegistry(), configs, audit_recorder=lambda kind, data: events.append((kind, data)))
 
         self.assertEqual(events[0][0], EventKinds.MCP_REGISTRATION)
         self.assertEqual(events[0][1]["status"], "generic_registered")
+        self.assertNotIn("super-secret-token", events[0][1]["url"])
+        self.assertIn("token=<redacted>", events[0][1]["url"])
         self.assertEqual(events[1][1]["status"], "discovery_skipped")
         self.assertEqual(events[1][1]["reason"], "unresolved_placeholders")
 

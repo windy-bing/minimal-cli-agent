@@ -534,6 +534,7 @@ class CliTest(unittest.TestCase):
                 cwd=root,
                 provider="openai-compatible",
                 model="gpt-test",
+                base_url="https://api.example.test/v1?api_key=super-secret-token",
                 api_key=None,
                 mcp_config=mcp_config,
                 permission_mode="plan",
@@ -549,6 +550,8 @@ class CliTest(unittest.TestCase):
         self.assertIn("warn: model - openai-compatible usually requires an API key", printed)
         self.assertIn("unresolved environment placeholders", printed)
         self.assertIn('"overall": "warn"', printed)
+        self.assertNotIn("super-secret-token", printed)
+        self.assertIn("api_key=<redacted>", printed)
 
     def test_run_interactive_memory_search_uses_sqlite_store(self) -> None:
         model = CountingModel()

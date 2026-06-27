@@ -6,7 +6,7 @@ SECRET_KEY_RE = re.compile(
     r"(?P<key>\b[A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|AUTHORIZATION)[A-Z0-9_]*\b)"
     r"(?P<sep>\s*[:=]\s*)"
     r"(?P<quote>['\"]?)"
-    r"(?P<value>[^\s'\",;]+)"
+    r"(?P<value>[^\s'\",;&]+)"
     r"(?P=quote)",
     re.IGNORECASE,
 )
@@ -16,6 +16,11 @@ OPENAI_KEY_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b")
 ANTHROPIC_KEY_RE = re.compile(r"\bsk-ant-[A-Za-z0-9_-]{16,}\b")
 GOOGLE_API_KEY_RE = re.compile(r"\bAIza[A-Za-z0-9_-]{20,}\b")
 JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b")
+URL_SECRET_PARAM_RE = re.compile(
+    r"(?P<prefix>[?&](?:key|api_key|token|access_token|auth|authorization|password|secret)=)"
+    r"(?P<value>[^&\s]+)",
+    re.IGNORECASE,
+)
 
 
 def redact_text(value: str | bytes | None) -> str:
@@ -28,6 +33,7 @@ def redact_text(value: str | bytes | None) -> str:
     text = OPENAI_KEY_RE.sub("<redacted:openai-key>", text)
     text = GOOGLE_API_KEY_RE.sub("<redacted:google-api-key>", text)
     text = JWT_RE.sub("<redacted:jwt>", text)
+    text = URL_SECRET_PARAM_RE.sub(redact_url_secret_param, text)
     return text
 
 
@@ -35,3 +41,7 @@ def redact_key_value(match: re.Match[str]) -> str:
     key = match.group("key")
     sep = match.group("sep")
     return f"{key}{sep}<redacted>"
+
+
+def redact_url_secret_param(match: re.Match[str]) -> str:
+    return f"{match.group('prefix')}<redacted>"

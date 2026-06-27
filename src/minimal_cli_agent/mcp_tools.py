@@ -11,6 +11,7 @@ from typing import Any
 
 from minimal_cli_agent.constants import Defaults, EventKinds, ToolPayloadFields, Tools
 from minimal_cli_agent.exceptions import ConfigurationError
+from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.tool_registry import ToolRegistry, ToolSpec
 from minimal_cli_agent.types import CommandResult
 
@@ -161,7 +162,7 @@ def record_mcp_registration(audit_recorder, config: MCPServerConfig, **data) -> 
         EventKinds.MCP_REGISTRATION,
         {
             "server": config.name,
-            "url": config.url,
+            "url": redact_text(config.url),
             "discover_tools": config.discover_tools,
             **data,
         },
