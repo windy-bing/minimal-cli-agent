@@ -439,10 +439,10 @@ src/minimal_cli_agent/
 - session 持久化支持 JSON 或 SQLite transcript/event store，并提供 `/memory` 召回。
 - MCP 工具发现是启动时 best-effort；发现失败时仍保留通用 list/call 工具。
 - plugin manifest 会从工作区和用户插件目录自动发现，可声明 skill 与 MCP server 配置。
+- 结构化文件写入会用 sidecar schema 校验 JSON/YAML，并在可修复失败里返回格式化建议。
 
 暂不实现：
 
-- 更完整的 Draft JSON Schema 兼容、YAML schema 校验和自动格式化建议。
 - 更细的项目规则分层和冲突报告。
 
 ## 参考文章保留的实践

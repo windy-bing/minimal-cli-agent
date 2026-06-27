@@ -439,10 +439,10 @@ Reserved but intentionally minimal:
 - Session persistence supports JSON or SQLite transcript/event storage with `/memory` retrieval.
 - MCP tool discovery is best-effort at startup; generic list/call tools remain available when discovery cannot run.
 - Plugin manifests are discovered from workspace/user plugin directories and can load skills plus MCP server configs.
+- Structured file writes validate JSON/YAML with sidecar schemas and return formatter suggestions on repairable failures.
 
 Not implemented yet:
 
-- Full Draft JSON Schema compatibility, YAML schema validation, and automatic formatting suggestions.
 - Deeper project-rule layering and conflict reporting.
 
 ## Notes From The Reference Article

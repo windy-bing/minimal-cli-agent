@@ -784,46 +784,55 @@ def should_ignore_path(path: Path, workspace: Path, ignore_dirs: tuple[str, ...]
 
 def validate_structured_content(path: Path, content: str) -> str | None:
     suffix = path.suffix.lower()
-    parsed_json: Any = None
+    parsed_data: Any = None
     try:
         if suffix in FileToolDefaults.JSON_SUFFIXES:
-            parsed_json = json.loads(content)
+            parsed_data = json.loads(content)
         elif suffix in FileToolDefaults.TOML_SUFFIXES:
             tomllib.loads(content)
         elif suffix in FileToolDefaults.XML_SUFFIXES:
             ET.fromstring(content)
         elif suffix in FileToolDefaults.YAML_SUFFIXES:
-            return validate_yaml_content(content)
+            parsed_data = parse_yaml_content(content)
     except (json.JSONDecodeError, tomllib.TOMLDecodeError, ET.ParseError) as exc:
-        return f"Structured file validation failed for {path.name}: {exc}"
-    if suffix in FileToolDefaults.JSON_SUFFIXES:
-        schema_error = validate_json_sidecar_schema(path, parsed_json)
+        return append_formatting_suggestion(f"Structured file validation failed for {path.name}: {exc}", path)
+    except ValueError as exc:
+        return append_formatting_suggestion(f"Structured file validation failed for {path.name}: {exc}", path)
+    if suffix in (*FileToolDefaults.JSON_SUFFIXES, *FileToolDefaults.YAML_SUFFIXES):
+        schema_error = validate_sidecar_schema(path, parsed_data)
         if schema_error is not None:
             return schema_error
     return None
 
 
-def validate_json_sidecar_schema(path: Path, data: Any) -> str | None:
-    schema_path = find_json_schema_path(path)
+def validate_sidecar_schema(path: Path, data: Any) -> str | None:
+    schema_path = find_schema_path(path)
     if schema_path is None:
         return None
     try:
-        schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        schema = load_schema_file(schema_path)
+    except (OSError, ValueError) as exc:
         return f"Structured file schema validation failed for {path.name}: invalid schema {schema_path.name}: {exc}"
     if not isinstance(schema, dict):
         return f"Structured file schema validation failed for {path.name}: schema {schema_path.name} must be a JSON object"
     errors = validate_object_schema(data, schema)
     if errors:
         rendered = "\n".join(f"- {error}" for error in errors)
-        return f"Structured file schema validation failed for {path.name} using {schema_path.name}:\n{rendered}"
+        return append_formatting_suggestion(
+            f"Structured file schema validation failed for {path.name} using {schema_path.name}:\n{rendered}",
+            path,
+        )
     return None
 
 
-def find_json_schema_path(path: Path) -> Path | None:
+def find_schema_path(path: Path) -> Path | None:
     candidates = (
         path.with_suffix(".schema.json"),
+        path.with_suffix(".schema.yaml"),
+        path.with_suffix(".schema.yml"),
         path.with_name(f"{path.name}.schema.json"),
+        path.with_name(f"{path.name}.schema.yaml"),
+        path.with_name(f"{path.name}.schema.yml"),
     )
     for candidate in candidates:
         if candidate.is_file():
@@ -831,16 +840,94 @@ def find_json_schema_path(path: Path) -> Path | None:
     return None
 
 
-def validate_yaml_content(content: str) -> str | None:
+def load_schema_file(path: Path) -> Any:
+    content = path.read_text(encoding="utf-8")
+    if path.suffix.lower() in FileToolDefaults.JSON_SUFFIXES:
+        return json.loads(content)
+    if path.suffix.lower() in FileToolDefaults.YAML_SUFFIXES:
+        return parse_yaml_content(content)
+    return json.loads(content)
+
+
+def parse_yaml_content(content: str) -> Any:
     try:
         import yaml  # type: ignore[import-not-found]
     except ImportError:
-        return None
+        return parse_simple_yaml(content)
     try:
-        yaml.safe_load(content)
+        return yaml.safe_load(content)
     except Exception as exc:  # pragma: no cover - exact PyYAML exception type depends on optional dependency.
-        return f"Structured file validation failed for YAML content: {exc}"
-    return None
+        raise ValueError(f"YAML content is invalid: {exc}") from exc
+
+
+def parse_simple_yaml(content: str) -> Any:
+    result: dict[str, Any] = {}
+    current_list_key: str | None = None
+    for line_number, raw_line in enumerate(content.splitlines(), start=1):
+        line = raw_line.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        if line.startswith("\t"):
+            raise ValueError(f"YAML line {line_number}: tabs are not supported")
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            if current_list_key is None:
+                raise ValueError(f"YAML line {line_number}: list item without a key")
+            value = parse_simple_yaml_scalar(stripped[2:].strip())
+            assert isinstance(result[current_list_key], list)
+            result[current_list_key].append(value)
+            continue
+        current_list_key = None
+        if ":" not in stripped:
+            raise ValueError(f"YAML line {line_number}: expected key: value")
+        key, value = stripped.split(":", 1)
+        key = key.strip()
+        if not key:
+            raise ValueError(f"YAML line {line_number}: empty key")
+        value = value.strip()
+        if value == "":
+            result[key] = []
+            current_list_key = key
+        else:
+            result[key] = parse_simple_yaml_scalar(value)
+    return result
+
+
+def parse_simple_yaml_scalar(value: str) -> Any:
+    if value in {"true", "True"}:
+        return True
+    if value in {"false", "False"}:
+        return False
+    if value in {"null", "Null", "~"}:
+        return None
+    if value.startswith("[") and value.endswith("]"):
+        inner = value[1:-1].strip()
+        if not inner:
+            return []
+        return [parse_simple_yaml_scalar(item.strip()) for item in inner.split(",")]
+    if re.fullmatch(r"-?\d+", value):
+        return int(value)
+    if re.fullmatch(r"-?\d+\.\d+", value):
+        return float(value)
+    return value.strip("\"'")
+
+
+def append_formatting_suggestion(message: str, path: Path) -> str:
+    suggestion = formatting_suggestion(path)
+    return f"{message}\nFormatting suggestion: {suggestion}" if suggestion else message
+
+
+def formatting_suggestion(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in FileToolDefaults.JSON_SUFFIXES:
+        return "fix JSON syntax, then format with `python -m json.tool` or your editor formatter; JSON requires double quotes and no trailing commas."
+    if suffix in FileToolDefaults.YAML_SUFFIXES:
+        return "use spaces instead of tabs, keep indentation consistent, then format with `prettier --parser yaml` or `yamlfmt`."
+    if suffix in FileToolDefaults.TOML_SUFFIXES:
+        return "check TOML table headers and quote rules, then format with `taplo fmt` if available."
+    if suffix in FileToolDefaults.XML_SUFFIXES:
+        return "make sure tags are balanced, then format with `xmllint --format` if available."
+    return ""
 
 
 def workspace_lock_path(workspace: Path, target: Path) -> Path:

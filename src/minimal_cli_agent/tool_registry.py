@@ -197,11 +197,25 @@ def describe_schema(schema: dict[str, Any]) -> str:
 
 
 def validate_object_schema(data: Any, schema: dict[str, Any]) -> list[str]:
-    return validate_schema_value("payload", data, schema, root=True)
+    return validate_schema_value("payload", data, schema, root=True, root_schema=schema)
 
 
-def validate_schema_value(path: str, value: Any, schema: dict[str, Any], root: bool = False) -> list[str]:
+def validate_schema_value(
+    path: str,
+    value: Any,
+    schema: dict[str, Any],
+    root: bool = False,
+    root_schema: dict[str, Any] | None = None,
+) -> list[str]:
+    root_schema = root_schema or schema
     errors: list[str] = []
+
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        resolved = resolve_local_schema_ref(ref, root_schema)
+        if resolved is None:
+            return [f"{path}: unresolved schema reference {ref}"]
+        return validate_schema_value(path, value, resolved, root=root, root_schema=root_schema)
 
     if "const" in schema and value != schema["const"]:
         return [f"{path}: expected constant {json.dumps(schema['const'])}"]
@@ -215,24 +229,31 @@ def validate_schema_value(path: str, value: Any, schema: dict[str, Any], root: b
     if isinstance(all_of, list):
         for candidate in all_of:
             if isinstance(candidate, dict):
-                errors.extend(validate_schema_value(path, value, candidate, root))
+                errors.extend(validate_schema_value(path, value, candidate, root, root_schema))
         if errors:
             return errors
 
     not_schema = schema.get("not")
-    if isinstance(not_schema, dict) and not validate_schema_value(path, value, not_schema, root):
+    if isinstance(not_schema, dict) and not validate_schema_value(path, value, not_schema, root, root_schema):
         return [f"{path}: must not match forbidden schema"]
 
     one_of = schema.get("oneOf")
     if isinstance(one_of, list):
-        matches = [candidate for candidate in one_of if isinstance(candidate, dict) and not validate_schema_value(path, value, candidate, root)]
+        matches = [
+            candidate
+            for candidate in one_of
+            if isinstance(candidate, dict) and not validate_schema_value(path, value, candidate, root, root_schema)
+        ]
         if len(matches) != 1:
             return [f"{path}: expected exactly one oneOf schema to match"]
         return []
 
     any_of = schema.get("anyOf")
     if isinstance(any_of, list):
-        if not any(isinstance(candidate, dict) and not validate_schema_value(path, value, candidate, root) for candidate in any_of):
+        if not any(
+            isinstance(candidate, dict) and not validate_schema_value(path, value, candidate, root, root_schema)
+            for candidate in any_of
+        ):
             return [f"{path}: expected at least one anyOf schema to match"]
         return []
 
@@ -241,13 +262,16 @@ def validate_schema_value(path: str, value: Any, schema: dict[str, Any], root: b
         expected_types = [item for item in expected_type if isinstance(item, str)]
         if not any(matches_json_type(value, item) for item in expected_types):
             return [f"{path}: expected {' or '.join(expected_types)}"]
-        return []
+        expected_type = next((item for item in expected_types if matches_json_type(value, item)), None)
+    elif expected_type is None:
+        expected_type = infer_applicable_schema_type(value, schema)
 
     if expected_type == "object":
         if not isinstance(value, dict):
             return ["payload must be a JSON object"] if root else [f"{path}: expected object"]
 
         properties = schema.get("properties", {})
+        pattern_properties = schema.get("patternProperties", {})
         required = schema.get("required", [])
         min_properties = schema.get("minProperties")
         max_properties = schema.get("maxProperties")
@@ -264,18 +288,46 @@ def validate_schema_value(path: str, value: Any, schema: dict[str, Any], root: b
             for field_name, rules in properties.items():
                 if field_name not in value or not isinstance(rules, dict):
                     continue
-                errors.extend(validate_schema_value(join_schema_path(path, field_name, root), value[field_name], rules))
+                errors.extend(validate_schema_value(join_schema_path(path, field_name, root), value[field_name], rules, root_schema=root_schema))
+
+        if isinstance(pattern_properties, dict):
+            for pattern, rules in pattern_properties.items():
+                if not isinstance(pattern, str) or not isinstance(rules, dict):
+                    continue
+                try:
+                    regex = re.compile(pattern)
+                except re.error:
+                    errors.append(f"{path}: schema patternProperties key is invalid")
+                    continue
+                for field_name, field_value in value.items():
+                    if regex.search(str(field_name)):
+                        errors.extend(validate_schema_value(join_schema_path(path, str(field_name), root), field_value, rules, root_schema=root_schema))
+
+        property_names = schema.get("propertyNames")
+        if isinstance(property_names, dict):
+            for field_name in value:
+                errors.extend(validate_schema_value(join_schema_path(path, str(field_name), root), str(field_name), property_names, root_schema=root_schema))
+
+        dependent_required = schema.get("dependentRequired")
+        if isinstance(dependent_required, dict):
+            for field_name, dependencies in dependent_required.items():
+                if field_name not in value or not isinstance(dependencies, list):
+                    continue
+                for dependency in dependencies:
+                    if isinstance(dependency, str) and dependency not in value:
+                        errors.append(f"{join_schema_path(path, dependency, root)}: required when {field_name} is present")
 
         additional = schema.get("additionalProperties", True)
+        known = set(properties.keys()) if isinstance(properties, dict) else set()
+        pattern_matched = fields_matching_pattern_properties(value, pattern_properties)
         if additional is False and isinstance(properties, dict):
             for field_name in value:
-                if field_name not in properties:
+                if field_name not in known and field_name not in pattern_matched:
                     errors.append(f"{join_schema_path(path, str(field_name), root)}: unexpected field")
         elif isinstance(additional, dict):
-            known = set(properties.keys()) if isinstance(properties, dict) else set()
             for field_name, field_value in value.items():
-                if field_name not in known:
-                    errors.extend(validate_schema_value(join_schema_path(path, str(field_name), root), field_value, additional))
+                if field_name not in known and field_name not in pattern_matched:
+                    errors.extend(validate_schema_value(join_schema_path(path, str(field_name), root), field_value, additional, root_schema=root_schema))
         return errors
 
     if expected_type == "array":
@@ -296,7 +348,21 @@ def validate_schema_value(path: str, value: Any, schema: dict[str, Any], root: b
                 errors.append(f"{path}: expected array of strings")
             else:
                 for index, item in enumerate(value):
-                    errors.extend(validate_schema_value(f"{path}[{index}]", item, item_schema))
+                    errors.extend(validate_schema_value(f"{path}[{index}]", item, item_schema, root_schema=root_schema))
+        prefix_items = schema.get("prefixItems")
+        if isinstance(prefix_items, list):
+            for index, item_schema in enumerate(prefix_items[: len(value)]):
+                if isinstance(item_schema, dict):
+                    errors.extend(validate_schema_value(f"{path}[{index}]", value[index], item_schema, root_schema=root_schema))
+        contains = schema.get("contains")
+        if isinstance(contains, dict):
+            matches = [item for item in value if not validate_schema_value(path, item, contains, root_schema=root_schema)]
+            min_contains = schema.get("minContains", 1)
+            max_contains = schema.get("maxContains")
+            if isinstance(min_contains, int) and len(matches) < min_contains:
+                errors.append(f"{path}: must contain at least {min_contains} matching items")
+            if isinstance(max_contains, int) and len(matches) > max_contains:
+                errors.append(f"{path}: must contain at most {max_contains} matching items")
         return errors
 
     if expected_type == "string":
@@ -315,6 +381,11 @@ def validate_schema_value(path: str, value: Any, schema: dict[str, Any], root: b
                     errors.append(f"{path}: must match pattern {pattern}")
             except re.error:
                 errors.append(f"{path}: schema pattern is invalid")
+        string_format = schema.get("format")
+        if isinstance(string_format, str):
+            format_error = validate_string_format(path, value, string_format)
+            if format_error:
+                errors.append(format_error)
         return errors
 
     if expected_type == "integer":
@@ -342,16 +413,77 @@ def validate_number_bounds(path: str, value: int | float, schema: dict[str, Any]
     errors: list[str] = []
     minimum = schema.get("minimum")
     maximum = schema.get("maximum")
+    exclusive_minimum = schema.get("exclusiveMinimum")
+    exclusive_maximum = schema.get("exclusiveMaximum")
     if isinstance(minimum, (int, float)) and value < minimum:
         errors.append(f"{path}: must be >= {minimum}")
     if isinstance(maximum, (int, float)) and value > maximum:
         errors.append(f"{path}: must be <= {maximum}")
+    if isinstance(exclusive_minimum, (int, float)) and value <= exclusive_minimum:
+        errors.append(f"{path}: must be > {exclusive_minimum}")
+    if isinstance(exclusive_maximum, (int, float)) and value >= exclusive_maximum:
+        errors.append(f"{path}: must be < {exclusive_maximum}")
     multiple_of = schema.get("multipleOf")
     if isinstance(multiple_of, (int, float)) and multiple_of != 0:
         quotient = value / multiple_of
         if abs(quotient - round(quotient)) > 1e-9:
             errors.append(f"{path}: must be a multiple of {multiple_of}")
     return errors
+
+
+def resolve_local_schema_ref(ref: str, root_schema: dict[str, Any]) -> dict[str, Any] | None:
+    if not ref.startswith("#/"):
+        return None
+    current: Any = root_schema
+    for part in ref.removeprefix("#/").split("/"):
+        key = part.replace("~1", "/").replace("~0", "~")
+        if not isinstance(current, dict) or key not in current:
+            return None
+        current = current[key]
+    return current if isinstance(current, dict) else None
+
+
+def infer_applicable_schema_type(value: Any, schema: dict[str, Any]) -> str | None:
+    if isinstance(value, dict) and any(key in schema for key in ("properties", "required", "additionalProperties", "patternProperties", "propertyNames")):
+        return "object"
+    if isinstance(value, list) and any(key in schema for key in ("items", "prefixItems", "contains", "minItems", "maxItems", "uniqueItems")):
+        return "array"
+    if isinstance(value, str) and any(key in schema for key in ("minLength", "maxLength", "pattern", "format")):
+        return "string"
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and any(
+        key in schema for key in ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf")
+    ):
+        return "integer" if isinstance(value, int) else "number"
+    return None
+
+
+def fields_matching_pattern_properties(value: dict[str, Any], pattern_properties: Any) -> set[str]:
+    matched: set[str] = set()
+    if not isinstance(pattern_properties, dict):
+        return matched
+    for pattern in pattern_properties:
+        if not isinstance(pattern, str):
+            continue
+        try:
+            regex = re.compile(pattern)
+        except re.error:
+            continue
+        for field_name in value:
+            if regex.search(str(field_name)):
+                matched.add(str(field_name))
+    return matched
+
+
+def validate_string_format(path: str, value: str, string_format: str) -> str | None:
+    if string_format == "email" and re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value) is None:
+        return f"{path}: must be a valid email"
+    if string_format == "uri" and re.fullmatch(r"[A-Za-z][A-Za-z0-9+.-]*://\S+", value) is None:
+        return f"{path}: must be a valid uri"
+    if string_format == "date" and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is None:
+        return f"{path}: must be a valid date"
+    if string_format == "date-time" and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\S+", value) is None:
+        return f"{path}: must be a valid date-time"
+    return None
 
 
 def has_unique_json_items(values: list[Any]) -> bool:

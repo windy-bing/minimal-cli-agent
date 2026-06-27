@@ -21,6 +21,7 @@
 | Workflow 委托 | 已有 `/workflow create/step/done/show/clear/schedule/wait/merge/verify` typed workflow state 和 `/delegate` 子代理委托 | 按真实项目需求扩展状态机 |
 | 并发和文件锁 | 已支持单轮多 action、读工具分桶并发、写操作屏障、同进程同文件写锁和 `.agent/locks` 跨进程文件写锁 | 后续细化跨批次取消策略 |
 | MCP / plugin / skill | MCP 挂在 `ToolRegistry` 后面；`/skills` 可发现并加载工作区 skills；plugin manifest 可自动发现并声明 skill/MCP | 后续扩展 plugin manifest schema |
+| Schema / 格式化 | 已扩展 Draft JSON Schema 常用关键字、本地 `$ref`、YAML sidecar schema 和结构化写入格式化建议 | 后续按真实 schema 增加远程 `$ref` 或更完整 draft 支持 |
 
 ## 未规划未实现
 

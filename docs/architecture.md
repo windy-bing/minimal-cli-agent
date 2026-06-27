@@ -135,10 +135,10 @@ Reserved:
 - MCP concrete tool discovery is opt-in at startup. Generic list/call tools remain available without touching the network.
 - Skills can be discovered from the workspace and loaded manually or in bulk through `/skills`.
 - Plugin manifests are discovered from workspace/user plugin directories and can contribute skills plus MCP server configs.
+- Structured writers validate JSON/YAML sidecar schemas and return formatter suggestions for repairable syntax/schema failures.
 
 Not implemented yet:
 
-- Full Draft JSON Schema compatibility, YAML schema validation, and automatic formatting suggestions.
 - Deeper project-rule layering and conflict reporting.
 
 ## Roadmap

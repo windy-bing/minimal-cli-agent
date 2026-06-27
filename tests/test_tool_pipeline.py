@@ -304,6 +304,55 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertIn("tags: items must be unique", errors)
         self.assertIn('kind: expected constant "demo"', errors)
 
+    def test_schema_validation_supports_refs_and_object_keywords(self) -> None:
+        from minimal_cli_agent.tool_registry import validate_object_schema
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "email": {"$ref": "#/$defs/email"},
+                "S_NAME": {"type": "string"},
+                "credit_card": {"type": "string"},
+            },
+            "patternProperties": {"^S_": {"type": "string"}},
+            "propertyNames": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+            "dependentRequired": {"credit_card": ["billing_address"]},
+            "additionalProperties": False,
+            "$defs": {"email": {"type": "string", "format": "email"}},
+        }
+
+        valid = {"email": "dev@example.com", "S_NAME": "ok"}
+        invalid = {"email": "dev", "bad-name": True, "credit_card": "1234"}
+
+        self.assertEqual(validate_object_schema(valid, schema), [])
+        errors = validate_object_schema(invalid, schema)
+
+        self.assertIn("email: must be a valid email", errors)
+        self.assertIn("bad-name: must match pattern ^[A-Za-z_][A-Za-z0-9_]*$", errors)
+        self.assertIn("bad-name: unexpected field", errors)
+        self.assertIn("billing_address: required when credit_card is present", errors)
+
+    def test_schema_validation_supports_array_and_exclusive_keywords(self) -> None:
+        from minimal_cli_agent.tool_registry import validate_object_schema
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "tuple": {"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}]},
+                "scores": {
+                    "type": "array",
+                    "contains": {"type": "number", "exclusiveMinimum": 10},
+                    "minContains": 2,
+                },
+            },
+        }
+
+        errors = validate_object_schema({"tuple": [1, "x"], "scores": [10, 11]}, schema)
+
+        self.assertIn("tuple[0]: expected string", errors)
+        self.assertIn("tuple[1]: expected integer", errors)
+        self.assertIn("scores: must contain at least 2 matching items", errors)
+
     def test_tool_alias_resolves_to_registered_tool(self) -> None:
         harness = AgentHarness(AgentConfig(permission_mode="plan"))
 

@@ -263,6 +263,7 @@ class HarnessTest(unittest.TestCase):
         self.assertTrue(observation.result.skipped)
         self.assertEqual(observation.result.exit_code, 2)
         self.assertIn("Structured file validation failed", observation.result.output)
+        self.assertIn("Formatting suggestion:", observation.result.output)
 
     def test_write_file_accepts_valid_json(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -303,6 +304,40 @@ class HarnessTest(unittest.TestCase):
         self.assertEqual(observation.result.exit_code, 2)
         self.assertIn("schema validation failed", observation.result.output)
         self.assertIn("name: must match pattern", observation.result.output)
+        self.assertIn("Formatting suggestion:", observation.result.output)
+
+    def test_write_file_rejects_yaml_that_violates_sidecar_schema(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "config.schema.json").write_text(
+                json.dumps(
+                    {
+                        "type": "object",
+                        "required": ["name", "tags"],
+                        "properties": {
+                            "name": {"type": "string", "pattern": "^[a-z]+$"},
+                            "tags": {"type": "array", "items": {"type": "string"}},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="autoEdit"))
+
+            observation = harness.execute_tool(
+                ToolCall(
+                    name=Tools.WRITE_FILE,
+                    payload=json.dumps({"path": "config.yaml", "content": "name: ABC\ntags:\n  - ok\n"}),
+                )
+            )
+
+            self.assertFalse((root / "config.yaml").exists())
+
+        self.assertTrue(observation.result.skipped)
+        self.assertEqual(observation.result.exit_code, 2)
+        self.assertIn("schema validation failed", observation.result.output)
+        self.assertIn("name: must match pattern", observation.result.output)
+        self.assertIn("Formatting suggestion:", observation.result.output)
 
     def test_edit_file_replaces_line_range(self) -> None:
         with TemporaryDirectory() as tmp:
