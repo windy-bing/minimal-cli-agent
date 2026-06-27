@@ -128,7 +128,7 @@ class PolicyFileFields:
 class Defaults:
     MODEL: Final = "qwen3:4b"
     BASE_URL: Final = "http://localhost:11434"
-    MAX_STEPS: Final = "20"
+    MAX_STEPS: Final = "0"
     COMMAND_TIMEOUT: Final = "30"
     MODEL_TIMEOUT: Final = "300"
     MCP_TIMEOUT: Final = "30"

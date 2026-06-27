@@ -4,6 +4,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import fnmatch
 import json
+import sys
+from typing import Literal
+
+try:
+    import termios
+    import tty
+except ImportError:  # pragma: no cover - platform-dependent.
+    termios = None
+    tty = None
 
 from minimal_cli_agent.constants import (
     EventKinds,
@@ -19,7 +28,8 @@ from minimal_cli_agent.exceptions import ConfigurationError, PermissionDenied
 from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.types import AgentConfig, ToolDecision
 
-ConfirmationHandler = Callable[[str, str], bool]
+ConfirmationResult = Literal["allow_once", "allow_session_action", "deny"]
+ConfirmationHandler = Callable[[str, str], bool | str]
 
 
 @dataclass(frozen=True)
@@ -82,6 +92,7 @@ class ShellPermissionPolicy:
         self.audit_recorder = audit_recorder
         self.confirmation_handler = confirmation_handler or input_confirmation_handler
         self.approved_tool_calls: set[tuple[str, str]] = set()
+        self.approved_actions: set[str] = set()
         self.rules = load_shell_policy_rules(config)
 
     def decide(self, action: str, payload: str) -> ToolDecision:
@@ -118,6 +129,8 @@ class ShellPermissionPolicy:
             return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="autoEdit mode allows file edits")
 
         if self.config.permission_mode in {PermissionModes.DEFAULT, PermissionModes.AUTO_EDIT}:
+            if action in self.approved_actions:
+                return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="session action approval memory")
             if (action, payload) in self.approved_tool_calls:
                 return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="session approval memory")
             return ToolDecision(kind=ToolDecisionKinds.ASK, reason=f"{self.config.permission_mode} mode requires {action} confirmation")
@@ -131,6 +144,8 @@ class ShellPermissionPolicy:
             return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="yolo mode")
         if self.config.permission_mode == PermissionModes.PLAN:
             return ToolDecision(kind=ToolDecisionKinds.SKIP, reason=f"plan mode does not execute {action}")
+        if action in self.approved_actions:
+            return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="session action approval memory")
         if (action, payload) in self.approved_tool_calls:
             return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="session approval memory")
         return ToolDecision(kind=ToolDecisionKinds.ASK, reason=f"{self.config.permission_mode} mode requires {action} confirmation")
@@ -145,9 +160,15 @@ class ShellPermissionPolicy:
     def confirm(self, action: str, payload: str, decision: ToolDecision) -> ToolDecision:
         if decision.kind != ToolDecisionKinds.ASK:
             return decision
-        if not self.confirmation_handler(action, payload):
+        confirmation = normalize_confirmation_result(self.confirmation_handler(action, payload))
+        if confirmation == "deny":
             self._record_permission_event(action, payload, ToolDecisionKinds.DENY, "user denied")
             raise PermissionDenied(f"User denied {action}: {payload}")
+        if confirmation == "allow_session_action":
+            self.approved_actions.add(action)
+            reason = f"user approved all {action} calls for this session"
+            self._record_permission_event(action, payload, ToolDecisionKinds.ALLOW, reason)
+            return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason=reason)
         self.approved_tool_calls.add((action, payload))
         reason = f"user approved {action}"
         self._record_permission_event(action, payload, ToolDecisionKinds.ALLOW, reason)
@@ -201,6 +222,78 @@ def path_matches_policy(path: str, pattern: str) -> bool:
     return normalized_path == normalized_pattern or normalized_path.startswith(f"{normalized_pattern}/")
 
 
-def input_confirmation_handler(action: str, payload: str) -> bool:
-    answer = input(f"\nAllow {action}?\n{payload}\n[y/N] ").strip().lower()
-    return answer in {"y", "yes"}
+def normalize_confirmation_result(value: bool | str) -> ConfirmationResult:
+    if value is True:
+        return "allow_once"
+    if value is False:
+        return "deny"
+    normalized = value.strip().lower()
+    if normalized in {"allow_session_action", "always", "all", "a"}:
+        return "allow_session_action"
+    if normalized in {"allow_once", "once", "yes", "y"}:
+        return "allow_once"
+    return "deny"
+
+
+def input_confirmation_handler(action: str, payload: str) -> ConfirmationResult:
+    options = (
+        ("Allow once", "allow_once"),
+        (f"Allow all {action} this session", "allow_session_action"),
+        ("Deny", "deny"),
+    )
+    if termios is not None and tty is not None and sys.stdin.isatty() and sys.stdout.isatty():
+        return select_confirmation_with_arrows(action, payload, options)
+    answer = input(f"\nAllow {action}?\n{payload}\n[once/all/deny] ").strip().lower()
+    return normalize_confirmation_result(answer)
+
+
+def select_confirmation_with_arrows(action: str, payload: str, options: tuple[tuple[str, ConfirmationResult], ...]) -> ConfirmationResult:
+    print(f"\nPermission required for {action}:")
+    print(payload)
+    print("Use Up/Down and Enter. Shortcuts: o=once, a=all session, d=deny.")
+    selected = 0
+    while True:
+        render_confirmation_options(options, selected)
+        key = read_key()
+        clear_confirmation_options(len(options))
+        if key in {"\r", "\n"}:
+            return options[selected][1]
+        if key.lower() == "o":
+            return "allow_once"
+        if key.lower() == "a":
+            return "allow_session_action"
+        if key.lower() in {"d", "n", "\x03"}:
+            return "deny"
+        if key in {"\x1b[A", "k"}:
+            selected = (selected - 1) % len(options)
+        elif key in {"\x1b[B", "j"}:
+            selected = (selected + 1) % len(options)
+
+
+def render_confirmation_options(options: tuple[tuple[str, ConfirmationResult], ...], selected: int) -> None:
+    for index, (label, _) in enumerate(options):
+        prefix = ">" if index == selected else " "
+        print(f"{prefix} {label}")
+
+
+def clear_confirmation_options(lines: int) -> None:
+    if not sys.stdout.isatty():
+        return
+    for _ in range(lines):
+        print("\033[F\033[K", end="")
+
+
+def read_key() -> str:
+    if termios is None or tty is None:
+        return sys.stdin.read(1)
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        first = sys.stdin.read(1)
+        if first == "\x1b":
+            rest = sys.stdin.read(2)
+            return first + rest
+        return first
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)

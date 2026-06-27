@@ -140,6 +140,8 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 
 如果多步骤 turn 正在运行，你输入一行并按 Enter，这行会被暂存为补充用户输入，并在同一 turn 的下一次模型调用前加入完整对话上下文。
 
+权限确认会显示可选择菜单：`Allow once`、`Allow all <action> this session` 和 `Deny`。session 级 action 放行可以避免同类 action 反复确认，但危险命令、敏感路径和网络访问 hard gate 仍然生效。
+
 如果希望 loop 能直接修改项目文件，使用 `--permission autoEdit`，这样文件写入类工具不会每次询问。`plan` 仍然是只读模式：可以读文件，但会跳过 shell 命令和文件写入。
 
 如果某轮在 `plan` 模式下走到了必须写文件的步骤，REPL 会询问是否切到 `autoEdit` 并自动重试同一条用户输入，不需要重新输入任务。
@@ -270,7 +272,7 @@ Profile 行为：
 --base-url       provider base URL
 --api-key        OpenAI-compatible 接口的 API key
 --cwd            命令执行目录
---max-steps      Agent loop 最大迭代次数
+--max-steps      Agent loop 最大迭代次数；0 表示不限制
 --timeout        命令超时时间，单位秒
 --shell          shell adapter：system、bash、zsh、sh、powershell、cmd、git-bash 或 shell command
 --model-timeout  模型请求超时时间，单位秒
@@ -368,6 +370,7 @@ src/minimal_cli_agent/
 
 - 无状态 `Agent.chat_stream(message, context)` 入口。
 - 用于 UI/CLI 集成的 `LoopEvent` / `LoopResult`。
+- `--max-steps 0` 会一直运行到模型主动退出或用户中断当前 turn。
 - 单轮多个 action block 会按输出顺序串行执行。
 - `ToolRegistry` 和分阶段 `ToolExecutionPipeline`。
 - 内置 `read_file`、`read_tail`、`read_forward`、`search`、`write_file` 和 `edit_file`，支持有边界地访问和修改工作区文件。
@@ -385,7 +388,7 @@ src/minimal_cli_agent/
 - 本地 instruction skill 加载与系统提示注入。
 - JSON session event log，用于记录权限批准审计事件。
 - JSON session 写入带文件锁、原子替换，并会裁剪到最近消息。
-- 权限确认可通过 confirmation handler 替换，CLI `input()` 只是默认实现。
+- 权限确认可通过 confirmation handler 替换，CLI 支持 once/session/deny 选择式确认。
 - `pyproject.toml` 已包含面向 `src` 和 `tests` 的 Pyright `basic` 类型检查配置。
 - `/plan` 会创建隔离的 typed plan artifact，可查看、清除，并可持久化到 session 文件。
 - 上下文压缩会在接近配置的模型上下文预算时触发，并在压缩摘要中保留初始用户目标。
@@ -395,7 +398,7 @@ src/minimal_cli_agent/
 已预留但保持最小实现：
 
 - 上下文压缩默认是本地截断；模型总结需要显式启用。
-- `autoEdit` 会自动批准文件写入类工具；shell 命令仍需要确认。
+- `autoEdit` 会自动批准文件写入类工具；shell 命令仍会确认，除非用户选择单次或当前 session 放行。
 - session 持久化目前是 JSON，不是 SQLite 或可查询事件数据库。
 - MCP 工具发现是启动时 best-effort；发现失败时仍保留通用 list/call 工具。
 

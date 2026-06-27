@@ -72,6 +72,7 @@ Implemented:
 - Stateless `Agent.chat_stream(message, context)` entry point.
 - `ChatContext` carries session id, messages, and metadata from the caller.
 - `LoopEvent` / `LoopResult` for stream-style UI integration.
+- `max_steps=0` disables the loop step cap for long-running turns until model exit or user interruption.
 - Multiple action blocks per model turn, executed sequentially in output order.
 - Multi-turn CLI REPL that reuses one `ChatContext` across turns.
 - REPL slash commands for runtime profile/provider/model/base URL/permission/network/context/history/plan/review control.
@@ -105,7 +106,7 @@ Implemented:
 - Typed plan artifact stored in `ChatContext.metadata` and persisted in JSON sessions.
 - Execute turns read the active plan, inject it into the system prompt, and constrain writer tools to planned paths when paths are known.
 - ShellAdapter support for system shell, bash, zsh, sh, PowerShell, cmd, and Git Bash style execution with shell/cwd/encoding/path metadata in observations.
-- Injectable permission confirmation handler; CLI input is the default adapter.
+- Injectable permission confirmation handler; the CLI supports selectable allow-once, allow-session-action, and deny choices.
 - Pyright `basic` type-checking configuration for `src` and `tests`.
 - `ToolExecutionPipeline` with the full stage shape:
 
@@ -119,9 +120,9 @@ Discovery -> Validation -> Permission -> PreHook -> ResolveDecision
 
 Reserved:
 
-- `ResolveDecision` has a decision hook baseline. Richer priority rules, conflict reporting, and session-scoped approval memory remain reserved.
+- `ResolveDecision` has a decision hook baseline. Richer priority rules and conflict reporting remain reserved.
 - `Confirmation` uses an injectable handler. CLI `input()` is the default adapter, and UI clients can provide their own handler.
-- `autoEdit` automatically approves file writer tools; shell commands still ask for confirmation.
+- `autoEdit` automatically approves file writer tools; shell commands still ask until explicitly approved once or for the session.
 - Tool schema validation is a focused JSON Schema subset, not a complete Draft implementation.
 - The event log is JSON-backed. It is durable, but not yet indexed or queryable like SQLite.
 - MCP concrete tool discovery is opt-in at startup. Generic list/call tools remain available without touching the network.
@@ -189,8 +190,8 @@ Memory should have layers:
 
 Current product modes are `default`, `autoEdit`, `plan`, and `yolo`.
 
-- `default`: shell commands ask for confirmation.
-- `autoEdit`: automatically approves file writer tools; shell commands still ask.
+- `default`: shell commands ask for confirmation until approved once or for the session.
+- `autoEdit`: automatically approves file writer tools; shell commands still ask until approved once or for the session.
 - `plan`: allows read-only file tools, skips shell execution and file writes.
 - `yolo`: allow execution unless a hard deny rule blocks it.
 

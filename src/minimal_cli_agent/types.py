@@ -88,7 +88,7 @@ class AgentConfig:
     base_url: str = Defaults.BASE_URL
     api_key: str | None = None
     cwd: Path = field(default_factory=Path.cwd)
-    max_steps: int = 20
+    max_steps: int = int(Defaults.MAX_STEPS)
     command_timeout: int = 30
     shell_kind: str = "system"
     model_timeout: int = int(Defaults.MODEL_TIMEOUT)

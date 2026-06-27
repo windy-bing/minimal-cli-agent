@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Generator, Iterator
 
 from minimal_cli_agent.constants import LoopEventData, LoopEventTypes
 from minimal_cli_agent.exceptions import AgentFinished, FormatError, NonTerminatingAgentError
@@ -28,11 +28,11 @@ class Agent:
             messages.append(Message(role="system", content=options.system_prompt or SYSTEM_PROMPT))
         messages.append(Message(role="user", content=message))
 
-        for step in range(1, self.config.max_steps + 1):
+        for step in iter_steps(self.config.max_steps):
             messages = self.harness.prepare_context(messages)
             yield LoopEvent(
                 type=LoopEventTypes.STEP_START,
-                data={LoopEventData.STEP: step, LoopEventData.MAX_STEPS: self.config.max_steps},
+                data={LoopEventData.STEP: step, LoopEventData.MAX_STEPS: format_max_steps(self.config.max_steps)},
             )
             output = self.harness.complete(messages)
             yield LoopEvent(type=LoopEventTypes.MODEL_OUTPUT, data={LoopEventData.CONTENT: output})
@@ -108,6 +108,17 @@ def read_supplemental_input(options: LoopOptions) -> str:
         return ""
     value = options.interrupt_input_reader()
     return value.strip() if value else ""
+
+
+def iter_steps(max_steps: int) -> Iterator[int]:
+    step = 1
+    while max_steps <= 0 or step <= max_steps:
+        yield step
+        step += 1
+
+
+def format_max_steps(max_steps: int) -> int | str:
+    return max_steps if max_steps > 0 else "unlimited"
 
 
 def print_event(event: LoopEvent) -> None:

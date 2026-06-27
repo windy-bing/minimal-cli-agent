@@ -245,6 +245,36 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertEqual(first.result.output, "hello")
         self.assertEqual(second.result.output, "hello")
 
+    def test_default_mode_can_approve_all_shell_calls_for_session(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="default"))
+
+        with patch("builtins.input", side_effect=["all"]) as input_mock:
+            first = harness.execute_shell("printf hello")
+            second = harness.execute_shell("printf goodbye")
+
+        self.assertEqual(input_mock.call_count, 1)
+        self.assertEqual(first.result.output, "hello")
+        self.assertEqual(second.result.output, "goodbye")
+
+    def test_confirmation_callback_can_approve_all_shell_calls_for_session(self) -> None:
+        approvals: list[tuple[str, str]] = []
+
+        def approve_all(action: str, payload: str) -> str:
+            approvals.append((action, payload))
+            return "allow_session_action"
+
+        harness = AgentHarness(
+            AgentConfig(permission_mode="default"),
+            confirmation_handler=approve_all,
+        )
+
+        first = harness.execute_shell("printf hello")
+        second = harness.execute_shell("printf goodbye")
+
+        self.assertEqual(len(approvals), 1)
+        self.assertEqual(first.result.output, "hello")
+        self.assertEqual(second.result.output, "goodbye")
+
     def test_sensitive_paths_are_hard_denied_even_in_yolo(self) -> None:
         harness = AgentHarness(AgentConfig(permission_mode="yolo"))
 

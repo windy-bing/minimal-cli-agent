@@ -140,6 +140,8 @@ Interactive prompts are styled and include the active provider/model and permiss
 
 If you type and press Enter while a multi-step turn is running, the line is queued as supplemental user input. The agent adds it to the full conversation context before the next model call in that same turn.
 
+Permission prompts use a selectable menu with `Allow once`, `Allow all <action> this session`, and `Deny`. Session action approval avoids repeated prompts for the same action type, while hard gates for dangerous commands, sensitive paths, and network access still apply.
+
 Use `--permission autoEdit` when you want the loop to modify project files through file writer tools without asking every time. `plan` remains read-only: it can read files but skips shell commands and file writes.
 
 If a turn in `plan` mode reaches a required file edit, the REPL asks whether to switch to `autoEdit` and retry the same user request instead of making you type it again.
@@ -270,7 +272,7 @@ Explicit CLI options such as `--model`, `--base-url`, and `--api-key` take prece
 --base-url       provider base URL
 --api-key        API key for OpenAI-compatible endpoints
 --cwd            working directory for commands
---max-steps      maximum agent loop iterations
+--max-steps      maximum agent loop iterations; 0 means unlimited
 --timeout        command timeout in seconds
 --shell          shell adapter: system, bash, zsh, sh, powershell, cmd, git-bash, or a shell command
 --model-timeout  model request timeout in seconds
@@ -368,6 +370,7 @@ Implemented:
 
 - Stateless `Agent.chat_stream(message, context)` entry point.
 - `LoopEvent` / `LoopResult` for event-oriented loop output.
+- `--max-steps 0` runs until the model exits or the user interrupts the turn.
 - Multiple action blocks per model turn are executed sequentially in output order.
 - `ToolRegistry` and staged `ToolExecutionPipeline`.
 - Built-in `read_file`, `read_tail`, `read_forward`, `search`, `write_file`, and `edit_file` tools for bounded workspace file access.
@@ -385,7 +388,7 @@ Implemented:
 - Local instruction skill loading into the system prompt.
 - JSON session event log for permission approval audit records.
 - JSON session writes are lock-protected, atomically replaced, and capped to recent messages.
-- Permission confirmation is injectable through a confirmation handler; CLI `input()` is only the default handler.
+- Permission confirmation is injectable through a confirmation handler; the CLI supports selectable once/session/deny approval.
 - `pyproject.toml` includes a Pyright `basic` type-checking configuration for `src` and `tests`.
 - `/plan` creates an isolated typed plan artifact that can be shown, cleared, and persisted in the session file.
 - Context compaction is triggered near the configured model context budget, and compacted summaries preserve the initial user goal.
@@ -395,7 +398,7 @@ Implemented:
 Reserved but intentionally minimal:
 
 - Context compression defaults to local truncation; model summarization is opt-in.
-- `autoEdit` automatically approves file writer tools; shell commands still ask for confirmation.
+- `autoEdit` automatically approves file writer tools; shell commands still ask until explicitly approved once or for the session.
 - Session persistence is JSON, not SQLite or a queryable event database.
 - MCP tool discovery is best-effort at startup; generic list/call tools remain available when discovery cannot run.
 

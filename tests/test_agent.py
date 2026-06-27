@@ -29,6 +29,18 @@ class WriteThenExitModel:
         return "Done.\n```bash-action\nexit\n```"
 
 
+class LongRunningThenExitModel:
+    def __init__(self, exit_after: int) -> None:
+        self.calls = 0
+        self.exit_after = exit_after
+
+    def complete(self, messages: list[Message]) -> str:
+        self.calls += 1
+        if self.calls >= self.exit_after:
+            return "Done.\n```bash-action\nexit\n```"
+        return "Continue.\n```tool-action\n{\"tool\":\"search\",\"pattern\":\"missing\",\"path\":\".\"}\n```"
+
+
 class MultiActionThenExitModel:
     def __init__(self) -> None:
         self.calls = 0
@@ -80,6 +92,28 @@ class AgentTest(unittest.TestCase):
         observations = [event.data.get("observation", "") for event in events if event.type == LoopEventTypes.TOOL_CALL_RESULT]
         self.assertFalse(result.success)
         self.assertTrue(any("Your output was malformed." in observation for observation in observations))
+
+    def test_chat_stream_allows_unlimited_steps_when_max_steps_is_zero(self) -> None:
+        model = LongRunningThenExitModel(exit_after=25)
+        config = AgentConfig(permission_mode="plan", max_steps=0)
+        harness = AgentHarness(config=config, model=model)
+        agent = Agent(config=config, harness=harness)
+
+        result = agent.chat("long task", ChatContext())
+
+        self.assertTrue(result.success)
+        self.assertEqual(model.calls, 25)
+
+    def test_chat_stream_still_enforces_positive_max_steps(self) -> None:
+        model = LongRunningThenExitModel(exit_after=25)
+        config = AgentConfig(permission_mode="plan", max_steps=3)
+        harness = AgentHarness(config=config, model=model)
+        agent = Agent(config=config, harness=harness)
+
+        result = agent.chat("bounded task", ChatContext())
+
+        self.assertFalse(result.success)
+        self.assertEqual(model.calls, 3)
 
     def test_interactive_chat_stream_accepts_plain_text(self) -> None:
         config = AgentConfig(permission_mode="plan")
