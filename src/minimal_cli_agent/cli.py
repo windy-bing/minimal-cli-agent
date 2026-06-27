@@ -38,6 +38,10 @@ from minimal_cli_agent.workflow import (
     complete_workflow_step,
     create_workflow,
     format_workflow_artifact,
+    merge_workflow_delegations,
+    schedule_next_workflow_step,
+    verify_workflow_step,
+    workflow_status_counts,
 )
 
 
@@ -813,7 +817,7 @@ def is_user_prompt_history_entry(content: str) -> bool:
 
 
 def print_quick_command_hint() -> None:
-    print("Commands: /help, /config, /profile, /permission, /mcp, /skill, /skills, /context, /history, /events, /plan, /workflow, /delegate, /review, /exit")
+    print("Commands: /help, /config, /profile, /permission, /mcp, /skill, /skills, /context, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit")
 
 
 def print_interactive_help() -> None:
@@ -1253,7 +1257,66 @@ def handle_workflow_command(session: InteractiveSession, argument: str) -> None:
         print("workflow step completed")
         print(format_workflow_artifact(workflow))
         return
-    print(f"Usage: {InteractiveCommands.WORKFLOW} create <goal>|step <text>|done <number>|show|clear")
+    if action == "schedule":
+        if workflow is None:
+            print("no active workflow")
+            return
+        workflow, index = schedule_next_workflow_step(workflow)
+        save_workflow(session, workflow)
+        if index is None:
+            print("no pending workflow steps")
+        else:
+            print(f"workflow step scheduled: {index}")
+        print(format_workflow_artifact(workflow))
+        return
+    if action == "wait":
+        if workflow is None:
+            print("no active workflow")
+            return
+        counts = workflow_status_counts(workflow)
+        print("workflow status:")
+        for key in sorted(counts):
+            if counts[key]:
+                print(f"- {key}: {counts[key]}")
+        if workflow.steps and all(step.status in {"done", "verified"} for step in workflow.steps):
+            print("workflow complete")
+        elif any(step.status == "running" for step in workflow.steps):
+            print("workflow has running steps")
+        else:
+            print("workflow waiting for pending work")
+        return
+    if action == "merge":
+        if workflow is None:
+            print("no active workflow")
+            return
+        workflow = merge_workflow_delegations(workflow)
+        save_workflow(session, workflow)
+        print("workflow delegations merged")
+        print(format_workflow_artifact(workflow))
+        return
+    if action == "verify":
+        if workflow is None:
+            print("no active workflow")
+            return
+        if value in {"", "all"}:
+            for index, step in enumerate(workflow.steps, start=1):
+                if step.status == "done":
+                    workflow = verify_workflow_step(workflow, index)
+        else:
+            try:
+                index = int(value)
+            except ValueError:
+                print(f"Usage: {InteractiveCommands.WORKFLOW} verify [number|all]")
+                return
+            if index < 1 or index > len(workflow.steps):
+                print(f"workflow step out of range: {index}")
+                return
+            workflow = verify_workflow_step(workflow, index)
+        save_workflow(session, workflow)
+        print("workflow verified")
+        print(format_workflow_artifact(workflow))
+        return
+    print(f"Usage: {InteractiveCommands.WORKFLOW} create <goal>|step <text>|schedule|done <number>|merge|verify [number|all]|wait|show|clear")
 
 
 def handle_delegate_command(session: InteractiveSession, task: str) -> None:

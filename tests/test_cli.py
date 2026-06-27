@@ -172,7 +172,7 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
-        self.assertIn("Commands: /help, /config, /profile, /permission, /mcp, /skill, /skills, /context, /history, /events, /plan, /workflow, /delegate, /review, /exit", printed)
+        self.assertIn("Commands: /help, /config, /profile, /permission, /mcp, /skill, /skills, /context, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit", printed)
 
     def test_detect_explicit_options_supports_space_and_equals_forms(self) -> None:
         explicit = detect_explicit_options([
@@ -539,6 +539,41 @@ class CliTest(unittest.TestCase):
         self.assertEqual(context.metadata[WORKFLOW_METADATA_KEY].steps[0].status, "done")
         self.assertIn("workflow saved", printed)
         self.assertIn("1. [x] inspect docs", printed)
+
+    def test_run_interactive_workflow_schedule_wait_verify_and_merge(self) -> None:
+        model = SequenceModel(["Summary: inspected\nEvidence:\n- README.md"])
+        with TemporaryDirectory() as tmp:
+            store = JsonSessionStore(Path(tmp) / "session.json")
+            config = AgentConfig(permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=store))
+            context = ChatContext()
+
+            with patch(
+                "builtins.input",
+                side_effect=[
+                    "/workflow step implement parser",
+                    "/workflow schedule",
+                    "/workflow wait",
+                    "/workflow done 1",
+                    "/workflow verify 1",
+                    "/delegate inspect docs",
+                    "/workflow merge",
+                    "/quit",
+                ],
+            ), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, context, session_store=store, first_message="/workflow create ship workflow")
+
+            workflow = store.load_workflow()
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIsNotNone(workflow)
+        self.assertEqual(workflow.steps[0].status, "verified")
+        self.assertTrue(any(step.title == "Merge delegation: inspect docs" for step in workflow.steps))
+        self.assertIn("workflow step scheduled: 1", printed)
+        self.assertIn("workflow has running steps", printed)
+        self.assertIn("workflow verified", printed)
+        self.assertIn("workflow delegations merged", printed)
 
     def test_run_interactive_delegate_records_subagent_result_in_workflow(self) -> None:
         model = SequenceModel(["Summary: inspected README\nEvidence:\n- README.md"])

@@ -279,7 +279,7 @@ class InteractiveCommands:
         HISTORY: "Show or replay user prompt history. Usage: /history [number]",
         EVENTS: "Show persisted session events. Usage: /events [kind|number]",
         PLAN: "Create, show, or clear an isolated plan. Usage: /plan <goal>|show|clear",
-        WORKFLOW: "Manage typed workflow state. Usage: /workflow create <goal>|step <text>|done <number>|show|clear",
+        WORKFLOW: "Manage typed workflow state. Usage: /workflow create <goal>|step <text>|schedule|done <number>|merge|verify|wait|show|clear",
         MEMORY: "Search persisted SQLite memory. Usage: /memory <query>",
         DELEGATE: "Run an isolated read-only sub-agent task. Usage: /delegate <task>",
         REVIEW: "Ask the agent to review the current project or a path. Usage: /review [path]",
