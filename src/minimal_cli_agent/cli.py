@@ -28,7 +28,7 @@ from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact, build_plan_p
 from minimal_cli_agent.prompts import INTERACTIVE_SYSTEM_PROMPT, SYSTEM_PROMPT
 from minimal_cli_agent.profiles import resolve_profile
 from minimal_cli_agent.skills import build_system_prompt, discover_skill_paths, resolve_skill_path, resolve_skill_paths
-from minimal_cli_agent.subagent import SubAgentRunner
+from minimal_cli_agent.subagent import SUBAGENT_ROLES, SubAgentRunner
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, Message, ModelRoute, ToolCall, ToolDecision
 from minimal_cli_agent.workflow import (
     WORKFLOW_METADATA_KEY,
@@ -1321,16 +1321,31 @@ def handle_workflow_command(session: InteractiveSession, argument: str) -> None:
 
 def handle_delegate_command(session: InteractiveSession, task: str) -> None:
     if not task:
-        print(f"Usage: {InteractiveCommands.DELEGATE} <task>")
+        print(f"Usage: {InteractiveCommands.DELEGATE} [explorer|worker|verifier] <task>")
         return
+    role, task = parse_delegate_role(task)
     runner = SubAgentRunner(session.agent.config, session.agent.harness.model)
-    result = runner.run(task)
+    result = runner.run(task, role=role)
     workflow = active_workflow_from_context(session.context) or create_workflow("Delegated work")
-    workflow = add_workflow_delegation(workflow, task=result.task, summary=result.summary, success=result.success)
+    summary = result.summary
+    if result.changed_files:
+        summary = f"{summary} Changed files: {', '.join(result.changed_files)}"
+    if result.role != "explorer":
+        summary = f"Role: {result.role}. {summary}"
+    workflow = add_workflow_delegation(workflow, task=result.task, summary=summary, success=result.success)
     save_workflow(session, workflow)
     status = "success" if result.success else "failed"
-    print(f"delegation {status}")
+    print(f"delegation {status} ({result.role})")
+    if result.changed_files:
+        print(f"changed_files: {', '.join(result.changed_files)}")
     print(result.summary)
+
+
+def parse_delegate_role(value: str) -> tuple[str, str]:
+    role, task = split_command_argument(value)
+    if role in SUBAGENT_ROLES and task:
+        return role, task
+    return "explorer", value
 
 
 def split_command_argument(argument: str) -> tuple[str, str]:
