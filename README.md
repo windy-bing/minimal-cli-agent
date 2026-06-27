@@ -316,6 +316,8 @@ Explicit CLI options such as `--model`, `--base-url`, and `--api-key` take prece
 --allow-network  allow shell commands with obvious network access
 --policy-file    JSON file with shell policy allow/deny and write-scope rules
 --mcp-config     JSON file with MCP servers
+--plugin         plugin manifest name under plugins/<name> or a direct plugin.json path
+--no-plugin-discovery disable automatic plugin discovery
 --skill          skill name under skills/<name> or a direct SKILL.md path
 --no-summarize-context disable default model summaries during compaction
 --model-context-tokens approximate model context window for compaction
@@ -434,15 +436,14 @@ Reserved but intentionally minimal:
 
 - Context compression can fall back to local truncation when model summaries are disabled.
 - `autoEdit` automatically approves file writer tools; shell commands still ask until explicitly approved once or for the session.
-- Session persistence is JSON, not SQLite or an indexed event database.
+- Session persistence supports JSON or SQLite transcript/event storage with `/memory` retrieval.
 - MCP tool discovery is best-effort at startup; generic list/call tools remain available when discovery cannot run.
+- Plugin manifests are discovered from workspace/user plugin directories and can load skills plus MCP server configs.
 
 Not implemented yet:
 
-- Parallel tool execution.
-- GroupSession runtime.
-- Workflow scheduler or delegation engine.
-- Automatic MCP/plugin discovery.
+- Full Draft JSON Schema compatibility, YAML schema validation, and automatic formatting suggestions.
+- Deeper project-rule layering and conflict reporting.
 
 ## Notes From The Reference Article
 

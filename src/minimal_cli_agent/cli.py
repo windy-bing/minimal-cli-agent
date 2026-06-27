@@ -25,6 +25,13 @@ from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import compact_messages
 from minimal_cli_agent.memory import JsonSessionStore, SQLiteSessionStore
 from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact, build_plan_prompt, create_plan_artifact, extract_plan_paths, format_plan_artifact, format_plan_execution_context
+from minimal_cli_agent.plugins import (
+    discover_plugin_paths,
+    load_plugin_manifest,
+    load_plugin_skill_paths,
+    resolve_plugin_path,
+    resolve_plugin_paths,
+)
 from minimal_cli_agent.prompts import INTERACTIVE_SYSTEM_PROMPT, SYSTEM_PROMPT
 from minimal_cli_agent.profiles import resolve_profile
 from minimal_cli_agent.skills import build_system_prompt, discover_skill_paths, resolve_skill_path, resolve_skill_paths
@@ -84,6 +91,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--allow-network", action="store_true", help="Allow shell commands with obvious network access.")
     parser.add_argument("--policy-file", type=Path, help="JSON file with additional shell policy deny tokens.")
     parser.add_argument("--mcp-config", type=Path, help="JSON config file with MCP servers.")
+    parser.add_argument("--plugin", action="append", default=[], help="Load a plugin manifest by path or by name under plugins/<name>.")
+    parser.add_argument("--no-plugin-discovery", action="store_true", help="Disable automatic plugin discovery.")
     parser.add_argument("--skill", action="append", default=[], help="Load a skill by path or by name under skills/<name>.")
     parser.add_argument("--summarize-context", action="store_true", default=None, help="Use the model to summarize old context when compacting.")
     parser.add_argument("--no-summarize-context", action="store_false", dest="summarize_context", help="Disable model context summaries.")
@@ -252,6 +261,19 @@ def normalize_model_fallbacks(value: Any) -> list[str]:
     return [str(value)]
 
 
+def merge_paths(*groups: tuple[Path, ...]) -> tuple[Path, ...]:
+    seen: set[Path] = set()
+    merged: list[Path] = []
+    for group in groups:
+        for path in group:
+            resolved = path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            merged.append(resolved)
+    return tuple(merged)
+
+
 def main(argv: list[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(raw_argv)
@@ -265,6 +287,22 @@ def main(argv: list[str] | None = None) -> int:
         )
         skill_values = choose_config_value("skill", args.skill, local_defaults, explicit_options, ("AGENT_SKILL", "AGENT_SKILLS"))
         skill_inputs = normalize_string_list(skill_values)
+        plugin_values = choose_config_value("plugin", args.plugin, local_defaults, explicit_options, ("AGENT_PLUGIN", "AGENT_PLUGINS"))
+        plugin_inputs = normalize_string_list(plugin_values)
+        plugin_discovery = not bool_config_value(
+            choose_config_value(
+                "no_plugin_discovery",
+                args.no_plugin_discovery,
+                local_defaults,
+                explicit_options,
+                ("AGENT_NO_PLUGIN_DISCOVERY",),
+            ),
+            default=False,
+        )
+        discovered_plugin_paths = discover_plugin_paths(cwd.resolve()) if plugin_discovery else ()
+        explicit_plugin_paths = resolve_plugin_paths(plugin_inputs, cwd.resolve())
+        plugin_paths = merge_paths(discovered_plugin_paths, explicit_plugin_paths)
+        plugin_skill_paths = load_plugin_skill_paths(plugin_paths)
         fallback_values = choose_config_value(
             "model_fallback",
             args.model_fallback,
@@ -320,7 +358,8 @@ def main(argv: list[str] | None = None) -> int:
             allow_network=bool_config_value(choose_config_value("allow_network", args.allow_network, local_defaults, explicit_options, ("AGENT_ALLOW_NETWORK",)), default=False),
             policy_file=resolve_optional_path(choose_config_value("policy_file", args.policy_file, local_defaults, explicit_options, ("AGENT_POLICY_FILE",)), cwd),
             mcp_config=resolve_optional_path(choose_config_value("mcp_config", args.mcp_config, local_defaults, explicit_options, ("AGENT_MCP_CONFIG",)), cwd),
-            skill_paths=resolve_skill_paths(skill_inputs, cwd.resolve()),
+            plugin_paths=plugin_paths,
+            skill_paths=merge_paths(resolve_skill_paths(skill_inputs, cwd.resolve()), plugin_skill_paths),
             summarize_context=summarize_context,
             model_context_tokens=optional_int(choose_config_value("model_context_tokens", args.model_context_tokens, local_defaults, explicit_options, ("AGENT_MODEL_CONTEXT_TOKENS",))),
             context_compression_ratio=float(choose_config_value("context_compression_ratio", args.context_compression_ratio, local_defaults, explicit_options, ("AGENT_CONTEXT_COMPRESSION_RATIO",))),
@@ -343,6 +382,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"context_compression_ratio: {config.context_compression_ratio}")
             print(f"session: {session_path or '<none>'}")
             print(f"session_db: {session_db_path or '<none>'}")
+            plugins = ", ".join(path.parent.name for path in config.plugin_paths) if config.plugin_paths else "<none>"
+            print(f"plugins: {plugins}")
             return 0
 
         task = " ".join(args.task).strip()
@@ -817,7 +858,7 @@ def is_user_prompt_history_entry(content: str) -> bool:
 
 
 def print_quick_command_hint() -> None:
-    print("Commands: /help, /config, /profile, /permission, /mcp, /skill, /skills, /context, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit")
+    print("Commands: /help, /config, /profile, /permission, /mcp, /plugin, /plugins, /skill, /skills, /context, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit")
 
 
 def print_interactive_help() -> None:
@@ -916,6 +957,12 @@ def handle_interactive_command(raw: str, session: InteractiveSession) -> Interac
     if command == InteractiveCommands.MCP:
         update_mcp_config(session, argument)
         return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.PLUGIN:
+        update_plugin(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.PLUGINS:
+        handle_plugins_command(session, argument)
+        return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.SKILL:
         update_skill(session, argument)
         return InteractiveCommandResult(handled=True)
@@ -1000,6 +1047,54 @@ def update_mcp_config(session: InteractiveSession, path_text: str) -> None:
         path = session.agent.config.cwd / path
     session.agent.config.mcp_config = path.resolve()
     rebuild_agent(session)
+    print_config(session.agent.config)
+
+
+def update_plugin(session: InteractiveSession, plugin_text: str) -> None:
+    if not plugin_text:
+        print(f"Usage: {InteractiveCommands.PLUGIN} my-plugin|path/to/plugin.json")
+        return
+    path = resolve_plugin_path(plugin_text, session.agent.config.cwd)
+    manifest = load_plugin_manifest(path)
+    if path not in session.agent.config.plugin_paths:
+        session.agent.config.plugin_paths = (*session.agent.config.plugin_paths, path)
+    for skill_path in manifest.skill_paths:
+        if skill_path not in session.agent.config.skill_paths:
+            session.agent.config.skill_paths = (*session.agent.config.skill_paths, skill_path)
+    prompt = build_system_prompt(INTERACTIVE_SYSTEM_PROMPT, session.agent.config.skill_paths, session.agent.config.cwd)
+    upsert_system_prompt(session.context, prompt)
+    rebuild_agent(session)
+    print_config(session.agent.config)
+
+
+def handle_plugins_command(session: InteractiveSession, argument: str) -> None:
+    discovered = discover_plugin_paths(session.agent.config.cwd, include_user=False)
+    if not argument:
+        if not discovered:
+            print("no workspace plugins found")
+            return
+        for index, path in enumerate(discovered, start=1):
+            loaded = " (loaded)" if path in session.agent.config.plugin_paths else ""
+            print(f"{index}: {path.parent.name}{loaded} - {relative_or_absolute_path(path, session.agent.config.cwd)}")
+        return
+    action, value = split_command_argument(argument)
+    if action != "load" or not value:
+        print(f"Usage: {InteractiveCommands.PLUGINS} [load <name>|load all]")
+        return
+    targets = discovered if value == "all" else (resolve_plugin_path(value, session.agent.config.cwd),)
+    loaded = 0
+    for path in targets:
+        manifest = load_plugin_manifest(path)
+        if path not in session.agent.config.plugin_paths:
+            session.agent.config.plugin_paths = (*session.agent.config.plugin_paths, path)
+            loaded += 1
+        for skill_path in manifest.skill_paths:
+            if skill_path not in session.agent.config.skill_paths:
+                session.agent.config.skill_paths = (*session.agent.config.skill_paths, skill_path)
+    prompt = build_system_prompt(INTERACTIVE_SYSTEM_PROMPT, session.agent.config.skill_paths, session.agent.config.cwd)
+    upsert_system_prompt(session.context, prompt)
+    rebuild_agent(session)
+    print(f"loaded plugins: {loaded}")
     print_config(session.agent.config)
 
 
@@ -1393,6 +1488,8 @@ def print_config(config: AgentConfig) -> None:
     print(f"model_context_tokens: {config.model_context_tokens or '<none>'}")
     print(f"context_compression_ratio: {config.context_compression_ratio}")
     print(f"mcp_config: {config.mcp_config or '<none>'}")
+    plugins = ", ".join(path.parent.name for path in config.plugin_paths) if config.plugin_paths else "<none>"
+    print(f"plugins: {plugins}")
     skills = ", ".join(path.parent.name for path in config.skill_paths) if config.skill_paths else "<none>"
     print(f"skills: {skills}")
 
@@ -1418,6 +1515,8 @@ def save_cli_config(path: Path, session: InteractiveSession) -> None:
         data["policy_file"] = relative_or_absolute_path(config.policy_file, config.cwd)
     if config.mcp_config:
         data["mcp_config"] = relative_or_absolute_path(config.mcp_config, config.cwd)
+    if config.plugin_paths:
+        data["plugin"] = [relative_or_absolute_path(path, config.cwd) for path in config.plugin_paths]
     if config.skill_paths:
         data["skill"] = [relative_or_absolute_path(path, config.cwd) for path in config.skill_paths]
     if config.model_fallbacks:

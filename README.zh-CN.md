@@ -317,6 +317,8 @@ Profile 行为：
 --allow-network  允许明显会访问网络的 shell 命令
 --policy-file    包含 shell policy allow/deny 和写入范围规则的 JSON 文件
 --mcp-config     包含 MCP servers 的 JSON 配置文件
+--plugin         plugins/<name> 下的 plugin manifest，或直接传入 plugin.json 路径
+--no-plugin-discovery 关闭插件自动发现
 --skill          skills/<name> 下的技能名，或直接传入 SKILL.md 路径
 --no-summarize-context 关闭默认模型上下文摘要
 --model-context-tokens 用于触发压缩的近似模型上下文窗口
@@ -434,15 +436,14 @@ src/minimal_cli_agent/
 
 - 关闭模型摘要时，上下文压缩会回退到本地截断。
 - `autoEdit` 会自动批准文件写入类工具；shell 命令仍会确认，除非用户选择单次或当前 session 放行。
-- session 持久化目前是 JSON，不是 SQLite 或索引化事件数据库。
+- session 持久化支持 JSON 或 SQLite transcript/event store，并提供 `/memory` 召回。
 - MCP 工具发现是启动时 best-effort；发现失败时仍保留通用 list/call 工具。
+- plugin manifest 会从工作区和用户插件目录自动发现，可声明 skill 与 MCP server 配置。
 
 暂不实现：
 
-- 并发工具执行。
-- GroupSession runtime。
-- workflow scheduler 或 delegation engine。
-- MCP 和 plugin 自动发现。
+- 更完整的 Draft JSON Schema 兼容、YAML schema 校验和自动格式化建议。
+- 更细的项目规则分层和冲突报告。
 
 ## 参考文章保留的实践
 

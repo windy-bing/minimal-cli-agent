@@ -172,7 +172,7 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
-        self.assertIn("Commands: /help, /config, /profile, /permission, /mcp, /skill, /skills, /context, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit", printed)
+        self.assertIn("Commands: /help, /config, /profile, /permission, /mcp, /plugin, /plugins, /skill, /skills, /context, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit", printed)
 
     def test_detect_explicit_options_supports_space_and_equals_forms(self) -> None:
         explicit = detect_explicit_options([
@@ -509,6 +509,30 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertIn("demo", printed)
+        self.assertEqual(agent.config.skill_paths[0].parent.name, "demo")
+
+    def test_run_interactive_plugins_discovers_and_loads_workspace_plugin(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plugin = root / "plugins" / "demo"
+            skill = plugin / "skills" / "demo"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("# Demo Plugin Skill", encoding="utf-8")
+            (plugin / "plugin.json").write_text(
+                '{"name":"demo","skills":["demo"],"mcpServers":{"coffee":{"url":"https://example.test/mcp"}}}',
+                encoding="utf-8",
+            )
+            config = AgentConfig(cwd=root, permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+
+            with patch("builtins.input", side_effect=["/plugins", "/plugins load demo", "/quit"]), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, ChatContext())
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("demo", printed)
+        self.assertEqual(agent.config.plugin_paths[0].parent.name, "demo")
         self.assertEqual(agent.config.skill_paths[0].parent.name, "demo")
 
     def test_run_interactive_workflow_manages_typed_state(self) -> None:

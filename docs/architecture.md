@@ -134,13 +134,12 @@ Reserved:
 - The event log is JSON-backed and queryable for recent events, but not indexed like SQLite.
 - MCP concrete tool discovery is opt-in at startup. Generic list/call tools remain available without touching the network.
 - Skills can be discovered from the workspace and loaded manually or in bulk through `/skills`.
+- Plugin manifests are discovered from workspace/user plugin directories and can contribute skills plus MCP server configs.
 
 Not implemented yet:
 
-- Parallel tool execution.
-- GroupSession event store.
-- Workflow scheduler.
-- Automatic MCP/plugin discovery.
+- Full Draft JSON Schema compatibility, YAML schema validation, and automatic formatting suggestions.
+- Deeper project-rule layering and conflict reporting.
 
 ## Roadmap
 

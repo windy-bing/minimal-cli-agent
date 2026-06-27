@@ -29,6 +29,7 @@ from minimal_cli_agent.interfaces import ContextManager, Model, SessionStore
 from minimal_cli_agent.model_gateway import ModelGateway
 from minimal_cli_agent.mcp_tools import load_mcp_config, register_mcp_tools
 from minimal_cli_agent.policy import ConfirmationHandler, ShellPermissionPolicy
+from minimal_cli_agent.plugins import load_plugin_mcp_configs
 from minimal_cli_agent.tool_pipeline import ToolExecutionPipeline
 from minimal_cli_agent.tool_registry import ToolRegistry, ToolSpec
 from minimal_cli_agent.types import AgentConfig, CommandResult, EventRecord, Message, ToolCall
@@ -151,8 +152,13 @@ class AgentHarness:
                 risk_level="medium",
             )
         )
+        mcp_configs = []
         if self.config.mcp_config is not None:
-            register_mcp_tools(self.tool_registry, load_mcp_config(self.config.mcp_config))
+            mcp_configs.extend(load_mcp_config(self.config.mcp_config))
+        if self.config.plugin_paths:
+            mcp_configs.extend(load_plugin_mcp_configs(self.config.plugin_paths))
+        if mcp_configs:
+            register_mcp_tools(self.tool_registry, mcp_configs)
         self.tool_pipeline = ToolExecutionPipeline(
             registry=self.tool_registry,
             permission_policy=self.policy,

@@ -259,6 +259,8 @@ class InteractiveCommands:
     DELEGATE: Final = "/delegate"
     REVIEW: Final = "/review"
     MCP: Final = "/mcp"
+    PLUGIN: Final = "/plugin"
+    PLUGINS: Final = "/plugins"
     SKILL: Final = "/skill"
     SKILLS: Final = "/skills"
     EXIT: Final = "/exit"
@@ -285,6 +287,8 @@ class InteractiveCommands:
         DELEGATE: "Run an isolated read-only sub-agent task. Usage: /delegate <task>",
         REVIEW: "Ask the agent to review the current project or a path. Usage: /review [path]",
         MCP: "Load an MCP config file and rebuild tools. Usage: /mcp path/to/mcp.json",
+        PLUGIN: "Load a plugin manifest by name or path. Usage: /plugin my-plugin",
+        PLUGINS: "Discover workspace plugins. Usage: /plugins [load <name>|load all]",
         SKILL: "Load a skill by name or path. Usage: /skill my-coffee",
         SKILLS: "Discover workspace skills. Usage: /skills [load <name>|load all]",
         EXIT: "Exit interactive mode.",
@@ -310,6 +314,8 @@ class InteractiveCommands:
         DELEGATE,
         REVIEW,
         MCP,
+        PLUGIN,
+        PLUGINS,
         SKILL,
         SKILLS,
     )

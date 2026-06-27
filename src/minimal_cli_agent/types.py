@@ -96,6 +96,7 @@ class AgentConfig:
     allow_network: bool = False
     policy_file: Path | None = None
     mcp_config: Path | None = None
+    plugin_paths: tuple[Path, ...] = field(default_factory=tuple)
     skill_paths: tuple[Path, ...] = field(default_factory=tuple)
     summarize_context: bool = False
     context_tail_messages: int = int(Defaults.CONTEXT_TAIL_MESSAGES)

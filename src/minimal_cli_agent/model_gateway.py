@@ -306,6 +306,7 @@ class ModelGateway:
             allow_network=self.config.allow_network,
             policy_file=self.config.policy_file,
             mcp_config=self.config.mcp_config,
+            plugin_paths=self.config.plugin_paths,
             skill_paths=self.config.skill_paths,
             summarize_context=self.config.summarize_context,
             context_tail_messages=self.config.context_tail_messages,
