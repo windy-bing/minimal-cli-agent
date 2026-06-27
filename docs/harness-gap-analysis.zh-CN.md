@@ -15,8 +15,8 @@
 | --- | --- | --- |
 | 工具执行管道 | 已有 `ToolExecutionPipeline` 阶段形状，`ResolveDecision` 已支持 decision hook 优先级、冲突报告和 session 审计事件，但 `AutoVerify` 很薄 | 补确认 UI 适配、重试和格式化策略 |
 | 权限 hard gate | 已有 `ShellPermissionPolicy`、`ToolDecision`、`plan` 跳过执行、`yolo` 仍受硬拒绝规则限制；policy 文件支持命令 allow 前缀、追加 deny token 和写入 allow/deny 路径范围 | 后续增加更丰富的策略报告、角色化能力和可查询审计日志 |
-| 上下文压缩 | 当前是本地裁剪加提示，不是语义压缩 | 增加模型总结、原始 transcript 保留、可召回 summary/memory |
-| Memory 管理 | JSON session 已支持 lock 保护、原子写、最近消息裁剪、active plan、typed workflow state 和 `/events` 最近事件查询 | 后续实现 SQLite session log 和 memory retrieval |
+| 上下文压缩 | 默认启用模型摘要式压缩，仍缺原始 transcript 双轨保留和可召回 memory | 增加原始 transcript 保留、可召回 summary/memory |
+| Memory 管理 | 默认 JSON session 已支持 lock 保护、原子写、最近消息裁剪、active plan、typed workflow state 和 `/events` 最近事件查询 | 后续实现 SQLite session log 和 memory retrieval |
 | SubAgent / GroupSession | 已有 read-only `SubAgentRunner` 和隔离 session；GroupSession 仍预留 | 后续补 worker/verifier 角色、写入合并策略和 group event log |
 | Workflow 委托 | 已有 `/workflow create/step/done/show/clear` typed workflow state 和 `/delegate` 子代理委托 | 后续补 wait/merge/verify 和 scheduler |
 | 并发和文件锁 | 已支持单轮多 action 串行执行、同进程同文件写锁和 `.agent/locks` 跨进程文件写锁，但明确暂不并发 | 后续再做读写分桶、并发工具执行、取消和超时传播 |
@@ -35,7 +35,7 @@
 | OS shell adapter | 已有 `ShellAdapter`，支持 system/bash/zsh/sh/powershell/cmd/git-bash，并在 observation 暴露 shell/cwd/encoding/path separator | 后续补真实 Windows 环境集成测试和更细 path rules |
 | 环境变量刷新 | 长会话里环境变化不能被 runtime 感知 | Environment 每次执行前重建 env snapshot，并记录差异或允许 hook 更新 |
 | 编码和换行 | Windows/codepage/二进制输出可能破坏 observation | 统一 stdout/stderr decoding 策略，保留 raw bytes 截断摘要 |
-| 提示词预算治理 | 工具说明堆进 system prompt 会挤占上下文并制造 lost-in-the-middle | Prompt 应该按角色和可用工具动态生成，工具文档短描述默认注入，长说明按需召回 |
+| 提示词预算治理 | 工具说明已由 schema 文档生成短描述，仍缺按预算裁剪和长说明召回 | Prompt 应该按角色和可用工具动态生成，长说明按需召回 |
 | AGENTS/项目规则注入治理 | 项目规则可能臃肿、冲突或被提示注入污染 | 项目规则需要分层、去重、冲突检测、来源标注和预算上限 |
 
 ## 已由当前设计规避

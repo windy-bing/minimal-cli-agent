@@ -80,7 +80,7 @@ Implemented:
 - Supplemental user input typed during a multi-step turn is added to the full conversation context before the next model call.
 - Isolated `/plan` command that creates a typed plan artifact without merging planning transcript into active chat context.
 - Context compaction triggers near the configured model context budget and preserves the initial user goal in compacted summaries.
-- Optional model-generated context summaries with `--summarize-context`.
+- Model-generated context summaries are enabled by default when compacting old context; `--no-summarize-context` disables them.
 - Interactive prompt history is available through readline arrow keys and `/history [number]`.
 - `ModelGateway` for provider/model abstraction, fallback routes, bounded retries, per-route concurrency, circuit breaking, usage ledgers, token/cost quotas, prompt version metadata, and API key pool rotation.
 - JSON session event log for permission approval audit records.
@@ -146,7 +146,7 @@ See [Harness Gap Analysis](harness-gap-analysis.zh-CN.md) for a more detailed co
 
 ### Context Compression
 
-The default `compact_messages` function trims older messages and inserts a local note only when the transcript approaches the configured context budget. When `--summarize-context` is enabled, the harness uses the active model to summarize older messages, then sends system prompt + summary + recent tail messages as working context.
+The default `compact_messages` function trims older messages and inserts a local note only when the transcript approaches the configured context budget. Model summaries are enabled by default, so the harness uses the active model to summarize older messages, then sends system prompt + summary + recent tail messages as working context. Use `--no-summarize-context` when local compaction without a model summary is preferred.
 
 - Keep system prompt, user goal, recent tool observations, and explicit decisions.
 - Summarize older command/output history into a structured state block when enabled.
@@ -253,4 +253,4 @@ Current support:
 - `/workflow step <text>` and `/workflow done <number>` update workflow progress.
 - `/delegate <task>` records isolated sub-agent results in the workflow.
 - `/workflow show` and `/workflow clear` inspect or remove the active workflow.
-- With `--session`, workflow state is persisted next to messages, plans, and events.
+- With the default `.agent/session.json` session store, workflow state is persisted next to messages, plans, and events.

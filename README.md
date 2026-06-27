@@ -11,8 +11,9 @@ The project starts intentionally small, but the code is split into replaceable m
 ## What It Does Now
 
 - Runs as a terminal CLI.
-- Supports multi-turn interactive sessions with `--interactive`; running without a task starts the same REPL.
+- Starts a persistent multi-turn interactive session by default when run without a task.
 - Supports slash commands for runtime profile/model/permission/context/history/plan/review control.
+- Reads startup defaults from `~/.minimal-agent/config.json` and project `.minimal-agent.json`; `/config save` persists runtime choices.
 - Supports MCP HTTP servers through `--mcp-config`, with MCP tools registered into the same `ToolRegistry`.
 - Supports local instruction skills through `--skill`, including the bundled Luckin Coffee `my-coffee` skill.
 - Supports local Ollama chat models by default.
@@ -61,9 +62,9 @@ ls -la
 - Blocks obvious network shell commands unless `--allow-network` is passed.
 - Supports shell policy allow prefixes, additional deny rules, and workspace write scopes through `--policy-file`.
 - Supports product permission modes: `default`, `autoEdit`, `plan`, and `yolo`.
-- Persists recent session messages, active plan, typed workflow state, and permission audit events to JSON when `--session` is provided, using a lock file and atomic replace.
+- Persists recent session messages, active plan, typed workflow state, and permission audit events to `.agent/session.json` by default, using a lock file and atomic replace.
 - Applies context compaction only when the transcript approaches the configured context budget.
-- Can use model-generated context summaries with `--summarize-context`.
+- Uses model-generated context summaries by default when compacting old context; use `--no-summarize-context` to disable it.
 - Preserves the initial user goal when context is compacted.
 - Supports interactive prompt history through arrow keys when readline is available and `/history [number]`.
 - Supports `/events` for persisted session event inspection.
@@ -76,6 +77,7 @@ ls -la
 - Tool pipeline decision hooks can arbitrate `allow` / `ask` / `deny` / `skip` decisions before confirmation.
 - Tool observations use a consistent `status`, `exit_code`, `command`, and `output` format.
 - Keeps the agent loop behind an `AgentHarness` boundary so tools, memory, policy, context, and environments can evolve independently.
+- Uses unlimited agent loop steps by default (`max_steps=0`) until the model exits or the user interrupts.
 
 ## Why Start This Way
 
@@ -104,13 +106,13 @@ pip install -e .
 ```bash
 ollama pull qwen3:4b
 ollama serve
-minimal-agent --permission default "List the files in this project, then exit"
+minimal-agent
 ```
 
 Equivalent module form:
 
 ```bash
-python -m minimal_cli_agent.cli --permission default "List the files in this project, then exit"
+python -m minimal_cli_agent.cli
 ```
 
 ## Run Without Executing Commands
@@ -121,19 +123,21 @@ minimal-agent --permission plan "Inspect this repository structure"
 
 ## Interactive Session
 
-Start a multi-turn CLI session:
+Start a persistent multi-turn CLI session:
 
 ```bash
-minimal-agent --profile codex --permission plan --interactive
+minimal-agent
 ```
 
 You can also pass the first message and then continue chatting:
 
 ```bash
-minimal-agent --profile codex --permission plan --interactive "Analyze this project"
+minimal-agent "Analyze this project"
 ```
 
-Type `/help` to list interactive commands. Type `/`, `/exit`, `/quit`, `exit`, or `quit` for quick command handling. If `--session path/to/session.json` is provided, messages are saved after each turn and loaded again on the next run.
+Type `/help` to list interactive commands. Type `/`, `/exit`, `/quit`, `exit`, or `quit` for quick command handling. By default, messages are saved after each turn to `.agent/session.json` and loaded again on the next run. Use `--session path/to/session.json` to choose another file, or `--no-session` to disable persistence.
+
+Startup defaults are read from `~/.minimal-agent/config.json` and then from project-local `.minimal-agent.json`; project config wins over user config. CLI flags and environment variables still take precedence. Inside the REPL, use `/model`, `/provider`, `/base-url`, `/permission`, `/mcp`, and `/skill` to change runtime settings, then `/config save` to write `.minimal-agent.json` or `/config save user` to update the user config.
 
 In interactive mode, normal conversation can be answered directly. The model only needs an action block when it wants to inspect files, edit files, or run a command.
 
@@ -153,6 +157,7 @@ Most startup options can also be changed inside the REPL:
 
 ```text
 /config
+/config save
 /profile codex
 /provider ollama
 /model qwen3:4b
@@ -181,13 +186,13 @@ Most startup options can also be changed inside the REPL:
 /review src/minimal_cli_agent
 ```
 
-`/plan <goal>` runs an isolated planning turn with `plan` permissions, saves a typed plan artifact, and does not merge the planning transcript into the active chat context. With `--session`, the active plan is persisted alongside messages and audit events.
+`/plan <goal>` runs an isolated planning turn with `plan` permissions, saves a typed plan artifact, and does not merge the planning transcript into the active chat context. With the default session store, the active plan is persisted alongside messages and audit events.
 
-`/workflow create <goal>` starts a typed workflow artifact that can be updated with `/workflow step <text>` and `/workflow done <number>`. With `--session`, workflow state is persisted alongside messages, plans, and events.
+`/workflow create <goal>` starts a typed workflow artifact that can be updated with `/workflow step <text>` and `/workflow done <number>`. With the default session store, workflow state is persisted alongside messages, plans, and events.
 
 `/delegate <task>` runs a read-only sub-agent in an isolated context and records the result in the active workflow. If no workflow exists, a delegated-work workflow is created automatically.
 
-`/events [kind|number]` shows recent persisted session events. It requires `--session` because events live in the JSON session store.
+`/events [kind|number]` shows recent persisted session events from the active JSON session store.
 
 `/review [path]` runs a review turn through the same agent loop, so it can inspect files with `read_file` and use the current permission mode.
 
@@ -307,12 +312,14 @@ Explicit CLI options such as `--model`, `--base-url`, and `--api-key` take prece
 --policy-file    JSON file with shell policy allow/deny and write-scope rules
 --mcp-config     JSON file with MCP servers
 --skill          skill name under skills/<name> or a direct SKILL.md path
---summarize-context use the model to summarize old context when compacting
+--no-summarize-context disable default model summaries during compaction
 --model-context-tokens approximate model context window for compaction
 --context-compression-ratio context budget ratio that triggers compaction
 --interactive    start a multi-turn interactive CLI session
 --permission     default, autoEdit, plan, or yolo
---session        JSON file for persisted messages
+--session        JSON file for persisted messages; defaults to .agent/session.json
+--no-session     disable default session persistence
+--config-file    JSON file to read startup defaults from
 ```
 
 Fallback routes are JSON objects so URLs and model names do not need custom escaping:
@@ -414,12 +421,12 @@ Implemented:
 - `/workflow` creates and updates typed workflow state that can be shown, cleared, and persisted in the session file.
 - `/delegate` runs a scoped read-only SubAgent and records the result in workflow state.
 - Context compaction is triggered near the configured model context budget, and compacted summaries preserve the initial user goal.
-- Optional model-generated context summaries with `--summarize-context`.
+- Model-generated context summaries are enabled by default; `--no-summarize-context` disables them.
 - Interactive prompt history is available through readline arrow keys and `/history [number]`.
 
 Reserved but intentionally minimal:
 
-- Context compression defaults to local truncation; model summarization is opt-in.
+- Context compression can fall back to local truncation when model summaries are disabled.
 - `autoEdit` automatically approves file writer tools; shell commands still ask until explicitly approved once or for the session.
 - Session persistence is JSON, not SQLite or an indexed event database.
 - MCP tool discovery is best-effort at startup; generic list/call tools remain available when discovery cannot run.

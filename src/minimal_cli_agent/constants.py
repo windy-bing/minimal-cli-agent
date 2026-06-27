@@ -147,6 +147,10 @@ class Defaults:
     CONTEXT_TAIL_MESSAGES: Final = "8"
     CONTEXT_COMPRESSION_RATIO: Final = "0.85"
     SESSION_MAX_MESSAGES: Final = "200"
+    SESSION_PATH: Final = ".agent/session.json"
+    LOCAL_CONFIG_FILE: Final = ".minimal-agent.json"
+    USER_CONFIG_DIR: Final = ".minimal-agent"
+    USER_CONFIG_FILE: Final = "config.json"
 
 
 class FileToolDefaults:
@@ -245,7 +249,7 @@ class InteractiveCommands:
     QUICK_HINT: Final = "/"
     DESCRIPTIONS: Final = {
         HELP: "Show interactive commands.",
-        CONFIG: "Show or change runtime config. Usage: /config",
+        CONFIG: "Show or save runtime config. Usage: /config [show|save [project|user]]",
         PROFILE: "Switch model profile. Usage: /profile codex|ollama|claude|gemini",
         PROVIDER: "Switch provider. Usage: /provider ollama|codex|openai-compatible|anthropic|gemini",
         MODEL: "Switch model. Usage: /model <model-name>",

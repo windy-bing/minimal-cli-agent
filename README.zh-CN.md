@@ -11,8 +11,9 @@
 ## 当前能力
 
 - 作为终端 CLI 运行。
-- 支持 `--interactive` 多轮交互会话；不传 task 时也会进入同一个 REPL。
+- 不传 task 时默认启动带持久化的多轮交互 REPL。
 - 支持 slash commands，在运行时切换 profile/model/permission/context/history/plan/review。
+- 会读取 `~/.minimal-agent/config.json` 和项目 `.minimal-agent.json` 作为启动默认值；`/config save` 可持久化运行时选择。
 - 支持通过 `--mcp-config` 接入 HTTP MCP server，并把 MCP 工具注册到同一个 `ToolRegistry`。
 - 支持通过 `--skill` 加载本地 instruction skill，包括已安装的瑞幸咖啡 `my-coffee` skill。
 - 默认支持本地 Ollama chat 模型。
@@ -61,9 +62,9 @@ ls -la
 - 默认阻止明显的网络 shell 命令，除非显式传入 `--allow-network`。
 - 支持通过 `--policy-file` 配置 shell allow 前缀、追加 deny 规则和工作区写入范围。
 - 支持产品化权限模式：`default`、`autoEdit`、`plan`、`yolo`。
-- 传入 `--session` 时，可以把最近 session messages、active plan、typed workflow state 和权限审计事件持久化到 JSON，并使用 lock 文件和原子替换写入。
+- 默认把最近 session messages、active plan、typed workflow state 和权限审计事件持久化到 `.agent/session.json`，并使用 lock 文件和原子替换写入。
 - transcript 接近配置的上下文预算时，才会触发上下文压缩。
-- 可以通过 `--summarize-context` 使用模型生成旧上下文摘要。
+- 默认在压缩旧上下文时使用模型生成摘要；可用 `--no-summarize-context` 关闭。
 - 上下文压缩会保留初始用户目标，降低压缩后忘记原任务的风险。
 - 交互模式支持 readline 方向键历史，以及 `/history [number]` 查看和重放用户问题。
 - 支持 `/events` 查看持久化 session 事件。
@@ -76,6 +77,7 @@ ls -la
 - 工具管道 decision hooks 可以在确认前仲裁 `allow` / `ask` / `deny` / `skip` 决策。
 - 工具 observation 统一包含 `status`、`exit_code`、`command` 和 `output`。
 - Agent loop 运行在 `AgentHarness` 边界后面，tools、memory、policy、context、environment 可以独立演进。
+- 默认不限制 agent loop 步数（`max_steps=0`），直到模型退出或用户中断。
 
 ## 为什么这样开始
 
@@ -104,13 +106,13 @@ pip install -e .
 ```bash
 ollama pull qwen3:4b
 ollama serve
-minimal-agent --permission default "List the files in this project, then exit"
+minimal-agent
 ```
 
 等价的 module 方式：
 
 ```bash
-python -m minimal_cli_agent.cli --permission default "List the files in this project, then exit"
+python -m minimal_cli_agent.cli
 ```
 
 ## 只规划不执行命令
@@ -124,16 +126,18 @@ minimal-agent --permission plan "Inspect this repository structure"
 启动一个多轮 CLI 会话：
 
 ```bash
-minimal-agent --profile codex --permission plan --interactive
+minimal-agent
 ```
 
 也可以先传入第一句话，然后继续对话：
 
 ```bash
-minimal-agent --profile codex --permission plan --interactive "Analyze this project"
+minimal-agent "Analyze this project"
 ```
 
-输入 `/help` 查看交互命令。输入 `/` 会快速展示常用命令；输入 `/exit`、`/quit`、`exit` 或 `quit` 退出。如果传入 `--session path/to/session.json`，每轮结束后会保存 messages，下次运行时继续加载。
+输入 `/help` 查看交互命令。输入 `/` 会快速展示常用命令；输入 `/exit`、`/quit`、`exit` 或 `quit` 退出。默认每轮结束后会把 messages 保存到 `.agent/session.json`，下次运行时继续加载。使用 `--session path/to/session.json` 可以指定其他 session 文件，使用 `--no-session` 可以关闭持久化。
+
+启动默认配置会先读取 `~/.minimal-agent/config.json`，再读取项目内 `.minimal-agent.json`；项目配置优先于用户配置。CLI 参数和环境变量仍然拥有更高优先级。在 REPL 中可以用 `/model`、`/provider`、`/base-url`、`/permission`、`/mcp` 和 `/skill` 手动切换运行时配置，再用 `/config save` 写入项目 `.minimal-agent.json`，或用 `/config save user` 写入用户配置。
 
 在交互模式下，普通对话可以直接自然语言回复；只有需要查看文件、修改文件或运行命令时，模型才需要输出 action block。
 
@@ -153,6 +157,7 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 
 ```text
 /config
+/config save
 /profile codex
 /provider ollama
 /model qwen3:4b
@@ -181,13 +186,13 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 /review src/minimal_cli_agent
 ```
 
-`/plan <goal>` 会用 `plan` 权限运行一次隔离的计划 turn，保存 typed plan artifact，并且不会把计划阶段 transcript 合并进当前聊天上下文。传入 `--session` 时，active plan 会和 messages、审计事件一起持久化。
+`/plan <goal>` 会用 `plan` 权限运行一次隔离的计划 turn，保存 typed plan artifact，并且不会把计划阶段 transcript 合并进当前聊天上下文。在默认 session store 开启时，active plan 会和 messages、审计事件一起持久化。
 
-`/workflow create <goal>` 会创建 typed workflow artifact，可以用 `/workflow step <text>` 和 `/workflow done <number>` 更新。传入 `--session` 时，workflow state 会和 messages、plan、events 一起持久化。
+`/workflow create <goal>` 会创建 typed workflow artifact，可以用 `/workflow step <text>` 和 `/workflow done <number>` 更新。在默认 session store 开启时，workflow state 会和 messages、plan、events 一起持久化。
 
 `/delegate <task>` 会在隔离上下文中运行一个只读 SubAgent，并把结果记录到 active workflow；如果当前没有 workflow，会自动创建一个 delegated-work workflow。
 
-`/events [kind|number]` 会显示最近的持久化 session events。它依赖 `--session`，因为事件保存在 JSON session store 里。
+`/events [kind|number]` 会显示当前 JSON session store 里的最近持久化 events。
 
 `/review [path]` 会通过同一个 agent loop 发起 review turn，所以它可以用 `read_file` 检查文件，并遵守当前 permission mode。
 
@@ -307,12 +312,14 @@ Profile 行为：
 --policy-file    包含 shell policy allow/deny 和写入范围规则的 JSON 文件
 --mcp-config     包含 MCP servers 的 JSON 配置文件
 --skill          skills/<name> 下的技能名，或直接传入 SKILL.md 路径
---summarize-context 使用模型总结旧上下文
+--no-summarize-context 关闭默认模型上下文摘要
 --model-context-tokens 用于触发压缩的近似模型上下文窗口
 --context-compression-ratio 触发上下文压缩的预算比例
 --interactive    启动多轮交互 CLI 会话
 --permission     default、autoEdit、plan 或 yolo
---session        用于持久化 messages 的 JSON 文件
+--session        用于持久化 messages 的 JSON 文件；默认是 .agent/session.json
+--no-session     关闭默认 session 持久化
+--config-file    用于读取启动默认值的 JSON 配置文件
 ```
 
 Fallback 路由使用 JSON 对象，避免 URL 和模型名里的冒号需要额外转义：
@@ -414,12 +421,12 @@ src/minimal_cli_agent/
 - `/workflow` 会创建和更新 typed workflow state，可查看、清除，并可持久化到 session 文件。
 - `/delegate` 会运行一个 scoped read-only SubAgent，并把结果记录到 workflow state。
 - 上下文压缩会在接近配置的模型上下文预算时触发，并在压缩摘要中保留初始用户目标。
-- 通过 `--summarize-context` 可选启用模型生成式上下文摘要。
+- 默认启用模型生成式上下文摘要；可用 `--no-summarize-context` 关闭。
 - 交互模式支持 readline 方向键历史和 `/history [number]`。
 
 已预留但保持最小实现：
 
-- 上下文压缩默认是本地截断；模型总结需要显式启用。
+- 关闭模型摘要时，上下文压缩会回退到本地截断。
 - `autoEdit` 会自动批准文件写入类工具；shell 命令仍会确认，除非用户选择单次或当前 session 放行。
 - session 持久化目前是 JSON，不是 SQLite 或索引化事件数据库。
 - MCP 工具发现是启动时 best-effort；发现失败时仍保留通用 list/call 工具。

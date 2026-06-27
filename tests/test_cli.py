@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from minimal_cli_agent.agent import Agent
-from minimal_cli_agent.cli import detect_explicit_options, format_duration, render_prompt, run_interactive, run_turn
+from minimal_cli_agent.cli import detect_explicit_options, format_duration, main, render_prompt, run_interactive, run_turn
 from minimal_cli_agent.constants import EventKinds, PermissionEventFields
 from minimal_cli_agent.exceptions import ModelRequestError
 from minimal_cli_agent.harness import AgentHarness
@@ -181,11 +181,55 @@ class CliTest(unittest.TestCase):
             "--model=model-a",
             "--base-url",
             "http://localhost:11434",
+            "--no-session",
         ])
 
         self.assertIn("profile", explicit)
         self.assertIn("model", explicit)
         self.assertIn("base_url", explicit)
+        self.assertIn("session", explicit)
+
+    def test_main_reads_project_config_and_defaults_session(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".minimal-agent.json").write_text(
+                '{"provider":"openai-compatible","model":"configured-model","base_url":"http://configured","permission":"plan"}',
+                encoding="utf-8",
+            )
+
+            with patch("builtins.print") as print_mock:
+                exit_code = main(["--cwd", str(root), "--show-config"])
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("provider: openai-compatible", printed)
+        self.assertIn("model: configured-model", printed)
+        self.assertIn(f"session: {(root / '.agent' / 'session.json').resolve()}", printed)
+
+    def test_main_can_disable_default_session(self) -> None:
+        with TemporaryDirectory() as tmp:
+            with patch("builtins.print") as print_mock:
+                exit_code = main(["--cwd", tmp, "--no-session", "--show-config"])
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("session: <none>", printed)
+
+    def test_run_interactive_can_save_project_config(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = AgentConfig(cwd=root, permission_mode="plan", model="saved-model", summarize_context=True)
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+
+            with patch("builtins.input", side_effect=["/config save", "/quit"]), patch("builtins.print"):
+                exit_code = run_interactive(agent, ChatContext(), session_store=JsonSessionStore(root / ".agent" / "session.json"))
+
+            saved = (root / ".minimal-agent.json").read_text(encoding="utf-8")
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"model": "saved-model"', saved)
+        self.assertIn('"session": ".agent/session.json"', saved)
 
     def test_model_timeout_can_be_configured_on_agent_config(self) -> None:
         config = AgentConfig(model_timeout=7)

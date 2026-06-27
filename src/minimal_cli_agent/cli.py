@@ -10,6 +10,7 @@ import select
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 try:
     import readline
@@ -44,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="minimal-agent", description="Run a minimal terminal AI agent.")
     parser.add_argument("task", nargs="*", help="Task for the agent.")
     parser.add_argument("-i", "--interactive", action="store_true", help="Start a multi-turn interactive CLI session.")
+    parser.add_argument("--config-file", type=Path, help="Read defaults from this JSON config file.")
     parser.add_argument("--profile", choices=Profiles.ALL, default=os.getenv("AGENT_PROFILE"))
     parser.add_argument("--provider", choices=Providers.ALL, default=os.getenv("AGENT_PROVIDER", Providers.OLLAMA))
     parser.add_argument("--model", default=os.getenv("AGENT_MODEL", Defaults.MODEL))
@@ -79,7 +81,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--policy-file", type=Path, help="JSON file with additional shell policy deny tokens.")
     parser.add_argument("--mcp-config", type=Path, help="JSON config file with MCP servers.")
     parser.add_argument("--skill", action="append", default=[], help="Load a skill by path or by name under skills/<name>.")
-    parser.add_argument("--summarize-context", action="store_true", help="Use the model to summarize old context when compacting.")
+    parser.add_argument("--summarize-context", action="store_true", default=None, help="Use the model to summarize old context when compacting.")
+    parser.add_argument("--no-summarize-context", action="store_false", dest="summarize_context", help="Disable model context summaries.")
     parser.add_argument("--model-context-tokens", type=int, default=parse_optional_int_env("AGENT_MODEL_CONTEXT_TOKENS"), help="Approximate model context window. Context is compacted near this budget.")
     parser.add_argument("--context-compression-ratio", type=float, default=float(os.getenv("AGENT_CONTEXT_COMPRESSION_RATIO", Defaults.CONTEXT_COMPRESSION_RATIO)), help="Fraction of model context tokens that triggers compaction.")
     parser.add_argument("--show-config", action="store_true", help="Print resolved provider/model/base URL without secrets.")
@@ -89,57 +92,227 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.getenv("AGENT_PERMISSION", PermissionModes.DEFAULT),
     )
     parser.add_argument("--session", type=Path, help="Persist messages to this JSON session file.")
+    parser.add_argument("--no-session", action="store_true", help="Disable the default persistent session.")
     return parser
+
+
+def load_cli_defaults(cwd: Path, explicit_config_file: Path | None = None) -> dict[str, Any]:
+    paths = [default_user_config_path(), cwd / Defaults.LOCAL_CONFIG_FILE]
+    if explicit_config_file is not None:
+        paths = [explicit_config_file]
+    merged: dict[str, Any] = {}
+    for path in paths:
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise ConfigurationError(f"Unable to read config file {path}: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            raise ConfigurationError(f"Config file must be valid JSON: {path}") from exc
+        if not isinstance(data, dict):
+            raise ConfigurationError(f"Config file must contain a JSON object: {path}")
+        merged.update(data)
+    return merged
+
+
+def default_user_config_path() -> Path:
+    return Path.home() / Defaults.USER_CONFIG_DIR / Defaults.USER_CONFIG_FILE
+
+
+def default_project_session_path(cwd: Path) -> Path:
+    return cwd / Defaults.SESSION_PATH
+
+
+def resolve_default_session_path(
+    args: argparse.Namespace,
+    explicit_options: set[str],
+    local_defaults: dict[str, Any],
+    cwd: Path,
+) -> Path | None:
+    if args.no_session:
+        return None
+    raw_session = choose_config_value("session", args.session, local_defaults, explicit_options, ("AGENT_SESSION",))
+    if raw_session is None:
+        return default_project_session_path(cwd).resolve()
+    return resolve_path_option(raw_session, cwd).resolve()
+
+
+def choose_config_value(
+    key: str,
+    current: Any,
+    local_defaults: dict[str, Any],
+    explicit_options: set[str],
+    env_names: tuple[str, ...] = (),
+) -> Any:
+    if key in explicit_options:
+        return current
+    for env_name in env_names:
+        env_value = os.getenv(env_name)
+        if env_value is not None:
+            return env_value
+    if key in local_defaults:
+        return local_defaults[key]
+    return current
+
+
+def resolve_path_option(value: Any, base: Path) -> Path:
+    path = value if isinstance(value, Path) else Path(str(value))
+    path = path.expanduser()
+    if not path.is_absolute():
+        path = base / path
+    return path
+
+
+def resolve_optional_path(value: Any, base: Path) -> Path | None:
+    if value is None or value == "":
+        return None
+    return resolve_path_option(value, base).resolve()
+
+
+def optional_str(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    return str(value)
+
+
+def optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    return int(value)
+
+
+def optional_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    return float(value)
+
+
+def bool_config_value(value: Any, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "y", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "n", "off"}:
+            return False
+    return bool(value)
+
+
+def normalize_string_list(value: Any) -> list[str]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, tuple):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return [item.strip() for item in value.split(",") if item.strip()]
+        if isinstance(parsed, list):
+            return [str(item) for item in parsed if str(item).strip()]
+    return [str(value)]
+
+
+def normalize_model_fallbacks(value: Any) -> list[str]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return [json.dumps(item) if isinstance(item, dict) else str(item) for item in value]
+    if isinstance(value, dict):
+        return [json.dumps(value)]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return [value]
+        if isinstance(parsed, list):
+            return [json.dumps(item) if isinstance(item, dict) else str(item) for item in parsed]
+        if isinstance(parsed, dict):
+            return [json.dumps(parsed)]
+        return [value]
+    return [str(value)]
 
 
 def main(argv: list[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(raw_argv)
     explicit_options = detect_explicit_options(raw_argv)
+    local_defaults = load_cli_defaults(args.cwd.resolve(), args.config_file.resolve() if args.config_file else None)
 
     try:
+        cwd = resolve_path_option(
+            choose_config_value("cwd", args.cwd, local_defaults, explicit_options, ("AGENT_CWD",)),
+            Path.cwd(),
+        )
+        skill_values = choose_config_value("skill", args.skill, local_defaults, explicit_options, ("AGENT_SKILL", "AGENT_SKILLS"))
+        skill_inputs = normalize_string_list(skill_values)
+        fallback_values = choose_config_value(
+            "model_fallback",
+            args.model_fallback,
+            local_defaults,
+            explicit_options,
+            ("AGENT_MODEL_FALLBACKS",),
+        )
+        session_path = resolve_default_session_path(args, explicit_options, local_defaults, cwd)
+        profile = optional_str(choose_config_value("profile", args.profile, local_defaults, explicit_options, ("AGENT_PROFILE",)))
+        summarize_context = bool_config_value(
+            choose_config_value(
+                "summarize_context",
+                args.summarize_context,
+                local_defaults,
+                explicit_options,
+                ("AGENT_SUMMARIZE_CONTEXT",),
+            ),
+            default=True,
+        )
         config = resolve_profile(AgentConfig(
-            provider=args.provider,
-            model=args.model,
-            base_url=args.base_url,
-            api_key=args.api_key,
-            cwd=args.cwd.resolve(),
-            max_steps=args.max_steps,
-            command_timeout=args.timeout,
-            shell_kind=args.shell,
-            model_timeout=args.model_timeout,
-            model_fallbacks=parse_model_routes(args.model_fallback),
-            model_max_retries=args.model_max_retries,
-            model_max_concurrency=args.model_max_concurrency,
-            model_queue_timeout=args.model_queue_timeout,
-            model_circuit_failure_threshold=args.model_circuit_failure_threshold,
-            model_circuit_cooldown=args.model_circuit_cooldown,
-            model_price_input_per_1m=args.model_price_input_per_1m,
-            model_price_output_per_1m=args.model_price_output_per_1m,
-            usage_ledger_path=args.usage_ledger.resolve() if args.usage_ledger else None,
-            usage_subject=args.usage_subject,
-            usage_tenant=args.usage_tenant,
-            max_input_tokens=args.max_input_tokens,
-            max_output_tokens=args.max_output_tokens,
-            max_request_tokens=args.max_request_tokens,
-            daily_token_limit=args.daily_token_limit,
-            monthly_token_limit=args.monthly_token_limit,
-            max_request_cost=args.max_request_cost,
-            daily_cost_limit=args.daily_cost_limit,
-            monthly_cost_limit=args.monthly_cost_limit,
-            prompt_version=args.prompt_version,
-            bill_failed_requests=args.bill_failed_requests,
-            permission_mode=args.permission,
-            allow_network=args.allow_network,
-            policy_file=args.policy_file.resolve() if args.policy_file else None,
-            mcp_config=args.mcp_config.resolve() if args.mcp_config else None,
-            skill_paths=resolve_skill_paths(args.skill, args.cwd.resolve()),
-            summarize_context=args.summarize_context,
-            model_context_tokens=args.model_context_tokens,
-            context_compression_ratio=args.context_compression_ratio,
-        ), args.profile, explicit_options=explicit_options)
+            provider=str(choose_config_value("provider", args.provider, local_defaults, explicit_options, ("AGENT_PROVIDER",))),
+            model=str(choose_config_value("model", args.model, local_defaults, explicit_options, ("AGENT_MODEL",))),
+            base_url=str(choose_config_value("base_url", args.base_url, local_defaults, explicit_options, ("AGENT_BASE_URL",))),
+            api_key=optional_str(choose_config_value("api_key", args.api_key, local_defaults, explicit_options, ("AGENT_API_KEY",))),
+            cwd=cwd.resolve(),
+            max_steps=int(choose_config_value("max_steps", args.max_steps, local_defaults, explicit_options, ("AGENT_MAX_STEPS",))),
+            command_timeout=int(choose_config_value("timeout", args.timeout, local_defaults, explicit_options, ("AGENT_COMMAND_TIMEOUT",))),
+            shell_kind=str(choose_config_value("shell", args.shell, local_defaults, explicit_options, ("AGENT_SHELL",))),
+            model_timeout=int(choose_config_value("model_timeout", args.model_timeout, local_defaults, explicit_options, ("AGENT_MODEL_TIMEOUT",))),
+            model_fallbacks=parse_model_routes(normalize_model_fallbacks(fallback_values)),
+            model_max_retries=int(choose_config_value("model_max_retries", args.model_max_retries, local_defaults, explicit_options, ("AGENT_MODEL_MAX_RETRIES",))),
+            model_max_concurrency=int(choose_config_value("model_max_concurrency", args.model_max_concurrency, local_defaults, explicit_options, ("AGENT_MODEL_MAX_CONCURRENCY",))),
+            model_queue_timeout=float(choose_config_value("model_queue_timeout", args.model_queue_timeout, local_defaults, explicit_options, ("AGENT_MODEL_QUEUE_TIMEOUT",))),
+            model_circuit_failure_threshold=int(choose_config_value("model_circuit_failure_threshold", args.model_circuit_failure_threshold, local_defaults, explicit_options, ("AGENT_MODEL_CIRCUIT_FAILURE_THRESHOLD",))),
+            model_circuit_cooldown=float(choose_config_value("model_circuit_cooldown", args.model_circuit_cooldown, local_defaults, explicit_options, ("AGENT_MODEL_CIRCUIT_COOLDOWN",))),
+            model_price_input_per_1m=float(choose_config_value("model_price_input_per_1m", args.model_price_input_per_1m, local_defaults, explicit_options, ("AGENT_MODEL_PRICE_INPUT_PER_1M",))),
+            model_price_output_per_1m=float(choose_config_value("model_price_output_per_1m", args.model_price_output_per_1m, local_defaults, explicit_options, ("AGENT_MODEL_PRICE_OUTPUT_PER_1M",))),
+            usage_ledger_path=resolve_optional_path(choose_config_value("usage_ledger", args.usage_ledger, local_defaults, explicit_options, ("AGENT_USAGE_LEDGER",)), cwd),
+            usage_subject=str(choose_config_value("usage_subject", args.usage_subject, local_defaults, explicit_options, ("AGENT_USAGE_SUBJECT",))),
+            usage_tenant=str(choose_config_value("usage_tenant", args.usage_tenant, local_defaults, explicit_options, ("AGENT_USAGE_TENANT",))),
+            max_input_tokens=optional_int(choose_config_value("max_input_tokens", args.max_input_tokens, local_defaults, explicit_options, ("AGENT_MAX_INPUT_TOKENS",))),
+            max_output_tokens=optional_int(choose_config_value("max_output_tokens", args.max_output_tokens, local_defaults, explicit_options, ("AGENT_MAX_OUTPUT_TOKENS",))),
+            max_request_tokens=optional_int(choose_config_value("max_request_tokens", args.max_request_tokens, local_defaults, explicit_options, ("AGENT_MAX_REQUEST_TOKENS",))),
+            daily_token_limit=optional_int(choose_config_value("daily_token_limit", args.daily_token_limit, local_defaults, explicit_options, ("AGENT_DAILY_TOKEN_LIMIT",))),
+            monthly_token_limit=optional_int(choose_config_value("monthly_token_limit", args.monthly_token_limit, local_defaults, explicit_options, ("AGENT_MONTHLY_TOKEN_LIMIT",))),
+            max_request_cost=optional_float(choose_config_value("max_request_cost", args.max_request_cost, local_defaults, explicit_options, ("AGENT_MAX_REQUEST_COST",))),
+            daily_cost_limit=optional_float(choose_config_value("daily_cost_limit", args.daily_cost_limit, local_defaults, explicit_options, ("AGENT_DAILY_COST_LIMIT",))),
+            monthly_cost_limit=optional_float(choose_config_value("monthly_cost_limit", args.monthly_cost_limit, local_defaults, explicit_options, ("AGENT_MONTHLY_COST_LIMIT",))),
+            prompt_version=str(choose_config_value("prompt_version", args.prompt_version, local_defaults, explicit_options, ("AGENT_PROMPT_VERSION",))),
+            bill_failed_requests=bool_config_value(choose_config_value("bill_failed_requests", args.bill_failed_requests, local_defaults, explicit_options, ("AGENT_BILL_FAILED_REQUESTS",)), default=False),
+            permission_mode=str(choose_config_value("permission", args.permission, local_defaults, explicit_options, ("AGENT_PERMISSION",))),
+            allow_network=bool_config_value(choose_config_value("allow_network", args.allow_network, local_defaults, explicit_options, ("AGENT_ALLOW_NETWORK",)), default=False),
+            policy_file=resolve_optional_path(choose_config_value("policy_file", args.policy_file, local_defaults, explicit_options, ("AGENT_POLICY_FILE",)), cwd),
+            mcp_config=resolve_optional_path(choose_config_value("mcp_config", args.mcp_config, local_defaults, explicit_options, ("AGENT_MCP_CONFIG",)), cwd),
+            skill_paths=resolve_skill_paths(skill_inputs, cwd.resolve()),
+            summarize_context=summarize_context,
+            model_context_tokens=optional_int(choose_config_value("model_context_tokens", args.model_context_tokens, local_defaults, explicit_options, ("AGENT_MODEL_CONTEXT_TOKENS",))),
+            context_compression_ratio=float(choose_config_value("context_compression_ratio", args.context_compression_ratio, local_defaults, explicit_options, ("AGENT_CONTEXT_COMPRESSION_RATIO",))),
+        ), profile, explicit_options=explicit_options)
         if args.show_config:
-            print(f"profile: {args.profile or '<none>'}")
+            print(f"profile: {profile or '<none>'}")
             print(f"provider: {config.provider}")
             print(f"model: {config.model}")
             print(f"base_url: {config.base_url}")
@@ -154,10 +327,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"usage_tenant: {config.usage_tenant}")
             print(f"model_context_tokens: {config.model_context_tokens or '<none>'}")
             print(f"context_compression_ratio: {config.context_compression_ratio}")
+            print(f"session: {session_path or '<none>'}")
             return 0
 
         task = " ".join(args.task).strip()
-        session_store = JsonSessionStore(args.session) if args.session else None
+        session_store = JsonSessionStore(session_path) if session_path else None
         harness = AgentHarness(config=config, session_store=session_store)
         context = ChatContext(messages=session_store.load() if session_store else [])
         if session_store:
@@ -663,7 +837,7 @@ def handle_interactive_command(raw: str, session: InteractiveSession) -> Interac
         print_interactive_help()
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.CONFIG:
-        print_config(session.agent.config)
+        handle_config_command(session, argument)
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.PROFILE:
         update_profile(session, argument)
@@ -764,6 +938,29 @@ def update_model(session: InteractiveSession, model: str) -> None:
     session.agent.config.model = model
     rebuild_agent(session)
     print_config(session.agent.config)
+
+
+def handle_config_command(session: InteractiveSession, argument: str) -> None:
+    action, value = split_command_argument(argument)
+    if action in {"", "show"}:
+        print_config(session.agent.config)
+        if session.session_store:
+            print(f"session: {session.session_store.path}")
+        else:
+            print("session: <none>")
+        print(f"project_config: {session.agent.config.cwd / Defaults.LOCAL_CONFIG_FILE}")
+        print(f"user_config: {default_user_config_path()}")
+        return
+    if action == "save":
+        target = value or "project"
+        if target not in {"project", "user"}:
+            print(f"Usage: {InteractiveCommands.CONFIG} save [project|user]")
+            return
+        path = default_user_config_path() if target == "user" else session.agent.config.cwd / Defaults.LOCAL_CONFIG_FILE
+        save_cli_config(path, session)
+        print(f"config saved: {path}")
+        return
+    print(f"Usage: {InteractiveCommands.CONFIG} [show|save [project|user]]")
 
 
 def update_base_url(session: InteractiveSession, base_url: str) -> None:
@@ -1065,7 +1262,8 @@ def save_workflow(session: InteractiveSession, workflow: WorkflowArtifact) -> No
 
 def rebuild_agent(session: InteractiveSession, config: AgentConfig | None = None) -> None:
     config = config or session.agent.config
-    session.agent = Agent(config=config, harness=AgentHarness(config=config, session_store=session.session_store))
+    model = session.agent.harness.model
+    session.agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=session.session_store))
 
 
 def print_config(config: AgentConfig) -> None:
@@ -1087,6 +1285,65 @@ def print_config(config: AgentConfig) -> None:
     print(f"mcp_config: {config.mcp_config or '<none>'}")
     skills = ", ".join(path.parent.name for path in config.skill_paths) if config.skill_paths else "<none>"
     print(f"skills: {skills}")
+
+
+def save_cli_config(path: Path, session: InteractiveSession) -> None:
+    config = session.agent.config
+    data: dict[str, Any] = {
+        "provider": config.provider,
+        "model": config.model,
+        "base_url": config.base_url,
+        "permission": config.permission_mode,
+        "shell": config.shell_kind,
+        "allow_network": config.allow_network,
+        "summarize_context": config.summarize_context,
+        "max_steps": config.max_steps,
+        "model_timeout": config.model_timeout,
+        "context_compression_ratio": config.context_compression_ratio,
+        "prompt_version": config.prompt_version,
+    }
+    if config.api_key:
+        data["api_key"] = config.api_key
+    if config.policy_file:
+        data["policy_file"] = relative_or_absolute_path(config.policy_file, config.cwd)
+    if config.mcp_config:
+        data["mcp_config"] = relative_or_absolute_path(config.mcp_config, config.cwd)
+    if config.skill_paths:
+        data["skill"] = [relative_or_absolute_path(path, config.cwd) for path in config.skill_paths]
+    if config.model_fallbacks:
+        data["model_fallback"] = [
+            {
+                "provider": route.provider,
+                "model": route.model,
+                "base_url": route.base_url,
+                **({"api_key": route.api_key} if route.api_key else {}),
+                **({"timeout": route.timeout} if route.timeout is not None else {}),
+                "max_retries": route.max_retries,
+                "price_input_per_1m": route.price_input_per_1m,
+                "price_output_per_1m": route.price_output_per_1m,
+                "weight": route.weight,
+            }
+            for route in config.model_fallbacks
+        ]
+    if config.model_context_tokens is not None:
+        data["model_context_tokens"] = config.model_context_tokens
+    if config.usage_ledger_path is not None:
+        data["usage_ledger"] = relative_or_absolute_path(config.usage_ledger_path, config.cwd)
+    if config.usage_subject != "default":
+        data["usage_subject"] = config.usage_subject
+    if config.usage_tenant != "default":
+        data["usage_tenant"] = config.usage_tenant
+    if session.session_store is not None:
+        data["session"] = relative_or_absolute_path(session.session_store.path, config.cwd)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def relative_or_absolute_path(path: Path, cwd: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(cwd.resolve()))
+    except ValueError:
+        return str(path)
 
 
 def with_configured_skills(config: AgentConfig, options: LoopOptions | None) -> LoopOptions:
@@ -1115,12 +1372,51 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
         "--model": "model",
         "--base-url": "base_url",
         "--api-key": "api_key",
+        "--cwd": "cwd",
+        "--max-steps": "max_steps",
+        "--timeout": "timeout",
+        "--shell": "shell",
+        "--model-timeout": "model_timeout",
+        "--model-max-retries": "model_max_retries",
+        "--model-max-concurrency": "model_max_concurrency",
+        "--model-queue-timeout": "model_queue_timeout",
+        "--model-circuit-failure-threshold": "model_circuit_failure_threshold",
+        "--model-circuit-cooldown": "model_circuit_cooldown",
+        "--model-price-input-per-1m": "model_price_input_per_1m",
+        "--model-price-output-per-1m": "model_price_output_per_1m",
+        "--usage-ledger": "usage_ledger",
+        "--usage-subject": "usage_subject",
+        "--usage-tenant": "usage_tenant",
+        "--max-input-tokens": "max_input_tokens",
+        "--max-output-tokens": "max_output_tokens",
+        "--max-request-tokens": "max_request_tokens",
+        "--daily-token-limit": "daily_token_limit",
+        "--monthly-token-limit": "monthly_token_limit",
+        "--max-request-cost": "max_request_cost",
+        "--daily-cost-limit": "daily_cost_limit",
+        "--monthly-cost-limit": "monthly_cost_limit",
+        "--prompt-version": "prompt_version",
+        "--permission": "permission",
+        "--policy-file": "policy_file",
+        "--mcp-config": "mcp_config",
+        "--skill": "skill",
+        "--session": "session",
+        "--config-file": "config_file",
+    }
+    flag_map = {
+        "--bill-failed-requests": "bill_failed_requests",
+        "--allow-network": "allow_network",
+        "--summarize-context": "summarize_context",
+        "--no-summarize-context": "summarize_context",
+        "--no-session": "session",
     }
     explicit = set()
     for item in argv:
         for option, name in option_map.items():
             if item == option or item.startswith(f"{option}="):
                 explicit.add(name)
+        if item in flag_map:
+            explicit.add(flag_map[item])
     return explicit
 
 
