@@ -132,7 +132,11 @@ Type `/help` to list interactive commands. Type `/`, `/exit`, `/quit`, `exit`, o
 
 In interactive mode, normal conversation can be answered directly. The model only needs an action block when it wants to inspect files, edit files, or run a command.
 
+Interactive tool output is compact by default: the terminal shows the tool name, target path or command summary, status, and output size instead of dumping full file contents. The full observation is still kept in the agent context for the model.
+
 Use `--permission autoEdit` when you want the loop to modify project files through file writer tools without asking every time. `plan` remains read-only: it can read files but skips shell commands and file writes.
+
+If a turn in `plan` mode reaches a required file edit, the REPL asks whether to switch to `autoEdit` and retry the same user request instead of making you type it again.
 
 Most startup options can also be changed inside the REPL:
 

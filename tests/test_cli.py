@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from minimal_cli_agent.agent import Agent
@@ -38,6 +40,19 @@ class FailingThenCountingModel:
         if self.calls == 1:
             raise ModelRequestError("temporary model failure")
         return "recovered\n```bash-action\nexit\n```"
+
+
+class WriteBlockedThenRetryModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, messages: list[Message]) -> str:
+        self.calls += 1
+        if self.calls in {1, 3}:
+            return '```tool-action\n{"tool":"write_file","path":"result.txt","content":"done"}\n```'
+        if self.calls == 2:
+            return "Plan mode blocked the edit."
+        return "Done.\n```bash-action\nexit\n```"
 
 
 class CliTest(unittest.TestCase):
@@ -157,6 +172,45 @@ class CliTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 2)
         self.assertIn("当前目录", assistant_messages[-1])
+
+    def test_run_interactive_compacts_tool_output(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "notes.txt").write_text("alpha\nbeta\nsecret-file-content\n", encoding="utf-8")
+            model = SequenceModel([
+                '```tool-action\n{"tool":"read_file","path":"notes.txt"}\n```',
+                "Read complete.",
+            ])
+            config = AgentConfig(cwd=root, permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+
+            with patch("builtins.input", side_effect=["/quit"]), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, ChatContext(), first_message="read notes")
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("[action] read_file: notes.txt", printed)
+        self.assertIn("read_file notes.txt", printed)
+        self.assertIn("3 lines", printed)
+        self.assertNotIn("secret-file-content", printed)
+
+    def test_run_interactive_can_retry_plan_block_in_auto_edit(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            model = WriteBlockedThenRetryModel()
+            config = AgentConfig(cwd=root, permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+
+            with patch("builtins.input", side_effect=["y", "/quit"]), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, ChatContext(), first_message="write result")
+
+            output = (root / "result.txt").read_text(encoding="utf-8")
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(output, "done")
+        self.assertEqual(model.calls, 4)
+        self.assertIn("permission: autoEdit", printed)
 
     def test_run_interactive_continues_after_model_error(self) -> None:
         model = FailingThenCountingModel()
