@@ -6,7 +6,7 @@ from minimal_cli_agent.constants import EventKinds, PermissionEventFields
 from minimal_cli_agent.memory import JsonSessionStore, compact_messages
 from minimal_cli_agent.plan import PlanArtifact
 from minimal_cli_agent.types import EventRecord, Message
-from minimal_cli_agent.workflow import WorkflowArtifact, WorkflowStep
+from minimal_cli_agent.workflow import WorkflowArtifact, WorkflowDelegation, WorkflowStep
 
 
 class MemoryTest(unittest.TestCase):
@@ -90,7 +90,13 @@ class MemoryTest(unittest.TestCase):
             path = Path(tmp) / "session.json"
             store = JsonSessionStore(path)
             store.save([Message(role="user", content="hello")])
-            store.save_workflow(WorkflowArtifact(goal="ship", steps=[WorkflowStep(title="test")]))
+            store.save_workflow(
+                WorkflowArtifact(
+                    goal="ship",
+                    steps=[WorkflowStep(title="test")],
+                    delegations=[WorkflowDelegation(task="inspect", summary="ok", success=True)],
+                )
+            )
 
             workflow = store.load_workflow()
             messages = store.load()
@@ -101,6 +107,7 @@ class MemoryTest(unittest.TestCase):
         self.assertIsNotNone(workflow)
         self.assertEqual(workflow.goal, "ship")
         self.assertEqual(workflow.steps[0].title, "test")
+        self.assertEqual(workflow.delegations[0].summary, "ok")
         self.assertIsNone(cleared)
 
     def test_json_session_store_keeps_recent_messages(self) -> None:

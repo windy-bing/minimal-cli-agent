@@ -177,12 +177,15 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 /workflow step inspect failing tests
 /workflow done 1
 /workflow show
+/delegate inspect README risks
 /review src/minimal_cli_agent
 ```
 
 `/plan <goal>` 会用 `plan` 权限运行一次隔离的计划 turn，保存 typed plan artifact，并且不会把计划阶段 transcript 合并进当前聊天上下文。传入 `--session` 时，active plan 会和 messages、审计事件一起持久化。
 
 `/workflow create <goal>` 会创建 typed workflow artifact，可以用 `/workflow step <text>` 和 `/workflow done <number>` 更新。传入 `--session` 时，workflow state 会和 messages、plan、events 一起持久化。
+
+`/delegate <task>` 会在隔离上下文中运行一个只读 SubAgent，并把结果记录到 active workflow；如果当前没有 workflow，会自动创建一个 delegated-work workflow。
 
 `/events [kind|number]` 会显示最近的持久化 session events。它依赖 `--session`，因为事件保存在 JSON session store 里。
 
@@ -408,6 +411,7 @@ src/minimal_cli_agent/
 - `pyproject.toml` 已包含面向 `src` 和 `tests` 的 Pyright `basic` 类型检查配置。
 - `/plan` 会创建隔离的 typed plan artifact，可查看、清除，并可持久化到 session 文件。
 - `/workflow` 会创建和更新 typed workflow state，可查看、清除，并可持久化到 session 文件。
+- `/delegate` 会运行一个 scoped read-only SubAgent，并把结果记录到 workflow state。
 - 上下文压缩会在接近配置的模型上下文预算时触发，并在压缩摘要中保留初始用户目标。
 - 通过 `--summarize-context` 可选启用模型生成式上下文摘要。
 - 交互模式支持 readline 方向键历史和 `/history [number]`。
@@ -422,7 +426,7 @@ src/minimal_cli_agent/
 暂不实现：
 
 - 并发工具执行和跨进程文件编辑锁。
-- SubAgent 和 GroupSession runtime。
+- GroupSession runtime。
 - workflow scheduler 或 delegation engine。
 - MCP 和 plugin 自动发现。
 

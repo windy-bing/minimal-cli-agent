@@ -27,10 +27,12 @@ from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact, build_plan_p
 from minimal_cli_agent.prompts import INTERACTIVE_SYSTEM_PROMPT, SYSTEM_PROMPT
 from minimal_cli_agent.profiles import resolve_profile
 from minimal_cli_agent.skills import build_system_prompt, discover_skill_paths, resolve_skill_path, resolve_skill_paths
+from minimal_cli_agent.subagent import SubAgentRunner
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, Message, ModelRoute, ToolCall, ToolDecision
 from minimal_cli_agent.workflow import (
     WORKFLOW_METADATA_KEY,
     WorkflowArtifact,
+    add_workflow_delegation,
     add_workflow_step,
     complete_workflow_step,
     create_workflow,
@@ -626,7 +628,7 @@ def is_user_prompt_history_entry(content: str) -> bool:
 
 
 def print_quick_command_hint() -> None:
-    print("Commands: /help, /config, /profile, /permission, /mcp, /skill, /skills, /context, /history, /events, /plan, /workflow, /review, /exit")
+    print("Commands: /help, /config, /profile, /permission, /mcp, /skill, /skills, /context, /history, /events, /plan, /workflow, /delegate, /review, /exit")
 
 
 def print_interactive_help() -> None:
@@ -699,6 +701,9 @@ def handle_interactive_command(raw: str, session: InteractiveSession) -> Interac
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.WORKFLOW:
         handle_workflow_command(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.DELEGATE:
+        handle_delegate_command(session, argument)
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.REVIEW:
         review_target = argument or "the current project"
@@ -1020,6 +1025,20 @@ def handle_workflow_command(session: InteractiveSession, argument: str) -> None:
         print(format_workflow_artifact(workflow))
         return
     print(f"Usage: {InteractiveCommands.WORKFLOW} create <goal>|step <text>|done <number>|show|clear")
+
+
+def handle_delegate_command(session: InteractiveSession, task: str) -> None:
+    if not task:
+        print(f"Usage: {InteractiveCommands.DELEGATE} <task>")
+        return
+    runner = SubAgentRunner(session.agent.config, session.agent.harness.model)
+    result = runner.run(task)
+    workflow = active_workflow_from_context(session.context) or create_workflow("Delegated work")
+    workflow = add_workflow_delegation(workflow, task=result.task, summary=result.summary, success=result.success)
+    save_workflow(session, workflow)
+    status = "success" if result.success else "failed"
+    print(f"delegation {status}")
+    print(result.summary)
 
 
 def split_command_argument(argument: str) -> tuple[str, str]:

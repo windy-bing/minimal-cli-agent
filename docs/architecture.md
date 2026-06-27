@@ -107,6 +107,7 @@ Implemented:
 - Configurable policy file rules for shell allow prefixes, additional deny tokens, write allow paths, and write deny paths.
 - Typed plan artifact stored in `ChatContext.metadata` and persisted in JSON sessions.
 - Typed workflow state stored in `ChatContext.metadata` and persisted in JSON sessions.
+- Read-only `SubAgentRunner` for isolated delegated tasks.
 - Execute turns read the active plan, inject it into the system prompt, and constrain writer tools to planned paths when paths are known.
 - ShellAdapter support for system shell, bash, zsh, sh, PowerShell, cmd, and Git Bash style execution with shell/cwd/encoding/path metadata in observations.
 - Injectable permission confirmation handler; the CLI supports selectable allow-once, allow-session-action, and deny choices.
@@ -135,7 +136,6 @@ Not implemented yet:
 
 - Parallel tool execution and cross-process file edit locks.
 - File-level write locks.
-- SubAgent runner.
 - GroupSession event store.
 - Workflow scheduler.
 - Automatic MCP/plugin discovery.
@@ -168,6 +168,12 @@ Use cases:
 - Explorer agent for codebase reading.
 - Worker agent for bounded file edits.
 - Verifier agent for tests and review.
+
+Current support:
+
+- `SubAgentRunner` creates a separate `Agent` with isolated `ChatContext`.
+- Delegated tasks run in `plan` permission mode by default, so they can inspect but not write.
+- `/delegate <task>` runs the sub-agent and records the result in workflow state.
 
 ### GroupSession
 
@@ -245,5 +251,6 @@ Current support:
 
 - `/workflow create <goal>` creates a typed workflow state.
 - `/workflow step <text>` and `/workflow done <number>` update workflow progress.
+- `/delegate <task>` records isolated sub-agent results in the workflow.
 - `/workflow show` and `/workflow clear` inspect or remove the active workflow.
 - With `--session`, workflow state is persisted next to messages, plans, and events.

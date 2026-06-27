@@ -177,12 +177,15 @@ Most startup options can also be changed inside the REPL:
 /workflow step inspect failing tests
 /workflow done 1
 /workflow show
+/delegate inspect README risks
 /review src/minimal_cli_agent
 ```
 
 `/plan <goal>` runs an isolated planning turn with `plan` permissions, saves a typed plan artifact, and does not merge the planning transcript into the active chat context. With `--session`, the active plan is persisted alongside messages and audit events.
 
 `/workflow create <goal>` starts a typed workflow artifact that can be updated with `/workflow step <text>` and `/workflow done <number>`. With `--session`, workflow state is persisted alongside messages, plans, and events.
+
+`/delegate <task>` runs a read-only sub-agent in an isolated context and records the result in the active workflow. If no workflow exists, a delegated-work workflow is created automatically.
 
 `/events [kind|number]` shows recent persisted session events. It requires `--session` because events live in the JSON session store.
 
@@ -408,6 +411,7 @@ Implemented:
 - `pyproject.toml` includes a Pyright `basic` type-checking configuration for `src` and `tests`.
 - `/plan` creates an isolated typed plan artifact that can be shown, cleared, and persisted in the session file.
 - `/workflow` creates and updates typed workflow state that can be shown, cleared, and persisted in the session file.
+- `/delegate` runs a scoped read-only SubAgent and records the result in workflow state.
 - Context compaction is triggered near the configured model context budget, and compacted summaries preserve the initial user goal.
 - Optional model-generated context summaries with `--summarize-context`.
 - Interactive prompt history is available through readline arrow keys and `/history [number]`.
@@ -422,7 +426,7 @@ Reserved but intentionally minimal:
 Not implemented yet:
 
 - Parallel tool execution and cross-process file edit locks.
-- SubAgent and GroupSession runtime.
+- GroupSession runtime.
 - Workflow scheduler or delegation engine.
 - Automatic MCP/plugin discovery.
 
