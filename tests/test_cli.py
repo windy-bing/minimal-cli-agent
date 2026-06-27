@@ -215,6 +215,16 @@ class CliTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("session: <none>", printed)
 
+    def test_main_can_use_sqlite_session_store(self) -> None:
+        with TemporaryDirectory() as tmp:
+            db = Path(tmp) / "session.sqlite"
+            with patch("builtins.print") as print_mock:
+                exit_code = main(["--cwd", tmp, "--session-db", str(db), "--show-config"])
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn(f"session_db: {db.resolve()}", printed)
+
     def test_run_interactive_can_save_project_config(self) -> None:
         model = CountingModel()
         with TemporaryDirectory() as tmp:
@@ -465,6 +475,23 @@ class CliTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn(EventKinds.PERMISSION_DECISION, printed)
         self.assertIn("allow", printed)
+
+    def test_run_interactive_memory_search_uses_sqlite_store(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            from minimal_cli_agent.memory import SQLiteSessionStore
+
+            store = SQLiteSessionStore(Path(tmp) / "session.sqlite")
+            store.save([Message(role="user", content="remember alpha topic")])
+            config = AgentConfig(permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=store))
+
+            with patch("builtins.input", side_effect=["/memory alpha", "/quit"]), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, ChatContext(), session_store=store)
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("remember alpha topic", printed)
 
     def test_run_interactive_skills_discovers_and_loads_workspace_skill(self) -> None:
         model = CountingModel()

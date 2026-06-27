@@ -23,7 +23,7 @@ from minimal_cli_agent.context import estimate_context_tokens, total_message_cha
 from minimal_cli_agent.exceptions import AgentError, ConfigurationError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import compact_messages
-from minimal_cli_agent.memory import JsonSessionStore
+from minimal_cli_agent.memory import JsonSessionStore, SQLiteSessionStore
 from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact, build_plan_prompt, create_plan_artifact, extract_plan_paths, format_plan_artifact, format_plan_execution_context
 from minimal_cli_agent.prompts import INTERACTIVE_SYSTEM_PROMPT, SYSTEM_PROMPT
 from minimal_cli_agent.profiles import resolve_profile
@@ -92,6 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.getenv("AGENT_PERMISSION", PermissionModes.DEFAULT),
     )
     parser.add_argument("--session", type=Path, help="Persist messages to this JSON session file.")
+    parser.add_argument("--session-db", type=Path, help="Persist full transcript and events to this SQLite database.")
     parser.add_argument("--no-session", action="store_true", help="Disable the default persistent session.")
     return parser
 
@@ -136,6 +137,14 @@ def resolve_default_session_path(
     if raw_session is None:
         return default_project_session_path(cwd).resolve()
     return resolve_path_option(raw_session, cwd).resolve()
+
+
+def build_session_store(session_path: Path | None, session_db_path: Path | None):
+    if session_db_path is not None:
+        return SQLiteSessionStore(session_db_path)
+    if session_path is not None:
+        return JsonSessionStore(session_path)
+    return None
 
 
 def choose_config_value(
@@ -259,7 +268,8 @@ def main(argv: list[str] | None = None) -> int:
             explicit_options,
             ("AGENT_MODEL_FALLBACKS",),
         )
-        session_path = resolve_default_session_path(args, explicit_options, local_defaults, cwd)
+        session_db_path = None if args.no_session else resolve_optional_path(choose_config_value("session_db", args.session_db, local_defaults, explicit_options, ("AGENT_SESSION_DB",)), cwd)
+        session_path = None if session_db_path is not None else resolve_default_session_path(args, explicit_options, local_defaults, cwd)
         profile = optional_str(choose_config_value("profile", args.profile, local_defaults, explicit_options, ("AGENT_PROFILE",)))
         summarize_context = bool_config_value(
             choose_config_value(
@@ -328,10 +338,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"model_context_tokens: {config.model_context_tokens or '<none>'}")
             print(f"context_compression_ratio: {config.context_compression_ratio}")
             print(f"session: {session_path or '<none>'}")
+            print(f"session_db: {session_db_path or '<none>'}")
             return 0
 
         task = " ".join(args.task).strip()
-        session_store = JsonSessionStore(session_path) if session_path else None
+        session_store = build_session_store(session_path=session_path, session_db_path=session_db_path)
         harness = AgentHarness(config=config, session_store=session_store)
         context = ChatContext(messages=session_store.load() if session_store else [])
         if session_store:
@@ -876,6 +887,9 @@ def handle_interactive_command(raw: str, session: InteractiveSession) -> Interac
     if command == InteractiveCommands.WORKFLOW:
         handle_workflow_command(session, argument)
         return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.MEMORY:
+        handle_memory_command(session, argument)
+        return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.DELEGATE:
         handle_delegate_command(session, argument)
         return InteractiveCommandResult(handled=True)
@@ -946,6 +960,7 @@ def handle_config_command(session: InteractiveSession, argument: str) -> None:
         print_config(session.agent.config)
         if session.session_store:
             print(f"session: {session.session_store.path}")
+            print(f"session_backend: {'sqlite' if isinstance(session.session_store, SQLiteSessionStore) else 'json'}")
         else:
             print("session: <none>")
         print(f"project_config: {session.agent.config.cwd / Defaults.LOCAL_CONFIG_FILE}")
@@ -1124,6 +1139,23 @@ def handle_events_command(session: InteractiveSession, argument: str) -> None:
         return
     for index, event in enumerate(events, start=1):
         print(f"{index}: {event.timestamp} {event.kind} {json.dumps(event.data, ensure_ascii=False, sort_keys=True)}")
+
+
+def handle_memory_command(session: InteractiveSession, query: str) -> None:
+    if not query:
+        print(f"Usage: {InteractiveCommands.MEMORY} <query>")
+        return
+    searcher = getattr(session.session_store, "search_memory", None)
+    if searcher is None:
+        print("memory retrieval requires --session-db")
+        return
+    results = searcher(query, limit=10)
+    if not results:
+        print("no memory matches")
+        return
+    for index, result in enumerate(results, start=1):
+        timestamp = f" {result.timestamp}" if result.timestamp else ""
+        print(f"{index}: [{result.kind} score={result.score}{timestamp}] {result.text}")
 
 
 def handle_plan_command(session: InteractiveSession, argument: str) -> None:
@@ -1334,7 +1366,10 @@ def save_cli_config(path: Path, session: InteractiveSession) -> None:
     if config.usage_tenant != "default":
         data["usage_tenant"] = config.usage_tenant
     if session.session_store is not None:
-        data["session"] = relative_or_absolute_path(session.session_store.path, config.cwd)
+        if isinstance(session.session_store, SQLiteSessionStore):
+            data["session_db"] = relative_or_absolute_path(session.session_store.path, config.cwd)
+        else:
+            data["session"] = relative_or_absolute_path(session.session_store.path, config.cwd)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -1401,6 +1436,7 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
         "--mcp-config": "mcp_config",
         "--skill": "skill",
         "--session": "session",
+        "--session-db": "session_db",
         "--config-file": "config_file",
     }
     flag_map = {

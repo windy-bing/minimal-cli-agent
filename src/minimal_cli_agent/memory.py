@@ -5,12 +5,25 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import sqlite3
 import tempfile
+from typing import Any
 
 from minimal_cli_agent.constants import Defaults, SessionFields
 from minimal_cli_agent.plan import PlanArtifact
 from minimal_cli_agent.types import EventRecord, Message
 from minimal_cli_agent.workflow import WorkflowArtifact
+
+
+class MemorySearchResult:
+    def __init__(self, kind: str, text: str, score: int, timestamp: str = "") -> None:
+        self.kind = kind
+        self.text = text
+        self.score = score
+        self.timestamp = timestamp
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"kind": self.kind, "text": self.text, "score": self.score, "timestamp": self.timestamp}
 
 
 class JsonSessionStore:
@@ -123,6 +136,129 @@ class JsonSessionStore:
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
+class SQLiteSessionStore:
+    def __init__(self, path: Path, max_messages: int = int(Defaults.SESSION_MAX_MESSAGES)) -> None:
+        self.path = path
+        self.max_messages = max_messages
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_db()
+
+    def load(self) -> list[Message]:
+        with self._connect() as db:
+            rows = db.execute(
+                "select role, content from messages order by idx desc limit ?",
+                (self.max_messages,),
+            ).fetchall()
+        return [Message(role=row["role"], content=row["content"]) for row in reversed(rows)]
+
+    def save(self, messages: list[Message]) -> None:
+        with self._connect() as db:
+            db.execute("delete from messages")
+            db.executemany(
+                "insert into messages(idx, role, content) values (?, ?, ?)",
+                [(index, message.role, message.content) for index, message in enumerate(messages)],
+            )
+
+    def load_events(self) -> list[EventRecord]:
+        with self._connect() as db:
+            rows = db.execute("select kind, data, timestamp from events order by id").fetchall()
+        return [EventRecord(kind=row["kind"], data=json.loads(row["data"]), timestamp=row["timestamp"]) for row in rows]
+
+    def append_event(self, event: EventRecord) -> None:
+        with self._connect() as db:
+            db.execute(
+                "insert into events(kind, data, timestamp) values (?, ?, ?)",
+                (event.kind, json.dumps(event.data, ensure_ascii=False, sort_keys=True), event.timestamp),
+            )
+
+    def query_events(self, kind: str | None = None, limit: int = 20) -> list[EventRecord]:
+        limit = max(1, limit)
+        with self._connect() as db:
+            if kind:
+                rows = db.execute(
+                    "select kind, data, timestamp from events where kind = ? order by id desc limit ?",
+                    (kind, limit),
+                ).fetchall()
+            else:
+                rows = db.execute("select kind, data, timestamp from events order by id desc limit ?", (limit,)).fetchall()
+        return [EventRecord(kind=row["kind"], data=json.loads(row["data"]), timestamp=row["timestamp"]) for row in reversed(rows)]
+
+    def load_plan(self) -> PlanArtifact | None:
+        data = self._load_json_state(SessionFields.PLAN)
+        return PlanArtifact.from_dict(data) if isinstance(data, dict) else None
+
+    def save_plan(self, plan: PlanArtifact | None) -> None:
+        self._save_json_state(SessionFields.PLAN, plan.to_dict() if plan is not None else None)
+
+    def load_workflow(self) -> WorkflowArtifact | None:
+        data = self._load_json_state(SessionFields.WORKFLOW)
+        return WorkflowArtifact.from_dict(data) if isinstance(data, dict) else None
+
+    def save_workflow(self, workflow: WorkflowArtifact | None) -> None:
+        self._save_json_state(SessionFields.WORKFLOW, workflow.to_dict() if workflow is not None else None)
+
+    def search_memory(self, query: str, limit: int = 10) -> list[MemorySearchResult]:
+        terms = [term.lower() for term in query.split() if term.strip()]
+        if not terms:
+            return []
+        results: list[MemorySearchResult] = []
+        like = f"%{terms[0]}%"
+        with self._connect() as db:
+            message_rows = db.execute(
+                "select role, content from messages where lower(content) like ? order by idx desc limit ?",
+                (like, max(1, limit * 3)),
+            ).fetchall()
+            event_rows = db.execute(
+                "select kind, data, timestamp from events where lower(data) like ? or lower(kind) like ? order by id desc limit ?",
+                (like, like, max(1, limit * 3)),
+            ).fetchall()
+        for row in message_rows:
+            text = row["content"]
+            score = memory_score(text, terms)
+            if score:
+                results.append(MemorySearchResult(kind=f"message:{row['role']}", text=truncate_memory_text(text), score=score))
+        for row in event_rows:
+            text = f"{row['kind']} {row['data']}"
+            score = memory_score(text, terms)
+            if score:
+                results.append(MemorySearchResult(kind=f"event:{row['kind']}", text=truncate_memory_text(text), score=score, timestamp=row["timestamp"]))
+        return sorted(results, key=lambda item: (-item.score, item.kind, item.timestamp))[: max(1, limit)]
+
+    def _load_json_state(self, key: str) -> Any:
+        with self._connect() as db:
+            row = db.execute("select value from state where key = ?", (key,)).fetchone()
+        return json.loads(row["value"]) if row else None
+
+    def _save_json_state(self, key: str, value: Any | None) -> None:
+        with self._connect() as db:
+            if value is None:
+                db.execute("delete from state where key = ?", (key,))
+            else:
+                db.execute(
+                    "insert into state(key, value) values (?, ?) on conflict(key) do update set value = excluded.value",
+                    (key, json.dumps(value, ensure_ascii=False, sort_keys=True)),
+                )
+
+    def _connect(self):
+        connection = sqlite3.connect(self.path)
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def _init_db(self) -> None:
+        with self._connect() as db:
+            db.execute("pragma journal_mode = wal")
+            db.execute(
+                "create table if not exists messages("
+                "idx integer primary key, role text not null, content text not null)"
+            )
+            db.execute(
+                "create table if not exists events("
+                "id integer primary key autoincrement, kind text not null, data text not null, timestamp text not null)"
+            )
+            db.execute("create table if not exists state(key text primary key, value text not null)")
+            db.execute("create index if not exists idx_events_kind on events(kind)")
+
+
 def parse_messages(raw) -> list[Message]:
     if raw is None:
         return []
@@ -214,3 +350,13 @@ def first_user_content(messages: list[Message], limit: int = 500) -> str:
             content = " ".join(message.content.split())
             return content if len(content) <= limit else content[: limit - 3] + "..."
     return ""
+
+
+def memory_score(text: str, terms: list[str]) -> int:
+    lowered = text.lower()
+    return sum(lowered.count(term) for term in terms)
+
+
+def truncate_memory_text(text: str, limit: int = 500) -> str:
+    compact = " ".join(text.split())
+    return compact if len(compact) <= limit else compact[: limit - 3] + "..."

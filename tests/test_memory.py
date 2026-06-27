@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from minimal_cli_agent.constants import EventKinds, PermissionEventFields
-from minimal_cli_agent.memory import JsonSessionStore, compact_messages
+from minimal_cli_agent.memory import JsonSessionStore, SQLiteSessionStore, compact_messages
 from minimal_cli_agent.plan import PlanArtifact
 from minimal_cli_agent.types import EventRecord, Message
 from minimal_cli_agent.workflow import WorkflowArtifact, WorkflowDelegation, WorkflowStep
@@ -150,6 +150,36 @@ class MemoryTest(unittest.TestCase):
             messages = store.load()
 
         self.assertEqual([message.content for message in messages], ["two", "three"])
+
+    def test_sqlite_session_store_persists_full_state_and_retrieves_memory(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.sqlite"
+            store = SQLiteSessionStore(path, max_messages=2)
+            store.save(
+                [
+                    Message(role="user", content="first topic alpha"),
+                    Message(role="assistant", content="second topic beta"),
+                    Message(role="user", content="third topic alpha beta"),
+                ]
+            )
+            store.append_event(EventRecord(kind="tool_execution", data={"command": "alpha check"}))
+            store.save_plan(PlanArtifact(goal="ship", summary="alpha plan"))
+            store.save_workflow(WorkflowArtifact(goal="workflow"))
+
+            messages = store.load()
+            events = store.query_events(kind="tool_execution", limit=5)
+            matches = store.search_memory("alpha", limit=5)
+            plan = store.load_plan()
+            workflow = store.load_workflow()
+
+        self.assertEqual([message.content for message in messages], ["second topic beta", "third topic alpha beta"])
+        self.assertEqual(events[0].kind, "tool_execution")
+        self.assertTrue(any(match.kind.startswith("message:") for match in matches))
+        self.assertTrue(any(match.kind.startswith("event:") for match in matches))
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan.goal, "ship")
+        self.assertIsNotNone(workflow)
+        self.assertEqual(workflow.goal, "workflow")
 
 
 if __name__ == "__main__":

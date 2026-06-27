@@ -66,6 +66,7 @@ class SessionFields:
     KIND: Final = "kind"
     DATA: Final = "data"
     TIMESTAMP: Final = "timestamp"
+    INDEX: Final = "index"
 
 
 class EventKinds:
@@ -253,6 +254,7 @@ class InteractiveCommands:
     EVENTS: Final = "/events"
     PLAN: Final = "/plan"
     WORKFLOW: Final = "/workflow"
+    MEMORY: Final = "/memory"
     DELEGATE: Final = "/delegate"
     REVIEW: Final = "/review"
     MCP: Final = "/mcp"
@@ -278,6 +280,7 @@ class InteractiveCommands:
         EVENTS: "Show persisted session events. Usage: /events [kind|number]",
         PLAN: "Create, show, or clear an isolated plan. Usage: /plan <goal>|show|clear",
         WORKFLOW: "Manage typed workflow state. Usage: /workflow create <goal>|step <text>|done <number>|show|clear",
+        MEMORY: "Search persisted SQLite memory. Usage: /memory <query>",
         DELEGATE: "Run an isolated read-only sub-agent task. Usage: /delegate <task>",
         REVIEW: "Ask the agent to review the current project or a path. Usage: /review [path]",
         MCP: "Load an MCP config file and rebuild tools. Usage: /mcp path/to/mcp.json",
