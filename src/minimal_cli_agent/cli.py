@@ -15,9 +15,10 @@ from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import compact_messages
 from minimal_cli_agent.memory import JsonSessionStore
 from minimal_cli_agent.plan import PLAN_METADATA_KEY, build_plan_prompt, create_plan_artifact, format_plan_artifact
-from minimal_cli_agent.prompts import INTERACTIVE_SYSTEM_PROMPT
+from minimal_cli_agent.prompts import INTERACTIVE_SYSTEM_PROMPT, SYSTEM_PROMPT
 from minimal_cli_agent.profiles import resolve_profile
-from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions
+from minimal_cli_agent.skills import build_system_prompt, resolve_skill_path, resolve_skill_paths
+from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,6 +36,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-timeout", type=int, default=int(os.getenv("AGENT_MODEL_TIMEOUT", Defaults.MODEL_TIMEOUT)))
     parser.add_argument("--allow-network", action="store_true", help="Allow shell commands with obvious network access.")
     parser.add_argument("--policy-file", type=Path, help="JSON file with additional shell policy deny tokens.")
+    parser.add_argument("--mcp-config", type=Path, help="JSON config file with MCP servers.")
+    parser.add_argument("--skill", action="append", default=[], help="Load a skill by path or by name under skills/<name>.")
     parser.add_argument("--summarize-context", action="store_true", help="Use the model to summarize old context when compacting.")
     parser.add_argument("--show-config", action="store_true", help="Print resolved provider/model/base URL without secrets.")
     parser.add_argument(
@@ -64,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
             permission_mode=args.permission,
             allow_network=args.allow_network,
             policy_file=args.policy_file.resolve() if args.policy_file else None,
+            mcp_config=args.mcp_config.resolve() if args.mcp_config else None,
+            skill_paths=resolve_skill_paths(args.skill, args.cwd.resolve()),
             summarize_context=args.summarize_context,
         ), args.profile, explicit_options=explicit_options)
         if args.show_config:
@@ -99,6 +104,8 @@ def run_turn(
     session_store: JsonSessionStore | None = None,
     options: LoopOptions | None = None,
 ) -> int:
+    options = with_configured_skills(agent.config, options)
+    upsert_system_prompt(context, options.system_prompt)
     stream = agent.chat_stream(message, context, options)
     while True:
         try:
@@ -166,7 +173,7 @@ def run_interactive(
 
 
 def print_quick_command_hint() -> None:
-    print("Commands: /help, /config, /profile, /permission, /context, /plan, /review, /exit")
+    print("Commands: /help, /config, /profile, /permission, /mcp, /skill, /context, /plan, /review, /exit")
 
 
 def print_interactive_help() -> None:
@@ -245,6 +252,12 @@ def handle_interactive_command(raw: str, session: InteractiveSession) -> Interac
         if exit_code != 0:
             print("Review failed. You can adjust options and retry.")
         return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.MCP:
+        update_mcp_config(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.SKILL:
+        update_skill(session, argument)
+        return InteractiveCommandResult(handled=True)
     return InteractiveCommandResult()
 
 
@@ -286,6 +299,31 @@ def update_base_url(session: InteractiveSession, base_url: str) -> None:
         print(f"Usage: {InteractiveCommands.BASE_URL} <url>")
         return
     session.agent.config.base_url = base_url
+    rebuild_agent(session)
+    print_config(session.agent.config)
+
+
+def update_mcp_config(session: InteractiveSession, path_text: str) -> None:
+    if not path_text:
+        print(f"Usage: {InteractiveCommands.MCP} path/to/mcp.json")
+        return
+    path = Path(path_text).expanduser()
+    if not path.is_absolute():
+        path = session.agent.config.cwd / path
+    session.agent.config.mcp_config = path.resolve()
+    rebuild_agent(session)
+    print_config(session.agent.config)
+
+
+def update_skill(session: InteractiveSession, skill_text: str) -> None:
+    if not skill_text:
+        print(f"Usage: {InteractiveCommands.SKILL} my-coffee|path/to/SKILL.md")
+        return
+    path = resolve_skill_path(skill_text, session.agent.config.cwd)
+    if path not in session.agent.config.skill_paths:
+        session.agent.config.skill_paths = (*session.agent.config.skill_paths, path)
+    prompt = build_system_prompt(INTERACTIVE_SYSTEM_PROMPT, session.agent.config.skill_paths)
+    upsert_system_prompt(session.context, prompt)
     rebuild_agent(session)
     print_config(session.agent.config)
 
@@ -387,6 +425,24 @@ def print_config(config: AgentConfig) -> None:
     print(f"permission: {config.permission_mode}")
     print(f"allow_network: {config.allow_network}")
     print(f"summarize_context: {config.summarize_context}")
+    print(f"mcp_config: {config.mcp_config or '<none>'}")
+    skills = ", ".join(path.parent.name for path in config.skill_paths) if config.skill_paths else "<none>"
+    print(f"skills: {skills}")
+
+
+def with_configured_skills(config: AgentConfig, options: LoopOptions | None) -> LoopOptions:
+    base = options or LoopOptions()
+    prompt = build_system_prompt(base.system_prompt or SYSTEM_PROMPT, config.skill_paths)
+    return LoopOptions(allow_final_text=base.allow_final_text, system_prompt=prompt)
+
+
+def upsert_system_prompt(context: ChatContext, system_prompt: str | None) -> None:
+    if not system_prompt:
+        return
+    if context.messages and context.messages[0].role == "system":
+        context.messages[0] = Message(role="system", content=system_prompt)
+        return
+    context.messages.insert(0, Message(role="system", content=system_prompt))
 
 
 def detect_explicit_options(argv: list[str]) -> set[str]:

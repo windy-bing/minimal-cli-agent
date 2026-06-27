@@ -22,6 +22,7 @@ from minimal_cli_agent.file_tools import (
 )
 from minimal_cli_agent.interfaces import ContextManager, Model, SessionStore
 from minimal_cli_agent.model import ChatModel
+from minimal_cli_agent.mcp_tools import load_mcp_config, register_mcp_tools
 from minimal_cli_agent.policy import ConfirmationHandler, ShellPermissionPolicy
 from minimal_cli_agent.tool_pipeline import ToolExecutionPipeline
 from minimal_cli_agent.tool_registry import ToolRegistry, ToolSpec
@@ -131,6 +132,8 @@ class AgentHarness:
                 parameters_schema=EDIT_FILE_SCHEMA,
             )
         )
+        if self.config.mcp_config is not None:
+            register_mcp_tools(self.tool_registry, load_mcp_config(self.config.mcp_config))
         self.tool_pipeline = ToolExecutionPipeline(registry=self.tool_registry, permission_policy=self.policy)
 
     def load_messages(self) -> list[Message]:

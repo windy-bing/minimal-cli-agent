@@ -19,6 +19,8 @@ The first implementation follows the minimal-agent.com loop:
 - `ToolRegistry`: registers executable tools behind one invocation boundary.
 - `ToolExecutionPipeline`: runs Discovery, Validation, Permission, PreHook, ResolveDecision, Confirmation, Execution, PostHook, AutoVerify, and Formatting.
 - `FileToolEnvironment`: reads, pages, tails, searches, and writes UTF-8 files inside the configured workspace.
+- `mcp_tools`: loads streamable HTTP MCP configs and registers generic plus discovered MCP tools.
+- `skills`: resolves local `SKILL.md` files and injects them into the system prompt.
 - `parser`: extracts a single `bash-action` or `tool-action` code block.
 - `memory`: persists sessions and applies a simple local compaction policy.
 - `interfaces`: defines protocol boundaries for model, tool execution, sessions, context, and policy.
@@ -35,6 +37,8 @@ The project is meant to grow into a harness-style agent. The important rule is t
 | Context window | `CompactingContextManager` | Model-based summarizer, retrieval-backed context |
 | Session persistence | `JsonSessionStore` with lock-protected atomic JSON writes | SQLite, indexed event log, group session store |
 | Tool invocation | `ToolRegistry` | MCP tools, browser tools, plugin tools |
+| MCP adapters | `mcp_tools.py` | stdio MCP, authenticated config resolvers, plugin-managed MCP |
+| Skills | `skills.py` | skill discovery, skill marketplace, scoped skill activation |
 | Tool lifecycle | `ToolExecutionPipeline` | Hook arbitration, confirmation UI, retries, formatting |
 | Shell execution | `LocalEnvironment` | Docker environment, remote sandbox, workspace fork |
 | File tools | `FileToolEnvironment` | Patch hunks, format-aware validation, cross-process file locks |
@@ -76,6 +80,9 @@ Implemented:
 - Lock-protected atomic JSON session writes with recent-message retention.
 - `ToolRegistry` for tool discovery.
 - Built-in workspace `read_file`, `read_tail`, `read_forward`, `search`, `write_file`, and `edit_file` tools.
+- Manual MCP config loading with streamable HTTP JSON-RPC tools.
+- Generic MCP list/call tools plus opt-in concrete tool registration from `tools/list` when `discoverTools` is enabled.
+- Local `SKILL.md` loading into the system prompt through `--skill`.
 - `search` has top-k, max-files, timeout, ignore-dir, extension, and `.gitignore` / `.agentignore` filters.
 - Structured write validation for JSON, TOML, XML, and YAML when PyYAML is available.
 - Tool aliases plus recoverable discovery and validation observations.
@@ -106,12 +113,14 @@ Reserved:
 - `autoEdit` automatically approves file writer tools; shell commands still ask for confirmation.
 - Tool schema validation is intentionally minimal. It currently supports per-tool expected format and validator callbacks, not full JSON Schema.
 - The event log is JSON-backed. It is durable, but not yet indexed or queryable like SQLite.
+- MCP concrete tool discovery is opt-in at startup. Generic list/call tools remain available without touching the network.
+- Skills are manually selected by CLI option or slash command; automatic discovery is reserved.
 
 Not implemented yet:
 
 - Parallel tool execution and cross-process file edit locks.
 - File-level write locks.
-- MCP/plugin/skill discovery.
+- Automatic MCP/plugin/skill discovery.
 - SubAgent runner.
 - GroupSession event store.
 - Workflow scheduler.
@@ -183,6 +192,14 @@ A production version should add:
 ### Skills, MCP, and Plugins
 
 Skills should be prompt-and-tool bundles discovered from a local directory.
+
+Current support:
+
+- `--mcp-config` loads streamable HTTP MCP servers from a common `mcpServers` JSON file.
+- Every MCP server gets generic `mcp_<server>_list_tools` and `mcp_<server>_call_tool` actions.
+- When `discoverTools` is enabled and `tools/list` works at startup, each remote tool is also exposed as a concrete local tool.
+- `--skill` loads a local `SKILL.md` by name or path and injects it into the system prompt.
+- `/mcp` and `/skill` can load configs or skills inside the interactive REPL.
 
 Plugins should register:
 

@@ -128,6 +128,7 @@ class Defaults:
     MAX_STEPS: Final = "20"
     COMMAND_TIMEOUT: Final = "30"
     MODEL_TIMEOUT: Final = "300"
+    MCP_TIMEOUT: Final = "30"
     CONTEXT_TAIL_MESSAGES: Final = "8"
     SESSION_MAX_MESSAGES: Final = "200"
 
@@ -152,6 +153,7 @@ class FileToolDefaults:
 
 
 class Tools:
+    MCP_PREFIX: Final = "mcp_"
     SHELL: Final = "shell"
     SHELL_ALIASES: Final = ("bash", "sh", "command")
     SHELL_EXPECTED_FORMAT: Final = "A non-empty shell command string, for example: ls -la"
@@ -179,6 +181,8 @@ class Tools:
 
 class ToolPayloadFields:
     TOOL: Final = "tool"
+    NAME: Final = "name"
+    ARGUMENTS: Final = "arguments"
     PATH: Final = "path"
     CONTENT: Final = "content"
     START_LINE: Final = "start_line"
@@ -208,6 +212,8 @@ class InteractiveCommands:
     CONTEXT: Final = "/context"
     PLAN: Final = "/plan"
     REVIEW: Final = "/review"
+    MCP: Final = "/mcp"
+    SKILL: Final = "/skill"
     EXIT: Final = "/exit"
     QUIT: Final = "/quit"
     PLAIN_EXIT: Final = "exit"
@@ -226,6 +232,8 @@ class InteractiveCommands:
         CONTEXT: "Manage context. Usage: /context status|compact|clear",
         PLAN: "Create, show, or clear an isolated plan. Usage: /plan <goal>|show|clear",
         REVIEW: "Ask the agent to review the current project or a path. Usage: /review [path]",
+        MCP: "Load an MCP config file and rebuild tools. Usage: /mcp path/to/mcp.json",
+        SKILL: "Load a skill by name or path. Usage: /skill my-coffee",
         EXIT: "Exit interactive mode.",
         QUIT: "Exit interactive mode.",
         PLAIN_EXIT: "Exit interactive mode.",
@@ -244,4 +252,6 @@ class InteractiveCommands:
         CONTEXT,
         PLAN,
         REVIEW,
+        MCP,
+        SKILL,
     )

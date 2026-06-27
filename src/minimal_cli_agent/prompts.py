@@ -34,6 +34,22 @@ When you need to read or write files, output one or more tool action blocks in t
 {"tool":"edit_file","path":"relative/path.txt","start_line":10,"end_line":12,"content":"replacement lines"}
 ```
 
+When MCP tools are configured, use the exposed MCP tool names. Generic MCP tools follow this shape:
+
+```tool-action
+{"tool":"mcp_servername_list_tools"}
+```
+
+```tool-action
+{"tool":"mcp_servername_call_tool","name":"remoteToolName","arguments":{}}
+```
+
+Concrete MCP tools, when discovered, follow this shape:
+
+```tool-action
+{"tool":"mcp_servername_remote_tool","arguments":{}}
+```
+
 Use absolute or explicit relative paths. Prefer non-interactive commands.
 When the task is complete, output:
 
@@ -84,6 +100,22 @@ When you need to read or write files, output one or more tool action blocks in t
 
 ```tool-action
 {"tool":"edit_file","path":"relative/path.txt","start_line":10,"end_line":12,"content":"replacement lines"}
+```
+
+When MCP tools are configured, use the exposed MCP tool names. Generic MCP tools follow this shape:
+
+```tool-action
+{"tool":"mcp_servername_list_tools"}
+```
+
+```tool-action
+{"tool":"mcp_servername_call_tool","name":"remoteToolName","arguments":{}}
+```
+
+Concrete MCP tools, when discovered, follow this shape:
+
+```tool-action
+{"tool":"mcp_servername_remote_tool","arguments":{}}
 ```
 
 After tool observations, you may answer directly in natural language to complete the turn.

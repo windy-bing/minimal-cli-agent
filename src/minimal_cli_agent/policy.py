@@ -71,6 +71,9 @@ class ShellPermissionPolicy:
         self.rules = load_shell_policy_rules(config)
 
     def decide(self, action: str, payload: str) -> ToolDecision:
+        if action.startswith(Tools.MCP_PREFIX):
+            return self._decide_mcp(action, payload)
+
         if action not in {Tools.SHELL, *Tools.WRITERS, *Tools.READ_ONLY}:
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Unknown action type: {action}")
 
@@ -100,6 +103,17 @@ class ShellPermissionPolicy:
             return ToolDecision(kind=ToolDecisionKinds.ASK, reason=f"{self.config.permission_mode} mode requires {action} confirmation")
 
         return ToolDecision(kind=ToolDecisionKinds.ASK, reason="confirmation required")
+
+    def _decide_mcp(self, action: str, payload: str) -> ToolDecision:
+        if action.endswith("_list_tools"):
+            return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="MCP tool discovery")
+        if self.config.permission_mode == PermissionModes.YOLO:
+            return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="yolo mode")
+        if self.config.permission_mode == PermissionModes.PLAN:
+            return ToolDecision(kind=ToolDecisionKinds.SKIP, reason=f"plan mode does not execute {action}")
+        if (action, payload) in self.approved_tool_calls:
+            return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="session approval memory")
+        return ToolDecision(kind=ToolDecisionKinds.ASK, reason=f"{self.config.permission_mode} mode requires {action} confirmation")
 
     def confirm(self, action: str, payload: str, decision: ToolDecision) -> ToolDecision:
         if decision.kind != ToolDecisionKinds.ASK:

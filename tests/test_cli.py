@@ -106,7 +106,7 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
-        self.assertIn("Commands: /help, /config, /profile, /permission, /context, /plan, /review, /exit", printed)
+        self.assertIn("Commands: /help, /config, /profile, /permission, /mcp, /skill, /context, /plan, /review, /exit", printed)
 
     def test_detect_explicit_options_supports_space_and_equals_forms(self) -> None:
         explicit = detect_explicit_options([

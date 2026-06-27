@@ -13,6 +13,8 @@
 - 作为终端 CLI 运行。
 - 支持 `--interactive` 多轮交互会话；不传 task 时也会进入同一个 REPL。
 - 支持 slash commands，在运行时切换 profile/model/permission/context/plan/review。
+- 支持通过 `--mcp-config` 接入 HTTP MCP server，并把 MCP 工具注册到同一个 `ToolRegistry`。
+- 支持通过 `--skill` 加载本地 instruction skill，包括已安装的瑞幸咖啡 `my-coffee` skill。
 - 默认支持本地 Ollama chat 模型。
 - 支持 Ollama、Codex CLI 登录态、Claude/Anthropic、Gemini profile。
 - 支持直接指定 OpenAI-compatible `/chat/completions` 接口。
@@ -143,6 +145,8 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 /permission autoEdit
 /network on
 /summarize on
+/mcp examples/mcp/my-coffee.json
+/skill my-coffee
 /context status
 /context compact
 /context clear
@@ -155,6 +159,65 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 `/plan <goal>` 会用 `plan` 权限运行一次隔离的计划 turn，保存 typed plan artifact，并且不会把计划阶段 transcript 合并进当前聊天上下文。传入 `--session` 时，active plan 会和 messages、审计事件一起持久化。
 
 `/review [path]` 会通过同一个 agent loop 发起 review turn，所以它可以用 `read_file` 检查文件，并遵守当前 permission mode。
+
+## MCP 和 Skills
+
+MCP server 从 JSON 配置文件加载。CLI 直接兼容 Codex、Claude 等 MCP 客户端常见的 `mcpServers` 结构：
+
+```json
+{
+  "mcpServers": {
+    "my-coffee": {
+      "type": "streamablehttp",
+      "url": "https://gwmcp.lkcoffee.com/order/user/mcp",
+      "headers": {
+        "Authorization": "Bearer ${LUCKIN_MCP_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+瑞幸配置样例位于 `examples/mcp/my-coffee.json`。下载的技能已安装到 `skills/my-coffee/SKILL.md`。
+
+运行方式：
+
+```bash
+export LUCKIN_MCP_TOKEN="<登录后复制的 token>"
+minimal-agent \
+  --profile codex \
+  --permission default \
+  --mcp-config examples/mcp/my-coffee.json \
+  --skill my-coffee \
+  --interactive
+```
+
+在 REPL 里也可以不重启直接加载或切换：
+
+```text
+/mcp examples/mcp/my-coffee.json
+/skill my-coffee
+```
+
+每个 MCP server 都会固定注册两个通用工具：
+
+```tool-action
+{"tool":"mcp_my_coffee_list_tools"}
+```
+
+```tool-action
+{"tool":"mcp_my_coffee_call_tool","name":"queryShopList","arguments":{}}
+```
+
+如果启动时 `tools/list` 成功，Harness 还会注册远端工具快捷名，例如 `mcp_my_coffee_queryshoplist`。
+为了避免启动 CLI 时被网络或 token 问题拖住，默认不会启动远端发现。如果希望启动时 best-effort 注册具体工具快捷名，可以在对应 server 配置里加入 `"discoverTools": true`。
+
+后续复用到其它 MCP provider 的流程：
+
+1. 把 provider 配置放到 `examples/mcp/<name>.json` 或任意本地路径。
+2. 把 instruction skill 放到 `skills/<name>/SKILL.md`，或者用 `--skill` 传入直接路径。
+3. 启动 CLI 时传入 `--mcp-config <path> --skill <name>`。
+4. 交互模式下可以用 `/mcp` 和 `/skill` 在同一个 session 中切换。
 
 ## OpenAI-Compatible 接口
 
@@ -200,6 +263,8 @@ Profile 行为：
 --model-timeout  模型请求超时时间，单位秒
 --allow-network  允许明显会访问网络的 shell 命令
 --policy-file    包含附加 shell policy deny token 的 JSON 文件
+--mcp-config     包含 MCP servers 的 JSON 配置文件
+--skill          skills/<name> 下的技能名，或直接传入 SKILL.md 路径
 --summarize-context 使用模型总结旧上下文
 --interactive    启动多轮交互 CLI 会话
 --permission     default、autoEdit、plan 或 yolo
@@ -230,6 +295,8 @@ src/minimal_cli_agent/
   policy.py        shell 权限策略
   context.py       上下文准备边界
   file_tools.py    工作区 read_file、read_tail、read_forward、search、write_file 和 edit_file 工具
+  mcp_tools.py     streamable HTTP MCP 配置加载与工具适配器
+  skills.py        本地 SKILL.md 解析与 prompt 注入
   model.py         Ollama、OpenAI-compatible、Anthropic、Gemini HTTP client 和 Codex CLI adapter
   parser.py        bash-action 和 tool-action 解析器
   environment.py   本地 shell 执行
@@ -265,6 +332,8 @@ src/minimal_cli_agent/
 - `ResolveDecision` 支持 decision hooks，可以在确认前覆盖 policy 决策。
 - `ToolDecision`：`allow`、`ask`、`deny`、`skip`。
 - 产品权限模式：`default`、`autoEdit`、`plan`、`yolo`。
+- 手动加载 MCP config，并注册 streamable HTTP JSON-RPC 工具。
+- 本地 instruction skill 加载与系统提示注入。
 - JSON session event log，用于记录权限批准审计事件。
 - JSON session 写入带文件锁、原子替换，并会裁剪到最近消息。
 - 权限确认可通过 confirmation handler 替换，CLI `input()` 只是默认实现。
@@ -277,6 +346,7 @@ src/minimal_cli_agent/
 - 上下文压缩默认是本地截断；模型总结需要显式启用。
 - `autoEdit` 会自动批准文件写入类工具；shell 命令仍需要确认。
 - session 持久化目前是 JSON，不是 SQLite 或可查询事件数据库。
+- MCP 工具发现是启动时 best-effort；发现失败时仍保留通用 list/call 工具。
 
 暂不实现：
 

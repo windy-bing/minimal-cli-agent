@@ -13,6 +13,8 @@ The project starts intentionally small, but the code is split into replaceable m
 - Runs as a terminal CLI.
 - Supports multi-turn interactive sessions with `--interactive`; running without a task starts the same REPL.
 - Supports slash commands for runtime profile/model/permission/context/plan/review control.
+- Supports MCP HTTP servers through `--mcp-config`, with MCP tools registered into the same `ToolRegistry`.
+- Supports local instruction skills through `--skill`, including the bundled Luckin Coffee `my-coffee` skill.
 - Supports local Ollama chat models by default.
 - Supports Ollama, Codex CLI login, Claude/Anthropic, and Gemini profiles.
 - Supports OpenAI-compatible `/chat/completions` endpoints directly.
@@ -143,6 +145,8 @@ Most startup options can also be changed inside the REPL:
 /permission autoEdit
 /network on
 /summarize on
+/mcp examples/mcp/my-coffee.json
+/skill my-coffee
 /context status
 /context compact
 /context clear
@@ -155,6 +159,65 @@ Most startup options can also be changed inside the REPL:
 `/plan <goal>` runs an isolated planning turn with `plan` permissions, saves a typed plan artifact, and does not merge the planning transcript into the active chat context. With `--session`, the active plan is persisted alongside messages and audit events.
 
 `/review [path]` runs a review turn through the same agent loop, so it can inspect files with `read_file` and use the current permission mode.
+
+## MCP And Skills
+
+MCP servers are loaded from a JSON config file. The CLI accepts the common `mcpServers` shape used by Codex, Claude, and other MCP clients:
+
+```json
+{
+  "mcpServers": {
+    "my-coffee": {
+      "type": "streamablehttp",
+      "url": "https://gwmcp.lkcoffee.com/order/user/mcp",
+      "headers": {
+        "Authorization": "Bearer ${LUCKIN_MCP_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+The bundled Luckin config lives at `examples/mcp/my-coffee.json`. The downloaded skill lives at `skills/my-coffee/SKILL.md`.
+
+Run it like this:
+
+```bash
+export LUCKIN_MCP_TOKEN="<login token>"
+minimal-agent \
+  --profile codex \
+  --permission default \
+  --mcp-config examples/mcp/my-coffee.json \
+  --skill my-coffee \
+  --interactive
+```
+
+Inside the REPL you can load or switch them without restarting:
+
+```text
+/mcp examples/mcp/my-coffee.json
+/skill my-coffee
+```
+
+For each configured MCP server, the harness always registers generic tools:
+
+```tool-action
+{"tool":"mcp_my_coffee_list_tools"}
+```
+
+```tool-action
+{"tool":"mcp_my_coffee_call_tool","name":"queryShopList","arguments":{}}
+```
+
+If `tools/list` succeeds during startup, the harness also registers concrete shortcuts such as `mcp_my_coffee_queryshoplist`.
+Startup discovery is disabled by default to keep CLI startup fast. Add `"discoverTools": true` to a server config when you want best-effort concrete shortcut registration during startup.
+
+To reuse this flow for another MCP provider:
+
+1. Put the provider config in `examples/mcp/<name>.json` or any local path.
+2. Put the instruction skill under `skills/<name>/SKILL.md`, or pass a direct path with `--skill`.
+3. Start the CLI with `--mcp-config <path> --skill <name>`.
+4. Use `/mcp` and `/skill` in interactive mode to switch configs while keeping the same session.
 
 ## OpenAI-Compatible Endpoint
 
@@ -200,6 +263,8 @@ Explicit CLI options such as `--model`, `--base-url`, and `--api-key` take prece
 --model-timeout  model request timeout in seconds
 --allow-network  allow shell commands with obvious network access
 --policy-file    JSON file with additional shell policy deny tokens
+--mcp-config     JSON file with MCP servers
+--skill          skill name under skills/<name> or a direct SKILL.md path
 --summarize-context use the model to summarize old context when compacting
 --interactive    start a multi-turn interactive CLI session
 --permission     default, autoEdit, plan, or yolo
@@ -230,6 +295,8 @@ src/minimal_cli_agent/
   policy.py       shell permission policy
   context.py      context preparation boundary
   file_tools.py   workspace read_file, read_tail, read_forward, search, write_file, and edit_file tools
+  mcp_tools.py    streamable HTTP MCP config loading and tool adapter
+  skills.py       local SKILL.md resolver and prompt injection
   model.py        Ollama, OpenAI-compatible, Anthropic, Gemini HTTP clients, and Codex CLI adapter
   parser.py       bash-action and tool-action parser
   environment.py  local shell execution
@@ -265,6 +332,8 @@ Implemented:
 - `ResolveDecision` supports decision hooks that can override policy decisions before confirmation.
 - Permission decision type with `allow`, `ask`, `deny`, and `skip`.
 - Product permission modes: `default`, `autoEdit`, `plan`, `yolo`.
+- Manual MCP config loading with streamable HTTP JSON-RPC tools.
+- Local instruction skill loading into the system prompt.
 - JSON session event log for permission approval audit records.
 - JSON session writes are lock-protected, atomically replaced, and capped to recent messages.
 - Permission confirmation is injectable through a confirmation handler; CLI `input()` is only the default handler.
@@ -277,12 +346,13 @@ Reserved but intentionally minimal:
 - Context compression defaults to local truncation; model summarization is opt-in.
 - `autoEdit` automatically approves file writer tools; shell commands still ask for confirmation.
 - Session persistence is JSON, not SQLite or a queryable event database.
+- MCP tool discovery is best-effort at startup; generic list/call tools remain available when discovery cannot run.
 
 Not implemented yet:
 
 - Parallel tool execution and cross-process file edit locks.
 - SubAgent and GroupSession runtime.
-- MCP, plugin, and skill discovery.
+- Automatic MCP/plugin/skill discovery.
 - Workflow scheduler or delegation engine.
 
 ## Notes From The Reference Article

@@ -76,6 +76,8 @@ class AgentConfig:
     permission_mode: PermissionMode = PermissionModes.DEFAULT
     allow_network: bool = False
     policy_file: Path | None = None
+    mcp_config: Path | None = None
+    skill_paths: tuple[Path, ...] = field(default_factory=tuple)
     summarize_context: bool = False
     context_tail_messages: int = int(Defaults.CONTEXT_TAIL_MESSAGES)
     max_output_chars: int = 12000
