@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import fnmatch
 import json
 
 from minimal_cli_agent.constants import (
@@ -26,6 +27,9 @@ class ShellPolicyRules:
     dangerous_tokens: tuple[str, ...] = PolicyDefaults.DANGEROUS_TOKENS
     sensitive_path_tokens: tuple[str, ...] = PolicyDefaults.SENSITIVE_PATH_TOKENS
     network_command_tokens: tuple[str, ...] = PolicyDefaults.NETWORK_COMMAND_TOKENS
+    allow_command_prefixes: tuple[str, ...] = ()
+    write_allow_paths: tuple[str, ...] = ()
+    write_deny_paths: tuple[str, ...] = ()
 
 
 def load_shell_policy_rules(config: AgentConfig) -> ShellPolicyRules:
@@ -47,6 +51,9 @@ def load_shell_policy_rules(config: AgentConfig) -> ShellPolicyRules:
         dangerous_tokens=rules.dangerous_tokens + read_token_list(raw, PolicyFileFields.DENY_COMMAND_TOKENS),
         sensitive_path_tokens=rules.sensitive_path_tokens + read_token_list(raw, PolicyFileFields.SENSITIVE_PATH_TOKENS),
         network_command_tokens=rules.network_command_tokens + read_token_list(raw, PolicyFileFields.NETWORK_COMMAND_TOKENS),
+        allow_command_prefixes=read_token_list(raw, PolicyFileFields.ALLOW_COMMAND_PREFIXES),
+        write_allow_paths=read_path_list(raw, PolicyFileFields.WRITE_ALLOW_PATHS),
+        write_deny_paths=read_path_list(raw, PolicyFileFields.WRITE_DENY_PATHS),
     )
 
 
@@ -55,6 +62,13 @@ def read_token_list(raw: dict, field: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
         raise ConfigurationError(f"Policy field {field} must be a list of non-empty strings.")
     return tuple(item.lower() for item in value)
+
+
+def read_path_list(raw: dict, field: str) -> tuple[str, ...]:
+    value = raw.get(field, [])
+    if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
+        raise ConfigurationError(f"Policy field {field} must be a list of non-empty strings.")
+    return tuple(normalize_policy_path(item) for item in value)
 
 
 class ShellPermissionPolicy:
@@ -84,9 +98,15 @@ class ShellPermissionPolicy:
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked tool touching sensitive path: {payload}")
         if action == Tools.SHELL and not self.config.allow_network and any(token in f" {lowered} " for token in self.rules.network_command_tokens):
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked network command without --allow-network: {payload}")
+        if action in Tools.WRITERS:
+            scoped_decision = self._decide_write_scope(lowered, payload)
+            if scoped_decision is not None:
+                return scoped_decision
 
         if action in Tools.READ_ONLY:
             return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="read-only file tool")
+        if action == Tools.SHELL and command_prefix_allowed(lowered, self.rules.allow_command_prefixes):
+            return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="policy allow_command_prefixes")
 
         if self.config.permission_mode == PermissionModes.YOLO:
             return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="yolo mode")
@@ -114,6 +134,13 @@ class ShellPermissionPolicy:
         if (action, payload) in self.approved_tool_calls:
             return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="session approval memory")
         return ToolDecision(kind=ToolDecisionKinds.ASK, reason=f"{self.config.permission_mode} mode requires {action} confirmation")
+
+    def _decide_write_scope(self, normalized_path: str, payload: str) -> ToolDecision | None:
+        if any(path_matches_policy(normalized_path, pattern) for pattern in self.rules.write_deny_paths):
+            return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked write by policy write_deny_paths: {payload}")
+        if self.rules.write_allow_paths and not any(path_matches_policy(normalized_path, pattern) for pattern in self.rules.write_allow_paths):
+            return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked write outside policy write_allow_paths: {payload}")
+        return None
 
     def confirm(self, action: str, payload: str, decision: ToolDecision) -> ToolDecision:
         if decision.kind != ToolDecisionKinds.ASK:
@@ -150,6 +177,28 @@ def permission_target(action: str, payload: str) -> str:
         if isinstance(raw, dict):
             return str(raw.get(ToolPayloadFields.PATH, ""))
     return payload
+
+
+def command_prefix_allowed(command: str, prefixes: tuple[str, ...]) -> bool:
+    normalized = command.strip().lower()
+    return any(normalized.startswith(prefix.strip().lower()) for prefix in prefixes)
+
+
+def normalize_policy_path(value: str) -> str:
+    return value.replace("\\", "/").strip().lstrip("./").lower()
+
+
+def path_matches_policy(path: str, pattern: str) -> bool:
+    normalized_path = normalize_policy_path(path)
+    normalized_pattern = normalize_policy_path(pattern)
+    if not normalized_pattern:
+        return False
+    if fnmatch.fnmatch(normalized_path, normalized_pattern):
+        return True
+    if normalized_pattern.endswith("/**"):
+        prefix = normalized_pattern[:-3].rstrip("/")
+        return normalized_path == prefix or normalized_path.startswith(f"{prefix}/")
+    return normalized_path == normalized_pattern or normalized_path.startswith(f"{normalized_pattern}/")
 
 
 def input_confirmation_handler(action: str, payload: str) -> bool:

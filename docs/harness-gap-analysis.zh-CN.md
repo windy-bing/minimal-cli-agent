@@ -14,7 +14,7 @@
 | 主题 | 当前状态 | 下一步 |
 | --- | --- | --- |
 | 工具执行管道 | 已有 `ToolExecutionPipeline` 阶段形状，`ResolveDecision` 已有 decision hook 仲裁基线，但 `AutoVerify` 很薄 | 补 hook 优先级、冲突报告、确认 UI 适配、重试和格式化策略 |
-| 权限 hard gate | 已有 `ShellPermissionPolicy`、`ToolDecision`、`plan` 跳过执行、`yolo` 仍受硬拒绝规则限制 | 增加命令 allow/deny 规则、工作区写入边界、网络访问策略、审计日志 |
+| 权限 hard gate | 已有 `ShellPermissionPolicy`、`ToolDecision`、`plan` 跳过执行、`yolo` 仍受硬拒绝规则限制；policy 文件支持命令 allow 前缀、追加 deny token 和写入 allow/deny 路径范围 | 后续增加更丰富的策略报告、角色化能力和可查询审计日志 |
 | 上下文压缩 | 当前是本地裁剪加提示，不是语义压缩 | 增加模型总结、原始 transcript 保留、可召回 summary/memory |
 | Memory 管理 | JSON session 已支持 lock 保护、原子写、最近消息裁剪和 active plan 持久化 | 后续实现 EventStore 或 SQLite session log，再做 memory retrieval |
 | SubAgent / GroupSession | 已作为 roadmap 预留 | 先实现 `SubAgentRunner` 和隔离 session，再做 group event log |
@@ -28,8 +28,8 @@
 | --- | --- | --- |
 | 完整 JSON Schema | 已有聚焦 JSON Schema 子集，支持 nested object、array、enum、oneOf/anyOf、边界约束和字段级 repair observation | 后续补默认值、schema 文档生成和更完整 Draft 兼容 |
 | 工具模糊识别 | 已在 Discovery 阶段返回安全的相近工具名建议，但不会自动执行猜测 | 后续可加入风险等级过滤和更细的提示文案 |
-| 文件读取工具性能 | 已实现 `read_tail` / `read_forward` 基线，但还没有更细的编码、二进制和分页状态治理 | 继续补 byte/line 双模式、二进制检测和分页游标 |
-| grep/search top-k | 已实现 `search(pattern,path,top_k,max_files,timeout_ms)`，支持额外 ignore dirs、extension filter 和项目 ignore 文件解析 | 继续补渐进输出和 richer ranking |
+| 文件读取工具性能 | 已实现 `read_tail` / `read_forward` 基线，`read_forward` 支持 byte/line 双模式，读文件 observation 会带分页 metadata，并会拒绝疑似二进制文件 | 后续补编码策略、二进制专用摘要和持久分页游标 |
+| grep/search top-k | 已实现 `search(pattern,path,top_k,max_files,timeout_ms)`，支持额外 ignore dirs、extension filter、项目 ignore 文件解析和相关性 ranking | 后续补渐进输出和更丰富的 ranking 特征 |
 | 结构化文本编辑校验 | `write_file`/`edit_file` 已有 JSON/TOML/XML 写入前校验，YAML 在 PyYAML 可用时校验；还没有 schema 级校验和自动格式化 | 下一步补 JSON Schema、YAML schema、格式化建议和字段级 repair observation |
 | Plan Mode 上下文隔离 | `/plan` 已使用独立 context；execute 阶段会读取 active plan，并在计划包含路径时约束 writer 工具路径 | 后续补 typed workflow state 和更细 tool allowlist |
 | OS shell adapter | 已有 `ShellAdapter`，支持 system/bash/zsh/sh/powershell/cmd/git-bash，并在 observation 暴露 shell/cwd/encoding/path separator | 后续补真实 Windows 环境集成测试和更细 path rules |
@@ -58,7 +58,7 @@
 | --- | --- |
 | 完整 schema validation + repair observation | 已有聚焦 JSON Schema 子集和字段级 repair observation；后续补 schema 文档生成 |
 | Plan/Execute 双上下文 | 已有 `/plan` 隔离 context 和 typed plan artifact；execute 阶段会消费 active plan 并约束已知写入路径 |
-| 文件工具流式读取和搜索 top-k | 已有 timeout、显式 ignore/filter 和项目 ignore 文件解析基线，下一步应补分页游标和更强 ranking |
+| 文件工具流式读取和搜索 top-k | 已有 timeout、显式 ignore/filter、项目 ignore 文件解析、line/byte 分页 metadata 和搜索 ranking；后续补跨 turn 分页游标 |
 | 结构化编辑校验 | 已有写入前 parse validation 基线，下一步做 schema/format/repair 增强 |
 | ShellAdapter 跨平台设计 | 已有 ShellAdapter 基线；仍需补真实 Windows/Git Bash 行为验证 |
 | Prompt budget policy | harness 不只管工具和权限，也要管提示词预算、角色差异和规则注入 |
@@ -80,8 +80,8 @@
 目标是先做少量高质量内置工具，而不是堆工具数量。
 
 - `read_tail(path, lines, max_bytes)` 已使用尾部窗口读取，不整文件读入。
-- `read_forward(path, offset, limit)` 已支持 byte offset 分页和最大输出。
-- `search(pattern, path, top_k, max_files, timeout_ms)` 已有 top-k、文件数、超时、额外忽略目录、扩展名过滤和 `.gitignore` / `.agentignore` 解析；下一步补 richer ranking。
+- `read_forward(path, offset, limit)` 已支持 byte offset 分页和最大输出；`mode:"lines"` 支持按行分页并返回下一页 offset。
+- `search(pattern, path, top_k, max_files, timeout_ms)` 已有 top-k、文件数、超时、额外忽略目录、扩展名过滤、`.gitignore` / `.agentignore` 解析和相关性 ranking。
 - `write_file` 和 `edit_file` 已对 JSON/TOML/XML 做 parse validation，YAML 在 PyYAML 可用时校验；下一步补 schema validation 和自动格式化。
 
 ### Phase 3: Plan/Execute Separation

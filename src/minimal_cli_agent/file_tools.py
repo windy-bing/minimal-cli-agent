@@ -34,8 +34,11 @@ READ_FORWARD_SCHEMA = {
     "required": [ToolPayloadFields.PATH],
     "properties": {
         ToolPayloadFields.PATH: {"type": "string"},
+        ToolPayloadFields.MODE: {"type": "string", "enum": ["bytes", "lines"]},
         ToolPayloadFields.OFFSET: {"type": "integer", "minimum": 0},
         ToolPayloadFields.LIMIT: {"type": "integer", "minimum": 1},
+        ToolPayloadFields.LINE_OFFSET: {"type": "integer", "minimum": 0},
+        ToolPayloadFields.LINE_LIMIT: {"type": "integer", "minimum": 1, "maximum": FileToolDefaults.TAIL_MAX_LINES},
     },
 }
 
@@ -89,10 +92,17 @@ class FileToolEnvironment:
             return CommandResult(command=f"{Tools.READ_FILE} {path}", exit_code=1, output="file does not exist")
         if not path.is_file():
             return CommandResult(command=f"{Tools.READ_FILE} {path}", exit_code=1, output="path is not a file")
+        if is_probably_binary(path):
+            return CommandResult(command=f"{Tools.READ_FILE} {path}", exit_code=1, output="file appears to be binary; use a binary-aware tool")
 
         content = path.read_text(encoding="utf-8", errors="replace")
         output = content[-self.config.max_output_chars :]
-        return CommandResult(command=f"{Tools.READ_FILE} {path}", exit_code=0, output=output)
+        return CommandResult(
+            command=f"{Tools.READ_FILE} {path}",
+            exit_code=0,
+            output=output,
+            metadata=file_read_metadata(path, chars_read=len(output), truncated=len(output) < len(content)),
+        )
 
     def read_tail(self, payload: str) -> CommandResult:
         try:
@@ -104,6 +114,8 @@ class FileToolEnvironment:
             return CommandResult(command=f"{Tools.READ_TAIL} {path}", exit_code=1, output="file does not exist")
         if not path.is_file():
             return CommandResult(command=f"{Tools.READ_TAIL} {path}", exit_code=1, output="path is not a file")
+        if is_probably_binary(path):
+            return CommandResult(command=f"{Tools.READ_TAIL} {path}", exit_code=1, output="file appears to be binary; use a binary-aware tool")
 
         lines = read_positive_int(
             data,
@@ -120,7 +132,13 @@ class FileToolEnvironment:
             maximum=self.config.max_output_chars,
         )
         output = tail_text(path, lines=lines, max_bytes=max_bytes)
-        return CommandResult(command=f"{Tools.READ_TAIL} {path}", exit_code=0, output=output[-self.config.max_output_chars :])
+        output = output[-self.config.max_output_chars :]
+        return CommandResult(
+            command=f"{Tools.READ_TAIL} {path}",
+            exit_code=0,
+            output=output,
+            metadata=file_read_metadata(path, chars_read=len(output), mode="tail", lines=lines),
+        )
 
     def read_forward(self, payload: str) -> CommandResult:
         try:
@@ -132,6 +150,11 @@ class FileToolEnvironment:
             return CommandResult(command=f"{Tools.READ_FORWARD} {path}", exit_code=1, output="file does not exist")
         if not path.is_file():
             return CommandResult(command=f"{Tools.READ_FORWARD} {path}", exit_code=1, output="path is not a file")
+        if is_probably_binary(path):
+            return CommandResult(command=f"{Tools.READ_FORWARD} {path}", exit_code=1, output="file appears to be binary; use a binary-aware tool")
+
+        if str(data.get(ToolPayloadFields.MODE, "")).lower() == "lines" or ToolPayloadFields.LINE_OFFSET in data:
+            return self._read_forward_lines(path, data)
 
         offset = read_positive_int(data, ToolPayloadFields.OFFSET, default=0, minimum=0, maximum=max(path.stat().st_size, 0))
         limit = read_positive_int(
@@ -145,7 +168,58 @@ class FileToolEnvironment:
             file.seek(offset)
             chunk = file.read(limit)
         output = chunk.decode("utf-8", errors="replace")
-        return CommandResult(command=f"{Tools.READ_FORWARD} {path}", exit_code=0, output=output)
+        next_offset = min(offset + len(chunk), path.stat().st_size)
+        return CommandResult(
+            command=f"{Tools.READ_FORWARD} {path}",
+            exit_code=0,
+            output=output,
+            metadata=file_read_metadata(
+                path,
+                chars_read=len(output),
+                mode="bytes",
+                offset=offset,
+                next_offset=next_offset,
+                bytes_read=len(chunk),
+                eof=next_offset >= path.stat().st_size,
+            ),
+        )
+
+    def _read_forward_lines(self, path: Path, data: dict[str, Any]) -> CommandResult:
+        line_offset = read_positive_int(data, ToolPayloadFields.LINE_OFFSET, default=0, minimum=0, maximum=10**9)
+        line_limit = read_positive_int(
+            data,
+            ToolPayloadFields.LINE_LIMIT,
+            default=FileToolDefaults.TAIL_LINES,
+            minimum=1,
+            maximum=FileToolDefaults.TAIL_MAX_LINES,
+        )
+        selected: list[str] = []
+        next_line_offset = line_offset
+        eof = True
+        with path.open("r", encoding="utf-8", errors="replace") as file:
+            for index, line in enumerate(file):
+                if index < line_offset:
+                    continue
+                if len(selected) >= line_limit:
+                    eof = False
+                    break
+                selected.append(line)
+                next_line_offset = index + 1
+        output = "".join(selected)[-self.config.max_output_chars :]
+        return CommandResult(
+            command=f"{Tools.READ_FORWARD} {path}",
+            exit_code=0,
+            output=output,
+            metadata=file_read_metadata(
+                path,
+                chars_read=len(output),
+                mode="lines",
+                line_offset=line_offset,
+                next_line_offset=next_line_offset,
+                lines_read=len(selected),
+                eof=eof,
+            ),
+        )
 
     def search(self, payload: str) -> CommandResult:
         try:
@@ -188,6 +262,7 @@ class FileToolEnvironment:
 
         result = search_text(
             root,
+            pattern=pattern,
             regex=regex,
             top_k=top_k,
             max_files=max_files,
@@ -200,7 +275,12 @@ class FileToolEnvironment:
         output = "\n".join(result.matches) if result.matches else "no matches"
         if result.timed_out:
             output = f"{output}\nsearch timed out after {timeout_ms}ms; scanned_files={result.scanned_files}".strip()
-        return CommandResult(command=f"{Tools.SEARCH} {root}", exit_code=0, output=output[-self.config.max_output_chars :])
+        return CommandResult(
+            command=f"{Tools.SEARCH} {root}",
+            exit_code=0,
+            output=output[-self.config.max_output_chars :],
+            metadata={"scanned_files": result.scanned_files, "timed_out": result.timed_out, "matches": len(result.matches)},
+        )
 
     def write_file(self, payload: str) -> CommandResult:
         try:
@@ -389,6 +469,29 @@ def tail_text(path: Path, lines: int, max_bytes: int) -> str:
     return "\n".join(text.splitlines()[-lines:])
 
 
+def is_probably_binary(path: Path, sample_size: int = 4096) -> bool:
+    try:
+        with path.open("rb") as file:
+            sample = file.read(sample_size)
+    except OSError:
+        return False
+    if not sample:
+        return False
+    if b"\x00" in sample:
+        return True
+    control_bytes = sum(1 for byte in sample if byte < 9 or 13 < byte < 32)
+    return control_bytes / len(sample) > 0.30
+
+
+def file_read_metadata(path: Path, chars_read: int, **extra: Any) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "file_size": path.stat().st_size,
+        "chars_read": chars_read,
+    }
+    metadata.update(extra)
+    return metadata
+
+
 def split_replacement_lines(content: str) -> list[str]:
     if not content:
         return []
@@ -404,8 +507,17 @@ class SearchResult:
         self.timed_out = timed_out
 
 
+class SearchMatch:
+    def __init__(self, rendered: str, score: int, path_key: str, line_number: int) -> None:
+        self.rendered = rendered
+        self.score = score
+        self.path_key = path_key
+        self.line_number = line_number
+
+
 def search_text(
     root: Path,
+    pattern: str,
     regex: re.Pattern[str],
     top_k: int,
     max_files: int,
@@ -428,16 +540,19 @@ def search_text(
             include_extensions=include_extensions,
         )
     )
-    matches: list[str] = []
+    matches: list[SearchMatch] = []
+    pattern_lower = pattern.lower()
     scanned = 0
     timed_out = False
     for path in files:
         if time.monotonic() > deadline:
             timed_out = True
             break
-        if scanned >= max_files or len(matches) >= top_k:
+        if scanned >= max_files:
             break
         scanned += 1
+        if is_probably_binary(path):
+            continue
         try:
             with path.open("r", encoding="utf-8", errors="replace") as file:
                 for line_number, line in enumerate(file, start=1):
@@ -446,12 +561,36 @@ def search_text(
                         break
                     if regex.search(line):
                         relative = path.relative_to(workspace)
-                        matches.append(f"{relative}:{line_number}: {line.strip()}")
-                        if len(matches) >= top_k:
-                            break
+                        matches.append(
+                            SearchMatch(
+                                rendered=f"{relative}:{line_number}: {line.strip()}",
+                                score=search_score(relative, line, pattern_lower),
+                                path_key=relative.as_posix(),
+                                line_number=line_number,
+                            )
+                        )
         except OSError:
             continue
-    return SearchResult(matches=matches, scanned_files=scanned, timed_out=timed_out)
+    ranked = sorted(matches, key=lambda match: (-match.score, match.path_key, match.line_number))
+    return SearchResult(matches=[match.rendered for match in ranked[:top_k]], scanned_files=scanned, timed_out=timed_out)
+
+
+def search_score(path: Path, line: str, pattern_lower: str) -> int:
+    score = 0
+    path_text = path.as_posix().lower()
+    name = path.name.lower()
+    line_text = line.strip().lower()
+    if pattern_lower and pattern_lower in name:
+        score += 40
+    if pattern_lower and pattern_lower in path_text:
+        score += 20
+    if pattern_lower and line_text.startswith(pattern_lower):
+        score += 15
+    if pattern_lower and pattern_lower in line_text:
+        score += 5
+    if path.suffix in {".py", ".md", ".toml", ".json", ".yaml", ".yml"}:
+        score += 2
+    return score
 
 
 def iter_text_files(

@@ -59,7 +59,7 @@ ls -la
 - Validates JSON, TOML, and XML before `write_file` or `edit_file` writes them; YAML is validated when PyYAML is available.
 - Redacts common API keys, bearer tokens, and secret-looking values from command observations.
 - Blocks obvious network shell commands unless `--allow-network` is passed.
-- Supports additional shell policy deny rules through `--policy-file`.
+- Supports shell policy allow prefixes, additional deny rules, and workspace write scopes through `--policy-file`.
 - Supports product permission modes: `default`, `autoEdit`, `plan`, and `yolo`.
 - Persists recent session messages, active plan, and permission audit events to JSON when `--session` is provided, using a lock file and atomic replace.
 - Applies a simple context compaction guard when the transcript gets large.
@@ -277,7 +277,7 @@ Explicit CLI options such as `--model`, `--base-url`, and `--api-key` take prece
 --max-request-cost / --daily-cost-limit / --monthly-cost-limit
 --model-price-input-per-1m / --model-price-output-per-1m
 --allow-network  allow shell commands with obvious network access
---policy-file    JSON file with additional shell policy deny tokens
+--policy-file    JSON file with shell policy allow/deny and write-scope rules
 --mcp-config     JSON file with MCP servers
 --skill          skill name under skills/<name> or a direct SKILL.md path
 --summarize-context use the model to summarize old context when compacting
@@ -304,11 +304,14 @@ The model gateway records estimated token usage, estimated cost, latency, status
 
 ## Project Layout
 
-Policy files add deny rules without weakening the built-in hard gates:
+Policy files add allow/deny rules without weakening the built-in hard gates:
 
 ```json
 {
+  "allow_command_prefixes": ["printf "],
   "deny_command_tokens": ["custom-danger"],
+  "write_allow_paths": ["src/**", "tests/**"],
+  "write_deny_paths": ["src/**/secrets*.py"],
   "sensitive_path_tokens": ["secrets.local"],
   "network_command_tokens": ["my-net-tool "]
 }
@@ -358,7 +361,9 @@ Implemented:
 - Multiple action blocks per model turn are executed sequentially in output order.
 - `ToolRegistry` and staged `ToolExecutionPipeline`.
 - Built-in `read_file`, `read_tail`, `read_forward`, `search`, `write_file`, and `edit_file` tools for bounded workspace file access.
-- `search` respects built-in ignore dirs, explicit `ignore_dirs`, and workspace `.gitignore` / `.agentignore` patterns.
+- File readers detect likely binary files and include metadata such as file size, chars read, paging offsets, and EOF state.
+- `read_forward` supports byte paging and line paging through `mode:"lines"`, `line_offset`, and `line_limit`.
+- `search` respects built-in ignore dirs, explicit `ignore_dirs`, workspace `.gitignore` / `.agentignore` patterns, and ranked top-k output.
 - Structured write validation for JSON, TOML, XML, and optional PyYAML-backed YAML.
 - `ToolSpec` supports a focused JSON Schema subset with nested objects, arrays, enum, oneOf/anyOf, bounds, and field-level validation errors.
 - Active plans are injected into execute turns; when a plan names concrete paths, writer tools are constrained to those planned paths.

@@ -118,6 +118,9 @@ class PolicyDefaults:
 
 class PolicyFileFields:
     DENY_COMMAND_TOKENS: Final = "deny_command_tokens"
+    ALLOW_COMMAND_PREFIXES: Final = "allow_command_prefixes"
+    WRITE_ALLOW_PATHS: Final = "write_allow_paths"
+    WRITE_DENY_PATHS: Final = "write_deny_paths"
     SENSITIVE_PATH_TOKENS: Final = "sensitive_path_tokens"
     NETWORK_COMMAND_TOKENS: Final = "network_command_tokens"
 
@@ -189,8 +192,11 @@ class ToolPayloadFields:
     END_LINE: Final = "end_line"
     LINES: Final = "lines"
     MAX_BYTES: Final = "max_bytes"
+    MODE: Final = "mode"
     OFFSET: Final = "offset"
     LIMIT: Final = "limit"
+    LINE_OFFSET: Final = "line_offset"
+    LINE_LIMIT: Final = "line_limit"
     PATTERN: Final = "pattern"
     TOP_K: Final = "top_k"
     MAX_FILES: Final = "max_files"

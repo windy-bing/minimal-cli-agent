@@ -59,7 +59,7 @@ ls -la
 - `write_file` 或 `edit_file` 写入 JSON、TOML、XML 前会先校验格式；YAML 在安装 PyYAML 时也会校验。
 - 会从命令 observation 中清洗常见 API key、bearer token 和疑似密钥值。
 - 默认阻止明显的网络 shell 命令，除非显式传入 `--allow-network`。
-- 支持通过 `--policy-file` 追加 shell policy deny 规则。
+- 支持通过 `--policy-file` 配置 shell allow 前缀、追加 deny 规则和工作区写入范围。
 - 支持产品化权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - 传入 `--session` 时，可以把最近 session messages、active plan 和权限审计事件持久化到 JSON，并使用 lock 文件和原子替换写入。
 - transcript 变大时，会应用一个简单的本地上下文压缩保护。
@@ -277,7 +277,7 @@ Profile 行为：
 --max-request-cost / --daily-cost-limit / --monthly-cost-limit
 --model-price-input-per-1m / --model-price-output-per-1m
 --allow-network  允许明显会访问网络的 shell 命令
---policy-file    包含附加 shell policy deny token 的 JSON 文件
+--policy-file    包含 shell policy allow/deny 和写入范围规则的 JSON 文件
 --mcp-config     包含 MCP servers 的 JSON 配置文件
 --skill          skills/<name> 下的技能名，或直接传入 SKILL.md 路径
 --summarize-context 使用模型总结旧上下文
@@ -304,11 +304,14 @@ minimal-agent "总结这个仓库" \
 
 ## 项目结构
 
-Policy 文件只会追加 deny 规则，不会削弱内置 hard gate：
+Policy 文件可以追加 allow/deny 规则，但不会削弱内置 hard gate：
 
 ```json
 {
+  "allow_command_prefixes": ["printf "],
   "deny_command_tokens": ["custom-danger"],
+  "write_allow_paths": ["src/**", "tests/**"],
+  "write_deny_paths": ["src/**/secrets*.py"],
   "sensitive_path_tokens": ["secrets.local"],
   "network_command_tokens": ["my-net-tool "]
 }
@@ -358,7 +361,9 @@ src/minimal_cli_agent/
 - 单轮多个 action block 会按输出顺序串行执行。
 - `ToolRegistry` 和分阶段 `ToolExecutionPipeline`。
 - 内置 `read_file`、`read_tail`、`read_forward`、`search`、`write_file` 和 `edit_file`，支持有边界地访问和修改工作区文件。
-- `search` 会同时遵守内置忽略目录、显式 `ignore_dirs`、工作区 `.gitignore` / `.agentignore`。
+- 文件读取工具会检测疑似二进制文件，并在 observation 中附带文件大小、读取字符数、分页 offset 和 EOF 状态等 metadata。
+- `read_forward` 支持 byte 分页，也支持通过 `mode:"lines"`、`line_offset` 和 `line_limit` 做按行分页。
+- `search` 会同时遵守内置忽略目录、显式 `ignore_dirs`、工作区 `.gitignore` / `.agentignore`，并对 top-k 输出做相关性排序。
 - 对 JSON、TOML、XML 和可选 PyYAML 支持的 YAML 做结构化写入校验。
 - `ToolSpec` 支持聚焦的 JSON Schema 子集，包括 nested object、array、enum、oneOf/anyOf、边界约束和字段级校验错误。
 - active plan 会注入执行 turn；当计划里出现明确路径时，写入类工具只能修改计划路径。

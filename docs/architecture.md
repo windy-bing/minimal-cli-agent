@@ -90,11 +90,14 @@ Implemented:
 - Tool aliases plus recoverable discovery and validation observations.
 - Safe close-match suggestions for unknown tool names, without automatic fuzzy execution.
 - Focused `ToolSpec.parameters_schema` JSON Schema validation with nested objects, arrays, enum, oneOf/anyOf, bounds, and field-level repair observations.
+- File readers reject likely binary files and report file size, chars read, offsets, line paging state, and EOF metadata.
+- `read_forward` supports both byte-window paging and line-window paging.
+- `search` ranks matches before returning bounded top-k output.
 - `ResolveDecision` decision hooks can override policy decisions before confirmation.
 - Consistent tool observation formatting with `status`, `exit_code`, `command`, and `output`.
 - Secret redaction for command output and observations.
 - Network command hard gate with explicit `--allow-network` opt-in.
-- Configurable additional shell deny rules through `--policy-file`.
+- Configurable policy file rules for shell allow prefixes, additional deny tokens, write allow paths, and write deny paths.
 - Typed plan artifact stored in `ChatContext.metadata` and persisted in JSON sessions.
 - Execute turns read the active plan, inject it into the system prompt, and constrain writer tools to planned paths when paths are known.
 - ShellAdapter support for system shell, bash, zsh, sh, PowerShell, cmd, and Git Bash style execution with shell/cwd/encoding/path metadata in observations.

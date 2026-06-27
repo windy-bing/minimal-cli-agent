@@ -274,6 +274,47 @@ class ToolPipelineTest(unittest.TestCase):
             with self.assertRaisesRegex(PermissionDenied, "dangerous command"):
                 harness.execute_shell("echo custom-danger")
 
+    def test_policy_file_can_allow_shell_prefix_without_prompt(self) -> None:
+        with TemporaryDirectory() as tmp:
+            policy_file = Path(tmp) / "policy.json"
+            policy_file.write_text(json.dumps({"allow_command_prefixes": ["printf "]}), encoding="utf-8")
+            harness = AgentHarness(AgentConfig(permission_mode="default", policy_file=policy_file))
+
+            with patch("builtins.input") as input_mock:
+                observation = harness.execute_shell("printf hello")
+
+        input_mock.assert_not_called()
+        self.assertEqual(observation.result.output, "hello")
+
+    def test_policy_file_write_allow_paths_restricts_workspace_writes(self) -> None:
+        with TemporaryDirectory() as tmp:
+            policy_file = Path(tmp) / "policy.json"
+            policy_file.write_text(json.dumps({"write_allow_paths": ["allowed/**"]}), encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=Path(tmp), permission_mode="autoEdit", policy_file=policy_file))
+
+            with self.assertRaisesRegex(PermissionDenied, "write_allow_paths"):
+                harness.execute_tool(ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": "blocked.txt", "content": "x"})))
+
+            observation = harness.execute_tool(
+                ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": "allowed/notes.txt", "content": "ok"}))
+            )
+
+        self.assertEqual(observation.result.exit_code, 0)
+
+    def test_policy_file_write_deny_paths_blocks_specific_scope(self) -> None:
+        with TemporaryDirectory() as tmp:
+            policy_file = Path(tmp) / "policy.json"
+            policy_file.write_text(
+                json.dumps({"write_allow_paths": ["notes/**"], "write_deny_paths": ["notes/private/**"]}),
+                encoding="utf-8",
+            )
+            harness = AgentHarness(AgentConfig(cwd=Path(tmp), permission_mode="autoEdit", policy_file=policy_file))
+
+            with self.assertRaisesRegex(PermissionDenied, "write_deny_paths"):
+                harness.execute_tool(
+                    ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": "notes/private/secret.txt", "content": "x"}))
+                )
+
     def test_policy_file_rejects_invalid_token_list(self) -> None:
         with TemporaryDirectory() as tmp:
             policy_file = Path(tmp) / "policy.json"

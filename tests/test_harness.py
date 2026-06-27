@@ -74,6 +74,35 @@ class HarnessTest(unittest.TestCase):
 
         self.assertEqual(observation.result.output, "cde")
 
+    def test_read_forward_line_mode_returns_paging_metadata(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "page.txt"
+            path.write_text("line-0\nline-1\nline-2\nline-3\n", encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=Path(tmp), permission_mode="plan"))
+
+            observation = harness.execute_tool(
+                ToolCall(
+                    name=Tools.READ_FORWARD,
+                    payload=json.dumps({"path": "page.txt", "mode": "lines", "line_offset": 1, "line_limit": 2}),
+                )
+            )
+
+        self.assertEqual(observation.result.output, "line-1\nline-2\n")
+        self.assertEqual(observation.result.metadata["mode"], "lines")
+        self.assertEqual(observation.result.metadata["next_line_offset"], 3)
+        self.assertFalse(observation.result.metadata["eof"])
+
+    def test_read_file_rejects_binary_content(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "image.bin"
+            path.write_bytes(b"abc\x00def")
+            harness = AgentHarness(AgentConfig(cwd=Path(tmp), permission_mode="plan"))
+
+            observation = harness.execute_tool(ToolCall(name=Tools.READ_FILE, payload=json.dumps({"path": "image.bin"})))
+
+        self.assertEqual(observation.result.exit_code, 1)
+        self.assertIn("binary", observation.result.output)
+
     def test_search_returns_top_k_matches(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -88,6 +117,20 @@ class HarnessTest(unittest.TestCase):
         self.assertIn("a.txt:1: needle one", observation.result.output)
         self.assertIn("a.txt:3: needle two", observation.result.output)
         self.assertNotIn("needle three", observation.result.output)
+
+    def test_search_ranks_filename_matches_before_earlier_files(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "aaa.txt").write_text("needle low score\n", encoding="utf-8")
+            (root / "needle_notes.txt").write_text("needle high score\n", encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="plan"))
+
+            observation = harness.execute_tool(
+                ToolCall(name=Tools.SEARCH, payload=json.dumps({"pattern": "needle", "path": ".", "top_k": 1}))
+            )
+
+        self.assertIn("needle_notes.txt:1: needle high score", observation.result.output)
+        self.assertNotIn("aaa.txt", observation.result.output)
 
     def test_search_respects_extra_ignore_dirs(self) -> None:
         with TemporaryDirectory() as tmp:
