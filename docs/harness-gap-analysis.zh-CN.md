@@ -37,7 +37,7 @@
 | 环境变量刷新 | 长会话里环境变化不能被 runtime 感知 | Environment 每次执行前重建 env snapshot，并记录差异或允许 hook 更新 |
 | 编码和换行 | Windows/codepage/二进制输出可能破坏 observation | 统一 stdout/stderr decoding 策略，保留 raw bytes 截断摘要 |
 | 提示词预算治理 | 工具说明已由 schema 文档生成短描述，仍缺按预算裁剪和长说明召回 | Prompt 应该按角色和可用工具动态生成，长说明按需召回 |
-| AGENTS/项目规则注入治理 | 已支持 `AGENTS.md`、`.agents/rules.md`、`.minimal-agent-instructions.md` 的来源标注、去重和预算上限 | 后续补冲突检测和更细分层 |
+| AGENTS/项目规则注入治理 | 已支持 `AGENTS.md`、`.agents/rules.md`、`.agents/rules.d/*.md`、`.minimal-agent-instructions.md` 的来源标注、层级、去重、预算上限和常见相反指令冲突报告 | 后续可接更强语义冲突检测 |
 
 ## 已由当前设计规避
 

@@ -2,7 +2,15 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from minimal_cli_agent.skills import build_system_prompt, discover_project_rule_blocks, discover_skill_paths, resolve_skill_path, resolve_skill_paths
+from minimal_cli_agent.skills import (
+    build_system_prompt,
+    detect_project_rule_conflicts,
+    discover_project_rule_blocks,
+    discover_project_rule_documents,
+    discover_skill_paths,
+    resolve_skill_path,
+    resolve_skill_paths,
+)
 
 
 class SkillsTest(unittest.TestCase):
@@ -66,9 +74,37 @@ class SkillsTest(unittest.TestCase):
             prompt = build_system_prompt("base", (), root)
 
         self.assertIn("Project rules:", prompt)
-        self.assertIn('<project_rules path="AGENTS.md">', prompt)
+        self.assertIn('<project_rules path="AGENTS.md" layer="project" precedence="10">', prompt)
         self.assertIn("Use focused tests.", prompt)
         self.assertEqual(prompt.count("Use focused tests."), 1)
+
+    def test_project_rules_include_layered_rules_directory(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "AGENTS.md").write_text("Always run focused tests.", encoding="utf-8")
+            rules_dir = root / ".agents" / "rules.d"
+            rules_dir.mkdir(parents=True)
+            (rules_dir / "python.md").write_text("Prefer unittest.", encoding="utf-8")
+
+            documents = discover_project_rule_documents(root)
+
+        self.assertEqual([document.relative_path for document in documents], ["AGENTS.md", ".agents/rules.d/python.md"])
+        self.assertEqual(documents[1].layer, "rules.d")
+
+    def test_project_rule_conflicts_are_reported(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "AGENTS.md").write_text("Always run focused tests.", encoding="utf-8")
+            (root / ".minimal-agent-instructions.md").write_text("Never run focused tests.", encoding="utf-8")
+
+            documents = discover_project_rule_documents(root)
+            conflicts = detect_project_rule_conflicts(documents)
+            blocks = discover_project_rule_blocks(root)
+
+        self.assertEqual(conflicts[0].subject, "run focused tests")
+        self.assertIn("<project_rule_conflicts>", blocks[0])
+        self.assertIn("Always run focused tests.", blocks[0])
+        self.assertIn("Never run focused tests.", blocks[0])
 
     def test_project_rules_are_truncated_to_budget(self) -> None:
         with TemporaryDirectory() as tmp:

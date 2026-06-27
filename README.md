@@ -14,7 +14,7 @@ The project starts intentionally small, but the code is split into replaceable m
 - Starts a persistent multi-turn interactive session by default when run without a task.
 - Supports slash commands for runtime profile/model/permission/context/history/plan/review control.
 - Reads startup defaults from `~/.minimal-agent/config.json` and project `.minimal-agent.json`; `/config save` persists runtime choices.
-- Injects bounded project rules from `AGENTS.md`, `.agents/rules.md`, and `.minimal-agent-instructions.md` with source labels and duplicate removal.
+- Injects layered project rules from `AGENTS.md`, `.agents/rules.md`, `.agents/rules.d/*.md`, and `.minimal-agent-instructions.md` with source labels, duplicate removal, budgets, and conflict reports.
 - Supports MCP HTTP servers through `--mcp-config`, with MCP tools registered into the same `ToolRegistry`.
 - Supports local instruction skills through `--skill`, including the bundled Luckin Coffee `my-coffee` skill.
 - Supports local Ollama chat models by default.
@@ -441,9 +441,7 @@ Reserved but intentionally minimal:
 - Plugin manifests are discovered from workspace/user plugin directories and can load skills plus MCP server configs.
 - Structured file writes validate JSON/YAML with sidecar schemas and return formatter suggestions on repairable failures.
 
-Not implemented yet:
-
-- Deeper project-rule layering and conflict reporting.
+Current requested implementation checklist is complete.
 
 ## Notes From The Reference Article
 

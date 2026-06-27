@@ -92,7 +92,7 @@ Implemented:
 - Generic MCP list/call tools plus opt-in concrete tool registration from `tools/list` when `discoverTools` is enabled.
 - Local `SKILL.md` loading into the system prompt through `--skill`.
 - Workspace skill discovery and bulk loading through `/skills`.
-- Project rule injection from `AGENTS.md`, `.agents/rules.md`, and `.minimal-agent-instructions.md` with source labels, duplicate removal, and a prompt budget.
+- Project rule injection from `AGENTS.md`, `.agents/rules.md`, `.agents/rules.d/*.md`, and `.minimal-agent-instructions.md` with source labels, layers, duplicate removal, conflict reports, and a prompt budget.
 - `search` has top-k, max-files, timeout, ignore-dir, extension, and `.gitignore` / `.agentignore` filters.
 - Structured write validation for JSON, TOML, XML, JSON sidecar schemas, and YAML when PyYAML is available.
 - Tool aliases plus recoverable discovery and validation observations.
@@ -137,9 +137,7 @@ Reserved:
 - Plugin manifests are discovered from workspace/user plugin directories and can contribute skills plus MCP server configs.
 - Structured writers validate JSON/YAML sidecar schemas and return formatter suggestions for repairable syntax/schema failures.
 
-Not implemented yet:
-
-- Deeper project-rule layering and conflict reporting.
+The current requested implementation checklist is complete; remaining roadmap items are polish and production hardening.
 
 ## Roadmap
 

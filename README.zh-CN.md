@@ -14,7 +14,7 @@
 - 不传 task 时默认启动带持久化的多轮交互 REPL。
 - 支持 slash commands，在运行时切换 profile/model/permission/context/history/plan/review。
 - 会读取 `~/.minimal-agent/config.json` 和项目 `.minimal-agent.json` 作为启动默认值；`/config save` 可持久化运行时选择。
-- 会注入 `AGENTS.md`、`.agents/rules.md` 和 `.minimal-agent-instructions.md` 中的项目规则，并带来源标注、去重和预算上限。
+- 会分层注入 `AGENTS.md`、`.agents/rules.md`、`.agents/rules.d/*.md` 和 `.minimal-agent-instructions.md` 中的项目规则，并带来源标注、去重、预算上限和冲突报告。
 - 支持通过 `--mcp-config` 接入 HTTP MCP server，并把 MCP 工具注册到同一个 `ToolRegistry`。
 - 支持通过 `--skill` 加载本地 instruction skill，包括已安装的瑞幸咖啡 `my-coffee` skill。
 - 默认支持本地 Ollama chat 模型。
@@ -441,9 +441,7 @@ src/minimal_cli_agent/
 - plugin manifest 会从工作区和用户插件目录自动发现，可声明 skill 与 MCP server 配置。
 - 结构化文件写入会用 sidecar schema 校验 JSON/YAML，并在可修复失败里返回格式化建议。
 
-暂不实现：
-
-- 更细的项目规则分层和冲突报告。
+当前请求的实现清单已完成。
 
 ## 参考文章保留的实践
 
