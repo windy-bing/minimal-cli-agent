@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+import fcntl
 import fnmatch
+import hashlib
 import json
 import re
 import threading
@@ -305,6 +308,7 @@ class FileToolEnvironment:
             command=f"{Tools.WRITE_FILE} {relative}",
             exit_code=0,
             output=f"Wrote {relative} ({len(content)} chars).",
+            metadata={"write_lock": "cross_process"},
         )
 
     def edit_file(self, payload: str) -> CommandResult:
@@ -344,12 +348,22 @@ class FileToolEnvironment:
             command=f"{Tools.EDIT_FILE} {relative}",
             exit_code=0,
             output=f"Edited {relative} lines {start_line}-{end_line}.",
+            metadata={"write_lock": "cross_process"},
         )
 
+    @contextmanager
     def _lock_for(self, path: Path):
         resolved = path.resolve()
         lock = self._write_locks.setdefault(resolved, threading.Lock())
-        return lock
+        with lock:
+            lock_path = workspace_lock_path(self.config.cwd.resolve(), resolved)
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            with lock_path.open("w", encoding="utf-8") as lock_file:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def read_file_validator(payload: str) -> ToolValidationError | None:
@@ -693,6 +707,11 @@ def validate_yaml_content(content: str) -> str | None:
     except Exception as exc:  # pragma: no cover - exact PyYAML exception type depends on optional dependency.
         return f"Structured file validation failed for YAML content: {exc}"
     return None
+
+
+def workspace_lock_path(workspace: Path, target: Path) -> Path:
+    digest = hashlib.sha256(str(target).encode("utf-8")).hexdigest()
+    return workspace / ".agent" / "locks" / f"{digest}.lock"
 
 
 def parse_payload(payload: str) -> dict[str, Any]:

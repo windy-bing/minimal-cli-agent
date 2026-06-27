@@ -227,8 +227,9 @@ class HarnessTest(unittest.TestCase):
             )
 
             self.assertEqual(path.read_text(encoding="utf-8"), '{"ok": true}')
-
-        self.assertEqual(observation.result.exit_code, 0)
+            self.assertEqual(observation.result.exit_code, 0)
+            self.assertEqual(observation.result.metadata["write_lock"], "cross_process")
+            self.assertTrue(list((Path(tmp) / ".agent" / "locks").glob("*.lock")))
 
     def test_edit_file_replaces_line_range(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -245,6 +246,7 @@ class HarnessTest(unittest.TestCase):
 
         self.assertEqual(observation.result.exit_code, 0)
         self.assertIn("Edited notes.txt lines 2-2", observation.result.output)
+        self.assertEqual(observation.result.metadata["write_lock"], "cross_process")
 
     def test_edit_file_rejects_invalid_json_without_writing(self) -> None:
         with TemporaryDirectory() as tmp:

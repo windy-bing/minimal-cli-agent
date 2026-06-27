@@ -391,6 +391,7 @@ Implemented:
 - Multiple action blocks per model turn are executed sequentially in output order.
 - `ToolRegistry` and staged `ToolExecutionPipeline`.
 - Built-in `read_file`, `read_tail`, `read_forward`, `search`, `write_file`, and `edit_file` tools for bounded workspace file access.
+- File writes use same-process and cross-process lock files under `.agent/locks`.
 - File readers detect likely binary files and include metadata such as file size, chars read, paging offsets, and EOF state.
 - `read_forward` supports byte paging and line paging through `mode:"lines"`, `line_offset`, and `line_limit`.
 - `search` respects built-in ignore dirs, explicit `ignore_dirs`, workspace `.gitignore` / `.agentignore` patterns, and ranked top-k output.
@@ -425,7 +426,7 @@ Reserved but intentionally minimal:
 
 Not implemented yet:
 
-- Parallel tool execution and cross-process file edit locks.
+- Parallel tool execution.
 - GroupSession runtime.
 - Workflow scheduler or delegation engine.
 - Automatic MCP/plugin discovery.

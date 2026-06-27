@@ -97,6 +97,7 @@ Implemented:
 - Tool aliases plus recoverable discovery and validation observations.
 - Safe close-match suggestions for unknown tool names, without automatic fuzzy execution.
 - Focused `ToolSpec.parameters_schema` JSON Schema validation with nested objects, arrays, enum, oneOf/anyOf, bounds, and field-level repair observations.
+- File writer tools combine same-process locks with cross-process lock files under `.agent/locks`.
 - File readers reject likely binary files and report file size, chars read, offsets, line paging state, and EOF metadata.
 - `read_forward` supports both byte-window paging and line-window paging.
 - `search` ranks matches before returning bounded top-k output.
@@ -134,8 +135,7 @@ Reserved:
 
 Not implemented yet:
 
-- Parallel tool execution and cross-process file edit locks.
-- File-level write locks.
+- Parallel tool execution.
 - GroupSession event store.
 - Workflow scheduler.
 - Automatic MCP/plugin discovery.

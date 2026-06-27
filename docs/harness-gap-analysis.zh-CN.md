@@ -19,7 +19,7 @@
 | Memory 管理 | JSON session 已支持 lock 保护、原子写、最近消息裁剪、active plan、typed workflow state 和 `/events` 最近事件查询 | 后续实现 SQLite session log 和 memory retrieval |
 | SubAgent / GroupSession | 已有 read-only `SubAgentRunner` 和隔离 session；GroupSession 仍预留 | 后续补 worker/verifier 角色、写入合并策略和 group event log |
 | Workflow 委托 | 已有 `/workflow create/step/done/show/clear` typed workflow state 和 `/delegate` 子代理委托 | 后续补 wait/merge/verify 和 scheduler |
-| 并发和文件锁 | 已支持单轮多 action 串行执行和同进程同文件写锁，但明确暂不并发 | 后续再做读写分桶、跨进程文件编辑锁、取消和超时传播 |
+| 并发和文件锁 | 已支持单轮多 action 串行执行、同进程同文件写锁和 `.agent/locks` 跨进程文件写锁，但明确暂不并发 | 后续再做读写分桶、并发工具执行、取消和超时传播 |
 | MCP / plugin / skill | MCP 挂在 `ToolRegistry` 后面；`/skills` 可发现并加载工作区 skills | 后续定义 plugin/tool manifest，再接 MCP/plugin discovery |
 
 ## 未规划未实现

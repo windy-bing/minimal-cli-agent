@@ -391,6 +391,7 @@ src/minimal_cli_agent/
 - 单轮多个 action block 会按输出顺序串行执行。
 - `ToolRegistry` 和分阶段 `ToolExecutionPipeline`。
 - 内置 `read_file`、`read_tail`、`read_forward`、`search`、`write_file` 和 `edit_file`，支持有边界地访问和修改工作区文件。
+- 文件写入同时使用同进程锁和 `.agent/locks` 下的跨进程 lock file。
 - 文件读取工具会检测疑似二进制文件，并在 observation 中附带文件大小、读取字符数、分页 offset 和 EOF 状态等 metadata。
 - `read_forward` 支持 byte 分页，也支持通过 `mode:"lines"`、`line_offset` 和 `line_limit` 做按行分页。
 - `search` 会同时遵守内置忽略目录、显式 `ignore_dirs`、工作区 `.gitignore` / `.agentignore`，并对 top-k 输出做相关性排序。
@@ -425,7 +426,7 @@ src/minimal_cli_agent/
 
 暂不实现：
 
-- 并发工具执行和跨进程文件编辑锁。
+- 并发工具执行。
 - GroupSession runtime。
 - workflow scheduler 或 delegation engine。
 - MCP 和 plugin 自动发现。
