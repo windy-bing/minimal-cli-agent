@@ -858,7 +858,7 @@ def is_user_prompt_history_entry(content: str) -> bool:
 
 
 def print_quick_command_hint() -> None:
-    print("Commands: /help, /config, /profile, /permission, /mcp, /plugin, /plugins, /skill, /skills, /context, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit")
+    print("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit")
 
 
 def print_interactive_help() -> None:
@@ -909,6 +909,9 @@ def handle_interactive_command(raw: str, session: InteractiveSession) -> Interac
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.PERMISSION:
         update_permission(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.POLICY:
+        handle_policy_command(session, argument)
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.NETWORK:
         update_boolean_option(session, "allow_network", argument, "network shell commands")
@@ -1152,6 +1155,51 @@ def update_permission(session: InteractiveSession, mode: str) -> None:
     print_config(session.agent.config)
 
 
+def handle_policy_command(session: InteractiveSession, argument: str) -> None:
+    if argument and argument != "json":
+        print(f"Usage: {InteractiveCommands.POLICY} [json]")
+        return
+    report = build_policy_report(session)
+    if argument == "json":
+        print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+    print(f"permission_mode: {report['permission_mode']}")
+    print(f"allow_network: {report['allow_network']}")
+    print(f"policy_file: {report['policy_file']}")
+    print(f"dangerous_tokens: {report['dangerous_tokens_count']}")
+    print(f"sensitive_path_tokens: {report['sensitive_path_tokens_count']}")
+    print(f"network_command_tokens: {report['network_command_tokens_count']}")
+    print(f"allow_command_prefixes: {format_policy_list(report['allow_command_prefixes'])}")
+    print(f"write_allow_paths: {format_policy_list(report['write_allow_paths'])}")
+    print(f"write_deny_paths: {format_policy_list(report['write_deny_paths'])}")
+    print(f"approved_actions: {format_policy_list(report['approved_actions'])}")
+    print(f"approved_tool_calls: {report['approved_tool_calls_count']}")
+
+
+def build_policy_report(session: InteractiveSession) -> dict[str, Any]:
+    policy = session.agent.harness.policy
+    rules = policy.rules
+    return {
+        "permission_mode": session.agent.config.permission_mode,
+        "allow_network": session.agent.config.allow_network,
+        "policy_file": str(session.agent.config.policy_file) if session.agent.config.policy_file else "<none>",
+        "dangerous_tokens_count": len(rules.dangerous_tokens),
+        "sensitive_path_tokens_count": len(rules.sensitive_path_tokens),
+        "network_command_tokens_count": len(rules.network_command_tokens),
+        "allow_command_prefixes": list(rules.allow_command_prefixes),
+        "write_allow_paths": list(rules.write_allow_paths),
+        "write_deny_paths": list(rules.write_deny_paths),
+        "approved_actions": sorted(policy.approved_actions),
+        "approved_tool_calls_count": len(policy.approved_tool_calls),
+    }
+
+
+def format_policy_list(values: Any) -> str:
+    if not values:
+        return "<none>"
+    return ", ".join(str(value) for value in values)
+
+
 def relative_skill_path(path: Path, cwd: Path) -> str:
     try:
         return str(path.resolve().relative_to(cwd.resolve()))
@@ -1225,19 +1273,66 @@ def handle_events_command(session: InteractiveSession, argument: str) -> None:
     if session.session_store is None:
         print("no session store configured")
         return
-    kind = ""
-    limit = 20
-    if argument:
-        if argument.isdigit():
-            limit = int(argument)
-        else:
-            kind = argument
-    events = session.session_store.query_events(kind=kind or None, limit=limit)
+    try:
+        query = parse_events_query(argument)
+    except ValueError as exc:
+        print(str(exc))
+        return
+    events = session.session_store.query_events(kind=query["kind"] or None, limit=query["limit"], offset=query["offset"])
     if not events:
         print("no events")
         return
+    if query["format"] == "json":
+        print(json.dumps([event.to_dict() for event in events], ensure_ascii=False, indent=2))
+        return
     for index, event in enumerate(events, start=1):
         print(f"{index}: {event.timestamp} {event.kind} {json.dumps(event.data, ensure_ascii=False, sort_keys=True)}")
+
+
+def parse_events_query(argument: str) -> dict[str, Any]:
+    query: dict[str, Any] = {"kind": "", "limit": 20, "offset": 0, "format": "text"}
+    positional: list[str] = []
+    for token in argument.split():
+        if "=" not in token:
+            positional.append(token)
+            continue
+        key, value = token.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key == "kind":
+            query["kind"] = value
+        elif key == "limit":
+            query["limit"] = parse_non_negative_int(value, "limit", minimum=1)
+        elif key == "offset":
+            query["offset"] = parse_non_negative_int(value, "offset")
+        elif key == "format":
+            if value not in {"text", "json"}:
+                raise ValueError(f"Usage: {InteractiveCommands.EVENTS} [kind] [limit] [offset] [format=json]")
+            query["format"] = value
+        else:
+            raise ValueError(f"Unknown events option: {key}")
+    if positional:
+        if positional[0].isdigit():
+            query["limit"] = parse_non_negative_int(positional[0], "limit", minimum=1)
+        else:
+            query["kind"] = positional[0]
+    if len(positional) >= 2:
+        query["limit"] = parse_non_negative_int(positional[1], "limit", minimum=1)
+    if len(positional) >= 3:
+        query["offset"] = parse_non_negative_int(positional[2], "offset")
+    if len(positional) > 3:
+        raise ValueError(f"Usage: {InteractiveCommands.EVENTS} [kind] [limit] [offset] [format=json]")
+    return query
+
+
+def parse_non_negative_int(value: str, field: str, minimum: int = 0) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{field} must be an integer") from exc
+    if parsed < minimum:
+        raise ValueError(f"{field} must be >= {minimum}")
+    return parsed
 
 
 def handle_memory_command(session: InteractiveSession, query: str) -> None:

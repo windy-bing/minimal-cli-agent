@@ -56,11 +56,15 @@ class JsonSessionStore:
             data = self._build_data(messages, events, existing_plan, existing_workflow)
             self._write_raw_unlocked(data)
 
-    def query_events(self, kind: str | None = None, limit: int = 20) -> list[EventRecord]:
+    def query_events(self, kind: str | None = None, limit: int = 20, offset: int = 0) -> list[EventRecord]:
         events = self.load_events()
         if kind:
             events = [event for event in events if event.kind == kind]
-        return events[-max(1, limit) :]
+        limit = max(1, limit)
+        offset = max(0, offset)
+        if offset:
+            events = events[: -offset] if offset < len(events) else []
+        return events[-limit:]
 
     def load_plan(self) -> PlanArtifact | None:
         return parse_plan(self._read_raw())
@@ -171,16 +175,20 @@ class SQLiteSessionStore:
                 (event.kind, json.dumps(event.data, ensure_ascii=False, sort_keys=True), event.timestamp),
             )
 
-    def query_events(self, kind: str | None = None, limit: int = 20) -> list[EventRecord]:
+    def query_events(self, kind: str | None = None, limit: int = 20, offset: int = 0) -> list[EventRecord]:
         limit = max(1, limit)
+        offset = max(0, offset)
         with self._connect() as db:
             if kind:
                 rows = db.execute(
-                    "select kind, data, timestamp from events where kind = ? order by id desc limit ?",
-                    (kind, limit),
+                    "select kind, data, timestamp from events where kind = ? order by id desc limit ? offset ?",
+                    (kind, limit, offset),
                 ).fetchall()
             else:
-                rows = db.execute("select kind, data, timestamp from events order by id desc limit ?", (limit,)).fetchall()
+                rows = db.execute(
+                    "select kind, data, timestamp from events order by id desc limit ? offset ?",
+                    (limit, offset),
+                ).fetchall()
         return [EventRecord(kind=row["kind"], data=json.loads(row["data"]), timestamp=row["timestamp"]) for row in reversed(rows)]
 
     def load_plan(self) -> PlanArtifact | None:

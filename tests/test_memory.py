@@ -108,9 +108,11 @@ class MemoryTest(unittest.TestCase):
 
             recent = store.query_events(limit=2)
             filtered = store.query_events(kind="first", limit=10)
+            paged = store.query_events(limit=1, offset=1)
 
         self.assertEqual([event.data["value"] for event in recent], [2, 3])
         self.assertEqual([event.data["value"] for event in filtered], [1, 3])
+        self.assertEqual([event.data["value"] for event in paged], [2])
 
     def test_json_session_store_persists_and_clears_workflow(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -163,17 +165,20 @@ class MemoryTest(unittest.TestCase):
                 ]
             )
             store.append_event(EventRecord(kind="tool_execution", data={"command": "alpha check"}))
+            store.append_event(EventRecord(kind="tool_execution", data={"command": "beta check"}))
             store.save_plan(PlanArtifact(goal="ship", summary="alpha plan"))
             store.save_workflow(WorkflowArtifact(goal="workflow"))
 
             messages = store.load()
             events = store.query_events(kind="tool_execution", limit=5)
+            paged = store.query_events(kind="tool_execution", limit=1, offset=1)
             matches = store.search_memory("alpha", limit=5)
             plan = store.load_plan()
             workflow = store.load_workflow()
 
         self.assertEqual([message.content for message in messages], ["second topic beta", "third topic alpha beta"])
         self.assertEqual(events[0].kind, "tool_execution")
+        self.assertEqual(paged[0].data["command"], "alpha check")
         self.assertTrue(any(match.kind.startswith("message:") for match in matches))
         self.assertTrue(any(match.kind.startswith("event:") for match in matches))
         self.assertIsNotNone(plan)

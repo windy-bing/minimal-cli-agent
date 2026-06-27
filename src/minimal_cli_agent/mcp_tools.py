@@ -9,7 +9,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from minimal_cli_agent.constants import Defaults, ToolPayloadFields, Tools
+from minimal_cli_agent.constants import Defaults, EventKinds, ToolPayloadFields, Tools
 from minimal_cli_agent.exceptions import ConfigurationError
 from minimal_cli_agent.tool_registry import ToolRegistry, ToolSpec
 from minimal_cli_agent.types import CommandResult
@@ -122,21 +122,50 @@ class MCPHttpClient:
         return parse_mcp_response(body)
 
 
-def register_mcp_tools(registry: ToolRegistry, configs: list[MCPServerConfig]) -> None:
+def register_mcp_tools(registry: ToolRegistry, configs: list[MCPServerConfig], audit_recorder=None) -> None:
     for config in configs:
         client = MCPHttpClient(config)
         register_generic_mcp_tools(registry, config, client)
+        record_mcp_registration(
+            audit_recorder,
+            config,
+            status="generic_registered",
+            generic_tools=[
+                build_mcp_tool_name(config.safe_name, "list_tools"),
+                build_mcp_tool_name(config.safe_name, "call_tool"),
+            ],
+        )
         if not config.discover_tools or config.has_unresolved_placeholders():
+            if config.has_unresolved_placeholders():
+                record_mcp_registration(audit_recorder, config, status="discovery_skipped", reason="unresolved_placeholders")
             continue
         try:
             remote_tools = client.list_tools()
-        except MCPRequestError:
+        except MCPRequestError as exc:
+            record_mcp_registration(audit_recorder, config, status="discovery_failed", reason=str(exc))
             continue
+        registered = []
         for remote_tool in remote_tools:
             remote_name = str(remote_tool.get("name") or "").strip()
             if not remote_name:
                 continue
             register_concrete_mcp_tool(registry, config, client, remote_tool)
+            registered.append(build_mcp_tool_name(config.safe_name, remote_name))
+        record_mcp_registration(audit_recorder, config, status="discovery_registered", concrete_tools=registered)
+
+
+def record_mcp_registration(audit_recorder, config: MCPServerConfig, **data) -> None:
+    if audit_recorder is None:
+        return
+    audit_recorder(
+        EventKinds.MCP_REGISTRATION,
+        {
+            "server": config.name,
+            "url": config.url,
+            "discover_tools": config.discover_tools,
+            **data,
+        },
+    )
 
 
 def register_generic_mcp_tools(registry: ToolRegistry, config: MCPServerConfig, client: MCPHttpClient) -> None:

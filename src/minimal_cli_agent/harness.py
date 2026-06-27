@@ -158,7 +158,7 @@ class AgentHarness:
         if self.config.plugin_paths:
             mcp_configs.extend(load_plugin_mcp_configs(self.config.plugin_paths))
         if mcp_configs:
-            register_mcp_tools(self.tool_registry, mcp_configs)
+            register_mcp_tools(self.tool_registry, mcp_configs, audit_recorder=self.record_event)
         self.tool_pipeline = ToolExecutionPipeline(
             registry=self.tool_registry,
             permission_policy=self.policy,

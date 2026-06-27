@@ -14,13 +14,13 @@
 | 主题 | 当前状态 | 下一步 |
 | --- | --- | --- |
 | 工具执行管道 | 已有 `ToolExecutionPipeline` 阶段形状，`ResolveDecision` 已支持 decision hook 优先级、冲突报告和 session 审计事件；`AutoVerify` 已支持输出 schema 校验，工具可配置有限重试 | 补确认 UI 适配和更丰富格式化策略 |
-| 权限 hard gate | 已有 `ShellPermissionPolicy`、`ToolDecision`、`plan` 跳过执行、`yolo` 仍受硬拒绝规则限制；policy 文件支持命令 allow 前缀、追加 deny token 和写入 allow/deny 路径范围 | 后续增加更丰富的策略报告、角色化能力和可查询审计日志 |
+| 权限 hard gate | 已有 `ShellPermissionPolicy`、`ToolDecision`、`plan` 跳过执行、`yolo` 仍受硬拒绝规则限制；policy 文件支持命令 allow 前缀、追加 deny token 和写入 allow/deny 路径范围；`/policy` 可查看运行时策略和会话审批缓存 | 后续增加角色化能力和策略模拟 |
 | 上下文压缩 | 默认启用模型摘要式压缩，SQLite session 可保留 transcript/event 并支持 `/memory` 召回 | 后续补更强的检索排序和摘要索引 |
 | Memory 管理 | 默认 JSON session 已支持 lock 保护、原子写、最近消息裁剪、active plan、typed workflow state；SQLite 支持 transcript/event store 和 retrieval memory | 按使用反馈扩展索引字段 |
 | SubAgent / GroupSession | 已支持 explorer/worker/verifier 角色、隔离 session、GroupSession 汇总、写入合并报告和 group event log | 后续接更强的真实并行调度 |
 | Workflow 委托 | 已有 `/workflow create/step/done/show/clear/schedule/wait/merge/verify` typed workflow state 和 `/delegate` 子代理委托 | 按真实项目需求扩展状态机 |
 | 并发和文件锁 | 已支持单轮多 action、读工具分桶并发、写操作屏障、同进程同文件写锁和 `.agent/locks` 跨进程文件写锁 | 后续细化跨批次取消策略 |
-| MCP / plugin / skill | MCP 挂在 `ToolRegistry` 后面；`/skills` 可发现并加载工作区 skills；plugin manifest 可自动发现并声明 skill/MCP | 后续扩展 plugin manifest schema |
+| MCP / plugin / skill | MCP 挂在 `ToolRegistry` 后面；`/skills` 可发现并加载工作区 skills；plugin manifest 可自动发现并声明 skill/MCP；MCP 注册/发现结果写入事件日志 | 后续扩展 plugin manifest schema |
 | Schema / 格式化 | 已扩展 Draft JSON Schema 常用关键字、本地 `$ref`、YAML sidecar schema 和结构化写入格式化建议 | 后续按真实 schema 增加远程 `$ref` 或更完整 draft 支持 |
 
 ## 未规划未实现

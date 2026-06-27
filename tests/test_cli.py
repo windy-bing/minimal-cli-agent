@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -172,7 +173,7 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
-        self.assertIn("Commands: /help, /config, /profile, /permission, /mcp, /plugin, /plugins, /skill, /skills, /context, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit", printed)
+        self.assertIn("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit", printed)
 
     def test_detect_explicit_options_supports_space_and_equals_forms(self) -> None:
         explicit = detect_explicit_options([
@@ -475,6 +476,49 @@ class CliTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn(EventKinds.PERMISSION_DECISION, printed)
         self.assertIn("allow", printed)
+
+    def test_run_interactive_events_filters_pages_and_outputs_json(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            store = JsonSessionStore(Path(tmp) / "session.json")
+            store.append_event(EventRecord(kind="tool_execution", data={"value": 1}))
+            store.append_event(EventRecord(kind="tool_execution", data={"value": 2}))
+            store.append_event(EventRecord(kind="permission_decision", data={"value": 3}))
+            config = AgentConfig(permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=store))
+
+            with patch("builtins.input", side_effect=["/events kind=tool_execution limit=1 offset=1 format=json", "/quit"]), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, ChatContext(), session_store=store)
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"kind": "tool_execution"', printed)
+        self.assertIn('"value": 1', printed)
+        self.assertNotIn('"value": 2', printed)
+        self.assertNotIn('"value": 3', printed)
+
+    def test_run_interactive_policy_reports_runtime_rules(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy_file = root / "policy.json"
+            policy_file.write_text(
+                json.dumps({"allow_command_prefixes": ["git status"], "write_allow_paths": ["src/**"]}),
+                encoding="utf-8",
+            )
+            config = AgentConfig(cwd=root, permission_mode="default", policy_file=policy_file)
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+            agent.harness.policy.approved_actions.add("shell")
+
+            with patch("builtins.input", side_effect=["/policy", "/policy json", "/quit"]), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, ChatContext())
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("permission_mode: default", printed)
+        self.assertIn("allow_command_prefixes: git status", printed)
+        self.assertIn("write_allow_paths: src/**", printed)
+        self.assertIn('"approved_actions": [\n    "shell"\n  ]', printed)
 
     def test_run_interactive_memory_search_uses_sqlite_store(self) -> None:
         model = CountingModel()

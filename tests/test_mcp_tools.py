@@ -13,8 +13,11 @@ from minimal_cli_agent.mcp_tools import (
     parse_mcp_arguments,
     parse_mcp_config,
     parse_sse_json,
+    register_mcp_tools,
 )
+from minimal_cli_agent.constants import EventKinds
 from minimal_cli_agent.exceptions import ConfigurationError
+from minimal_cli_agent.tool_registry import ToolRegistry
 
 
 class MCPToolsTest(unittest.TestCase):
@@ -93,6 +96,27 @@ class MCPToolsTest(unittest.TestCase):
 
         self.assertIn("hello", output)
         self.assertIn('"ok": true', output)
+
+    def test_register_mcp_tools_records_registration_events(self) -> None:
+        events = []
+        configs = parse_mcp_config(
+            {
+                "mcpServers": {
+                    "coffee": {
+                        "url": "https://example.test/mcp",
+                        "headers": {"Authorization": "Bearer ${MISSING_TOKEN}"},
+                        "discoverTools": True,
+                    }
+                }
+            }
+        )
+
+        register_mcp_tools(ToolRegistry(), configs, audit_recorder=lambda kind, data: events.append((kind, data)))
+
+        self.assertEqual(events[0][0], EventKinds.MCP_REGISTRATION)
+        self.assertEqual(events[0][1]["status"], "generic_registered")
+        self.assertEqual(events[1][1]["status"], "discovery_skipped")
+        self.assertEqual(events[1][1]["reason"], "unresolved_placeholders")
 
 
 if __name__ == "__main__":

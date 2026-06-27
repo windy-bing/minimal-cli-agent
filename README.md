@@ -12,7 +12,7 @@ The project starts intentionally small, but the code is split into replaceable m
 
 - Runs as a terminal CLI.
 - Starts a persistent multi-turn interactive session by default when run without a task.
-- Supports slash commands for runtime profile/model/permission/context/history/plan/review control.
+- Supports slash commands for runtime profile/model/permission/policy/context/history/events/plan/review control.
 - Reads startup defaults from `~/.minimal-agent/config.json` and project `.minimal-agent.json`; `/config save` persists runtime choices.
 - Injects layered project rules from `AGENTS.md`, `.agents/rules.md`, `.agents/rules.d/*.md`, and `.minimal-agent-instructions.md` with source labels, duplicate removal, budgets, and conflict reports.
 - Supports MCP HTTP servers through `--mcp-config`, with MCP tools registered into the same `ToolRegistry`.
@@ -142,7 +142,7 @@ minimal-agent "Analyze this project"
 
 Type `/help` to list interactive commands. Type `/`, `/exit`, `/quit`, `exit`, or `quit` for quick command handling. By default, messages are saved after each turn to `.agent/session.json` and loaded again on the next run. Use `--session path/to/session.json` to choose another file, or `--no-session` to disable persistence.
 
-Startup defaults are read from `~/.minimal-agent/config.json` and then from project-local `.minimal-agent.json`; project config wins over user config. CLI flags and environment variables still take precedence. Inside the REPL, use `/model`, `/provider`, `/base-url`, `/permission`, `/mcp`, and `/skill` to change runtime settings, then `/config save` to write `.minimal-agent.json` or `/config save user` to update the user config.
+Startup defaults are read from `~/.minimal-agent/config.json` and then from project-local `.minimal-agent.json`; project config wins over user config. CLI flags and environment variables still take precedence. Inside the REPL, use `/model`, `/provider`, `/base-url`, `/permission`, `/policy`, `/mcp`, `/plugin`, and `/skill` to inspect or change runtime settings, then `/config save` to write `.minimal-agent.json` or `/config save user` to update the user config.
 
 In interactive mode, normal conversation can be answered directly. The model only needs an action block when it wants to inspect files, edit files, or run a command.
 
@@ -438,6 +438,7 @@ Reserved but intentionally minimal:
 - `autoEdit` automatically approves file writer tools; shell commands still ask until explicitly approved once or for the session.
 - Session persistence supports JSON or SQLite transcript/event storage with `/memory` retrieval.
 - MCP tool discovery is best-effort at startup; generic list/call tools remain available when discovery cannot run.
+- MCP registration and discovery outcomes are recorded in session events and queryable through `/events`.
 - Plugin manifests are discovered from workspace/user plugin directories and can load skills plus MCP server configs.
 - Structured file writes validate JSON/YAML with sidecar schemas and return formatter suggestions on repairable failures.
 

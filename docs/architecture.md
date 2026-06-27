@@ -44,7 +44,7 @@ The project is meant to grow into a harness-style agent. The important rule is t
 | Shell execution | `LocalEnvironment` | Docker environment, remote sandbox, workspace fork |
 | File tools | `FileToolEnvironment` | Patch hunks, format-aware validation, cross-process file locks |
 | Permissions | `ShellPermissionPolicy` | Rule engine, approvals, audit log, scoped capabilities |
-| Delegation | Not implemented | SubAgent runner and workflow scheduler |
+| Delegation | `SubAgentRunner`, `GroupSessionRunner`, workflow commands | Parallel scheduling and external worker backends |
 
 This keeps the project extensible because new capabilities attach to harness boundaries instead of being hidden inside the agent loop.
 
@@ -86,6 +86,7 @@ Implemented:
 - JSON session event log for permission approval audit records.
 - Lock-protected atomic JSON session writes with recent-message retention.
 - Queryable recent session events through `/events`.
+- `/events` supports kind filtering, limit/offset pagination, and JSON output for audit export.
 - `ToolRegistry` for tool discovery.
 - Built-in workspace `read_file`, `read_tail`, `read_forward`, `file_info`, `search`, `write_file`, and `edit_file` tools.
 - Manual MCP config loading with streamable HTTP JSON-RPC tools.
@@ -115,6 +116,7 @@ Implemented:
 - Execute turns read the active plan, inject it into the system prompt, and constrain writer tools to planned paths when paths are known.
 - ShellAdapter support for system shell, bash, zsh, sh, PowerShell, cmd, and Git Bash style execution with shell/cwd/encoding/path metadata in observations.
 - Injectable permission confirmation handler; the CLI supports selectable allow-once, allow-session-action, and deny choices.
+- `/policy` reports active permission mode, hard-gate rule counts, write scopes, and session approval memory.
 - Pyright `basic` type-checking configuration for `src` and `tests`.
 - `ToolExecutionPipeline` with the full stage shape:
 
@@ -205,10 +207,10 @@ Current product modes are `default`, `autoEdit`, `plan`, and `yolo`.
 
 A production version should add:
 
-- Richer allow rules and policy reports.
+- Role-scoped capabilities and policy simulations before execution.
 - Write scope restrictions.
 - Destructive command detection.
-- Queryable approval records and richer audit reports.
+- Richer audit exports and retention controls.
 
 ### Skills, MCP, and Plugins
 

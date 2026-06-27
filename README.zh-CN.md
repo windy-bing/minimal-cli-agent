@@ -12,7 +12,7 @@
 
 - 作为终端 CLI 运行。
 - 不传 task 时默认启动带持久化的多轮交互 REPL。
-- 支持 slash commands，在运行时切换 profile/model/permission/context/history/plan/review。
+- 支持 slash commands，在运行时切换或查看 profile/model/permission/policy/context/history/events/plan/review。
 - 会读取 `~/.minimal-agent/config.json` 和项目 `.minimal-agent.json` 作为启动默认值；`/config save` 可持久化运行时选择。
 - 会分层注入 `AGENTS.md`、`.agents/rules.md`、`.agents/rules.d/*.md` 和 `.minimal-agent-instructions.md` 中的项目规则，并带来源标注、去重、预算上限和冲突报告。
 - 支持通过 `--mcp-config` 接入 HTTP MCP server，并把 MCP 工具注册到同一个 `ToolRegistry`。
@@ -143,7 +143,7 @@ minimal-agent "Analyze this project"
 
 输入 `/help` 查看交互命令。输入 `/` 会快速展示常用命令；输入 `/exit`、`/quit`、`exit` 或 `quit` 退出。默认每轮结束后会把 messages 保存到 `.agent/session.json`，下次运行时继续加载。使用 `--session path/to/session.json` 可以指定其他 session 文件，使用 `--no-session` 可以关闭持久化。
 
-启动默认配置会先读取 `~/.minimal-agent/config.json`，再读取项目内 `.minimal-agent.json`；项目配置优先于用户配置。CLI 参数和环境变量仍然拥有更高优先级。在 REPL 中可以用 `/model`、`/provider`、`/base-url`、`/permission`、`/mcp` 和 `/skill` 手动切换运行时配置，再用 `/config save` 写入项目 `.minimal-agent.json`，或用 `/config save user` 写入用户配置。
+启动默认配置会先读取 `~/.minimal-agent/config.json`，再读取项目内 `.minimal-agent.json`；项目配置优先于用户配置。CLI 参数和环境变量仍然拥有更高优先级。在 REPL 中可以用 `/model`、`/provider`、`/base-url`、`/permission`、`/policy`、`/mcp`、`/plugin` 和 `/skill` 查看或切换运行时配置，再用 `/config save` 写入项目 `.minimal-agent.json`，或用 `/config save user` 写入用户配置。
 
 在交互模式下，普通对话可以直接自然语言回复；只有需要查看文件、修改文件或运行命令时，模型才需要输出 action block。
 
@@ -438,6 +438,7 @@ src/minimal_cli_agent/
 - `autoEdit` 会自动批准文件写入类工具；shell 命令仍会确认，除非用户选择单次或当前 session 放行。
 - session 持久化支持 JSON 或 SQLite transcript/event store，并提供 `/memory` 召回。
 - MCP 工具发现是启动时 best-effort；发现失败时仍保留通用 list/call 工具。
+- MCP 注册和发现结果会写入 session events，可通过 `/events` 查询。
 - plugin manifest 会从工作区和用户插件目录自动发现，可声明 skill 与 MCP server 配置。
 - 结构化文件写入会用 sidecar schema 校验 JSON/YAML，并在可修复失败里返回格式化建议。
 
