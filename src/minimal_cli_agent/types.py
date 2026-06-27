@@ -63,6 +63,23 @@ class LoopOptions:
     system_prompt: str | None = None
 
 
+@dataclass(frozen=True)
+class ModelRoute:
+    provider: Provider
+    model: str
+    base_url: str
+    api_key: str | None = None
+    timeout: int | None = None
+    max_retries: int = 0
+    price_input_per_1m: float = 0.0
+    price_output_per_1m: float = 0.0
+    weight: int = 1
+
+    @property
+    def key(self) -> str:
+        return f"{self.provider}:{self.model}:{self.base_url}"
+
+
 @dataclass
 class AgentConfig:
     provider: Provider = Providers.OLLAMA
@@ -82,6 +99,28 @@ class AgentConfig:
     context_tail_messages: int = int(Defaults.CONTEXT_TAIL_MESSAGES)
     max_output_chars: int = 12000
     max_context_chars: int = 60000
+    model_fallbacks: tuple[ModelRoute, ...] = field(default_factory=tuple)
+    model_max_retries: int = 0
+    model_max_concurrency: int = 4
+    model_queue_timeout: float = 5.0
+    model_circuit_failure_threshold: int = 3
+    model_circuit_cooldown: float = 60.0
+    model_price_input_per_1m: float = 0.0
+    model_price_output_per_1m: float = 0.0
+    usage_ledger_path: Path | None = None
+    usage_subject: str = "default"
+    usage_tenant: str = "default"
+    max_input_tokens: int | None = None
+    max_output_tokens: int | None = None
+    max_request_tokens: int | None = None
+    daily_token_limit: int | None = None
+    monthly_token_limit: int | None = None
+    max_request_cost: float | None = None
+    daily_cost_limit: float | None = None
+    monthly_cost_limit: float | None = None
+    prompt_version: str = "default"
+    validate_non_empty_model_output: bool = True
+    bill_failed_requests: bool = False
 
 
 @dataclass(frozen=True)

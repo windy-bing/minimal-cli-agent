@@ -21,7 +21,7 @@ from minimal_cli_agent.file_tools import (
     write_file_validator,
 )
 from minimal_cli_agent.interfaces import ContextManager, Model, SessionStore
-from minimal_cli_agent.model import ChatModel
+from minimal_cli_agent.model_gateway import ModelGateway
 from minimal_cli_agent.mcp_tools import load_mcp_config, register_mcp_tools
 from minimal_cli_agent.policy import ConfirmationHandler, ShellPermissionPolicy
 from minimal_cli_agent.tool_pipeline import ToolExecutionPipeline
@@ -50,7 +50,7 @@ class AgentHarness:
         confirmation_handler: ConfirmationHandler | None = None,
     ) -> None:
         self.config = config
-        self.model = model or ChatModel(config)
+        self.model = model or ModelGateway(config)
         self.context_manager = context_manager or CompactingContextManager(config, summarizer=self.model)
         self.session_store = session_store
         self.policy = ShellPermissionPolicy(config, audit_recorder=self.record_event, confirmation_handler=confirmation_handler)

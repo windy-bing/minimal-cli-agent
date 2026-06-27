@@ -261,6 +261,16 @@ Explicit CLI options such as `--model`, `--base-url`, and `--api-key` take prece
 --max-steps      maximum agent loop iterations
 --timeout        command timeout in seconds
 --model-timeout  model request timeout in seconds
+--model-fallback JSON fallback route; may be repeated
+--model-max-retries retry count per model route
+--model-max-concurrency per-route concurrent model calls
+--usage-ledger   JSONL model usage ledger path
+--usage-subject  user/account key for quota accounting
+--usage-tenant   tenant key for quota accounting
+--max-input-tokens / --max-output-tokens / --max-request-tokens
+--daily-token-limit / --monthly-token-limit
+--max-request-cost / --daily-cost-limit / --monthly-cost-limit
+--model-price-input-per-1m / --model-price-output-per-1m
 --allow-network  allow shell commands with obvious network access
 --policy-file    JSON file with additional shell policy deny tokens
 --mcp-config     JSON file with MCP servers
@@ -270,6 +280,22 @@ Explicit CLI options such as `--model`, `--base-url`, and `--api-key` take prece
 --permission     default, autoEdit, plan, or yolo
 --session        JSON file for persisted messages
 ```
+
+Fallback routes are JSON objects so URLs and model names do not need custom escaping:
+
+```bash
+minimal-agent "summarize this repo" \
+  --provider openai-compatible \
+  --model primary-model \
+  --base-url https://api.example.com/v1 \
+  --model-price-input-per-1m 2.00 \
+  --model-price-output-per-1m 8.00 \
+  --model-fallback '{"provider":"ollama","model":"qwen3:4b","base_url":"http://localhost:11434","timeout":30}' \
+  --usage-ledger .agent/usage.jsonl \
+  --daily-cost-limit 5.00
+```
+
+The model gateway records estimated token usage, estimated cost, latency, status, prompt version, subject, tenant, provider, and model. Limits are checked before a request is sent; failed attempts are recorded but are not billable unless `--bill-failed-requests` is set.
 
 ## Project Layout
 
@@ -297,6 +323,7 @@ src/minimal_cli_agent/
   file_tools.py   workspace read_file, read_tail, read_forward, search, write_file, and edit_file tools
   mcp_tools.py    streamable HTTP MCP config loading and tool adapter
   skills.py       local SKILL.md resolver and prompt injection
+  model_gateway.py model routing, fallback, retries, circuit breaker, quotas, and usage ledger
   model.py        Ollama, OpenAI-compatible, Anthropic, Gemini HTTP clients, and Codex CLI adapter
   parser.py       bash-action and tool-action parser
   environment.py  local shell execution

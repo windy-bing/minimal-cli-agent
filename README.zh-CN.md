@@ -261,6 +261,16 @@ Profile 行为：
 --max-steps      Agent loop 最大迭代次数
 --timeout        命令超时时间，单位秒
 --model-timeout  模型请求超时时间，单位秒
+--model-fallback JSON fallback 路由，可重复传入
+--model-max-retries 每个模型路由的重试次数
+--model-max-concurrency 每个路由允许的并发模型调用数
+--usage-ledger   JSONL 模型用量账本路径
+--usage-subject  用量计量的用户或账号 key
+--usage-tenant   用量计量的租户 key
+--max-input-tokens / --max-output-tokens / --max-request-tokens
+--daily-token-limit / --monthly-token-limit
+--max-request-cost / --daily-cost-limit / --monthly-cost-limit
+--model-price-input-per-1m / --model-price-output-per-1m
 --allow-network  允许明显会访问网络的 shell 命令
 --policy-file    包含附加 shell policy deny token 的 JSON 文件
 --mcp-config     包含 MCP servers 的 JSON 配置文件
@@ -270,6 +280,22 @@ Profile 行为：
 --permission     default、autoEdit、plan 或 yolo
 --session        用于持久化 messages 的 JSON 文件
 ```
+
+Fallback 路由使用 JSON 对象，避免 URL 和模型名里的冒号需要额外转义：
+
+```bash
+minimal-agent "总结这个仓库" \
+  --provider openai-compatible \
+  --model primary-model \
+  --base-url https://api.example.com/v1 \
+  --model-price-input-per-1m 2.00 \
+  --model-price-output-per-1m 8.00 \
+  --model-fallback '{"provider":"ollama","model":"qwen3:4b","base_url":"http://localhost:11434","timeout":30}' \
+  --usage-ledger .agent/usage.jsonl \
+  --daily-cost-limit 5.00
+```
+
+模型网关会记录估算 token、估算费用、延迟、状态、prompt 版本、subject、tenant、provider 和 model。限额会在请求发出前检查；失败尝试会记录到账本，但默认不计费，除非启用 `--bill-failed-requests`。
 
 ## 项目结构
 
@@ -297,6 +323,7 @@ src/minimal_cli_agent/
   file_tools.py    工作区 read_file、read_tail、read_forward、search、write_file 和 edit_file 工具
   mcp_tools.py     streamable HTTP MCP 配置加载与工具适配器
   skills.py        本地 SKILL.md 解析与 prompt 注入
+  model_gateway.py 模型路由、fallback、重试、熔断、限额和用量账本
   model.py         Ollama、OpenAI-compatible、Anthropic、Gemini HTTP client 和 Codex CLI adapter
   parser.py        bash-action 和 tool-action 解析器
   environment.py   本地 shell 执行

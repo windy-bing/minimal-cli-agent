@@ -38,6 +38,8 @@ class ChatModel:
             "messages": [message.to_dict() for message in messages],
             "stream": False,
         }
+        if self.config.max_output_tokens:
+            payload["options"] = {"num_predict": self.config.max_output_tokens}
         data = post_json(url, payload, timeout=self.config.model_timeout)
         return str(data.get("message", {}).get("content", ""))
 
@@ -50,6 +52,8 @@ class ChatModel:
             "model": self.config.model,
             "messages": [message.to_dict() for message in messages],
         }
+        if self.config.max_output_tokens:
+            payload["max_tokens"] = self.config.max_output_tokens
         headers = {}
         if self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
@@ -67,7 +71,7 @@ class ChatModel:
         system, chat_messages = split_system_messages(messages)
         payload = {
             "model": self.config.model,
-            "max_tokens": 4096,
+            "max_tokens": self.config.max_output_tokens or 4096,
             "messages": [{"role": message.role, "content": message.content} for message in chat_messages],
         }
         if system:
@@ -100,6 +104,8 @@ class ChatModel:
                 for message in chat_messages
             ]
         }
+        if self.config.max_output_tokens:
+            payload["generationConfig"] = {"maxOutputTokens": self.config.max_output_tokens}
         if system:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
 

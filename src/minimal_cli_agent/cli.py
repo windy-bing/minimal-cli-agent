@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import copy
 from dataclasses import dataclass
+import json
 import os
 import sys
 from pathlib import Path
@@ -10,7 +11,7 @@ from pathlib import Path
 from minimal_cli_agent.agent import Agent, print_event
 from minimal_cli_agent.constants import Defaults, InteractiveCommands, PermissionModes, Profiles, Providers
 from minimal_cli_agent.context import total_message_chars
-from minimal_cli_agent.exceptions import AgentError
+from minimal_cli_agent.exceptions import AgentError, ConfigurationError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import compact_messages
 from minimal_cli_agent.memory import JsonSessionStore
@@ -18,7 +19,7 @@ from minimal_cli_agent.plan import PLAN_METADATA_KEY, build_plan_prompt, create_
 from minimal_cli_agent.prompts import INTERACTIVE_SYSTEM_PROMPT, SYSTEM_PROMPT
 from minimal_cli_agent.profiles import resolve_profile
 from minimal_cli_agent.skills import build_system_prompt, resolve_skill_path, resolve_skill_paths
-from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message
+from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message, ModelRoute
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,6 +35,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-steps", type=int, default=int(os.getenv("AGENT_MAX_STEPS", Defaults.MAX_STEPS)))
     parser.add_argument("--timeout", type=int, default=int(os.getenv("AGENT_COMMAND_TIMEOUT", Defaults.COMMAND_TIMEOUT)))
     parser.add_argument("--model-timeout", type=int, default=int(os.getenv("AGENT_MODEL_TIMEOUT", Defaults.MODEL_TIMEOUT)))
+    parser.add_argument("--model-fallback", action="append", default=parse_model_fallback_env(), help="JSON fallback route. Example: '{\"provider\":\"ollama\",\"model\":\"qwen3:1.7b\",\"base_url\":\"http://localhost:11434\"}'")
+    parser.add_argument("--model-max-retries", type=int, default=int(os.getenv("AGENT_MODEL_MAX_RETRIES", "0")))
+    parser.add_argument("--model-max-concurrency", type=int, default=int(os.getenv("AGENT_MODEL_MAX_CONCURRENCY", "4")))
+    parser.add_argument("--model-queue-timeout", type=float, default=float(os.getenv("AGENT_MODEL_QUEUE_TIMEOUT", "5")))
+    parser.add_argument("--model-circuit-failure-threshold", type=int, default=int(os.getenv("AGENT_MODEL_CIRCUIT_FAILURE_THRESHOLD", "3")))
+    parser.add_argument("--model-circuit-cooldown", type=float, default=float(os.getenv("AGENT_MODEL_CIRCUIT_COOLDOWN", "60")))
+    parser.add_argument("--model-price-input-per-1m", type=float, default=float(os.getenv("AGENT_MODEL_PRICE_INPUT_PER_1M", "0")))
+    parser.add_argument("--model-price-output-per-1m", type=float, default=float(os.getenv("AGENT_MODEL_PRICE_OUTPUT_PER_1M", "0")))
+    parser.add_argument("--usage-ledger", type=Path, default=Path(os.getenv("AGENT_USAGE_LEDGER")) if os.getenv("AGENT_USAGE_LEDGER") else None)
+    parser.add_argument("--usage-subject", default=os.getenv("AGENT_USAGE_SUBJECT", "default"))
+    parser.add_argument("--usage-tenant", default=os.getenv("AGENT_USAGE_TENANT", "default"))
+    parser.add_argument("--max-input-tokens", type=int, default=parse_optional_int_env("AGENT_MAX_INPUT_TOKENS"))
+    parser.add_argument("--max-output-tokens", type=int, default=parse_optional_int_env("AGENT_MAX_OUTPUT_TOKENS"))
+    parser.add_argument("--max-request-tokens", type=int, default=parse_optional_int_env("AGENT_MAX_REQUEST_TOKENS"))
+    parser.add_argument("--daily-token-limit", type=int, default=parse_optional_int_env("AGENT_DAILY_TOKEN_LIMIT"))
+    parser.add_argument("--monthly-token-limit", type=int, default=parse_optional_int_env("AGENT_MONTHLY_TOKEN_LIMIT"))
+    parser.add_argument("--max-request-cost", type=float, default=parse_optional_float_env("AGENT_MAX_REQUEST_COST"))
+    parser.add_argument("--daily-cost-limit", type=float, default=parse_optional_float_env("AGENT_DAILY_COST_LIMIT"))
+    parser.add_argument("--monthly-cost-limit", type=float, default=parse_optional_float_env("AGENT_MONTHLY_COST_LIMIT"))
+    parser.add_argument("--prompt-version", default=os.getenv("AGENT_PROMPT_VERSION", "default"))
+    parser.add_argument("--bill-failed-requests", action="store_true", help="Count failed model attempts against usage budgets.")
     parser.add_argument("--allow-network", action="store_true", help="Allow shell commands with obvious network access.")
     parser.add_argument("--policy-file", type=Path, help="JSON file with additional shell policy deny tokens.")
     parser.add_argument("--mcp-config", type=Path, help="JSON config file with MCP servers.")
@@ -64,6 +86,27 @@ def main(argv: list[str] | None = None) -> int:
             max_steps=args.max_steps,
             command_timeout=args.timeout,
             model_timeout=args.model_timeout,
+            model_fallbacks=parse_model_routes(args.model_fallback),
+            model_max_retries=args.model_max_retries,
+            model_max_concurrency=args.model_max_concurrency,
+            model_queue_timeout=args.model_queue_timeout,
+            model_circuit_failure_threshold=args.model_circuit_failure_threshold,
+            model_circuit_cooldown=args.model_circuit_cooldown,
+            model_price_input_per_1m=args.model_price_input_per_1m,
+            model_price_output_per_1m=args.model_price_output_per_1m,
+            usage_ledger_path=args.usage_ledger.resolve() if args.usage_ledger else None,
+            usage_subject=args.usage_subject,
+            usage_tenant=args.usage_tenant,
+            max_input_tokens=args.max_input_tokens,
+            max_output_tokens=args.max_output_tokens,
+            max_request_tokens=args.max_request_tokens,
+            daily_token_limit=args.daily_token_limit,
+            monthly_token_limit=args.monthly_token_limit,
+            max_request_cost=args.max_request_cost,
+            daily_cost_limit=args.daily_cost_limit,
+            monthly_cost_limit=args.monthly_cost_limit,
+            prompt_version=args.prompt_version,
+            bill_failed_requests=args.bill_failed_requests,
             permission_mode=args.permission,
             allow_network=args.allow_network,
             policy_file=args.policy_file.resolve() if args.policy_file else None,
@@ -78,6 +121,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"base_url: {config.base_url}")
             print(f"api_key_present: {bool(config.api_key)}")
             print(f"api_key_length: {len(config.api_key or '')}")
+            print(f"fallback_routes: {len(config.model_fallbacks)}")
+            print(f"model_price_input_per_1m: {config.model_price_input_per_1m}")
+            print(f"model_price_output_per_1m: {config.model_price_output_per_1m}")
+            print(f"usage_ledger: {config.usage_ledger_path or '<none>'}")
+            print(f"usage_subject: {config.usage_subject}")
+            print(f"usage_tenant: {config.usage_tenant}")
             return 0
 
         task = " ".join(args.task).strip()
@@ -425,6 +474,12 @@ def print_config(config: AgentConfig) -> None:
     print(f"permission: {config.permission_mode}")
     print(f"allow_network: {config.allow_network}")
     print(f"summarize_context: {config.summarize_context}")
+    print(f"fallback_routes: {len(config.model_fallbacks)}")
+    print(f"model_price_input_per_1m: {config.model_price_input_per_1m}")
+    print(f"model_price_output_per_1m: {config.model_price_output_per_1m}")
+    print(f"usage_ledger: {config.usage_ledger_path or '<none>'}")
+    print(f"usage_subject: {config.usage_subject}")
+    print(f"usage_tenant: {config.usage_tenant}")
     print(f"mcp_config: {config.mcp_config or '<none>'}")
     skills = ", ".join(path.parent.name for path in config.skill_paths) if config.skill_paths else "<none>"
     print(f"skills: {skills}")
@@ -459,6 +514,57 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
             if item == option or item.startswith(f"{option}="):
                 explicit.add(name)
     return explicit
+
+
+def parse_optional_int_env(name: str) -> int | None:
+    value = os.getenv(name)
+    return int(value) if value else None
+
+
+def parse_optional_float_env(name: str) -> float | None:
+    value = os.getenv(name)
+    return float(value) if value else None
+
+
+def parse_model_fallback_env() -> list[str]:
+    raw = os.getenv("AGENT_MODEL_FALLBACKS")
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return [raw]
+    if isinstance(data, list):
+        return [json.dumps(item) if isinstance(item, dict) else str(item) for item in data]
+    return [raw]
+
+
+def parse_model_routes(raw_routes: list[str]) -> tuple[ModelRoute, ...]:
+    routes: list[ModelRoute] = []
+    for raw in raw_routes:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ConfigurationError(f"Invalid --model-fallback JSON: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ConfigurationError("--model-fallback must be a JSON object")
+        try:
+            routes.append(
+                ModelRoute(
+                    provider=data["provider"],
+                    model=data["model"],
+                    base_url=data["base_url"],
+                    api_key=data.get("api_key"),
+                    timeout=data.get("timeout"),
+                    max_retries=int(data.get("max_retries", 0)),
+                    price_input_per_1m=float(data.get("price_input_per_1m", 0.0)),
+                    price_output_per_1m=float(data.get("price_output_per_1m", 0.0)),
+                    weight=int(data.get("weight", 1)),
+                )
+            )
+        except KeyError as exc:
+            raise ConfigurationError(f"--model-fallback missing required field: {exc}") from exc
+    return tuple(routes)
 
 
 if __name__ == "__main__":

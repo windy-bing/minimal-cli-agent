@@ -32,7 +32,8 @@ The project is meant to grow into a harness-style agent. The important rule is t
 | Concern | Current owner | Extension point |
 | --- | --- | --- |
 | Loop control | `Agent.chat_stream(message, context)` | Multi-action loop, planner loop, verifier loop |
-| Model calls | `ChatModel` through `AgentHarness` | LiteLLM, OpenAI Responses, more local models |
+| Model calls | `ModelGateway` through `AgentHarness` | LiteLLM, OpenAI Responses, more local models |
+| Provider adapters | `ChatModel` | Additional provider SDKs, streaming adapters |
 | Model profiles | `profiles.py` | cc-switch-compatible config discovery |
 | Context window | `CompactingContextManager` | Model-based summarizer, retrieval-backed context |
 | Session persistence | `JsonSessionStore` with lock-protected atomic JSON writes | SQLite, indexed event log, group session store |
@@ -76,6 +77,7 @@ Implemented:
 - REPL slash commands for runtime profile/provider/model/base URL/permission/network/context/plan/review control.
 - Isolated `/plan` command that creates a typed plan artifact without merging planning transcript into active chat context.
 - Optional model-generated context summaries with `--summarize-context`.
+- `ModelGateway` for provider/model abstraction, fallback routes, bounded retries, per-route concurrency, circuit breaking, usage ledgers, token/cost quotas, prompt version metadata, and API key pool rotation.
 - JSON session event log for permission approval audit records.
 - Lock-protected atomic JSON session writes with recent-message retention.
 - `ToolRegistry` for tool discovery.
