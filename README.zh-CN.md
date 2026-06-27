@@ -12,7 +12,7 @@
 
 - 作为终端 CLI 运行。
 - 不传 task 时默认启动带持久化的多轮交互 REPL。
-- 支持 slash commands，在运行时切换或查看 profile/model/permission/policy/context/history/events/plan/review。
+- 支持 slash commands，在运行时切换或查看 profile/model/permission/policy/context/doctor/history/events/plan/review。
 - 会读取 `~/.minimal-agent/config.json` 和项目 `.minimal-agent.json` 作为启动默认值；`/config save` 可持久化运行时选择。
 - 会分层注入 `AGENTS.md`、`.agents/rules.md`、`.agents/rules.d/*.md` 和 `.minimal-agent-instructions.md` 中的项目规则，并带来源标注、去重、预算上限和冲突报告。
 - 支持通过 `--mcp-config` 接入 HTTP MCP server，并把 MCP 工具注册到同一个 `ToolRegistry`。
@@ -441,6 +441,7 @@ src/minimal_cli_agent/
 - MCP 注册和发现结果会写入 session events，可通过 `/events` 查询。
 - plugin manifest 会从工作区和用户插件目录自动发现，可声明 skill 与 MCP server 配置。
 - 结构化文件写入会用 sidecar schema 校验 JSON/YAML，并在可修复失败里返回格式化建议。
+- `/doctor` 会在不触网的前提下检查 workspace、session backend、model config、policy、MCP 和 plugins。
 
 当前请求的实现清单已完成。
 

@@ -87,6 +87,7 @@ Implemented:
 - Lock-protected atomic JSON session writes with recent-message retention.
 - Queryable recent session events through `/events`.
 - `/events` supports kind filtering, limit/offset pagination, and JSON output for audit export.
+- `/doctor` performs local, non-network health checks for workspace access, session backend, model config, policy, MCP config, and plugins.
 - `ToolRegistry` for tool discovery.
 - Built-in workspace `read_file`, `read_tail`, `read_forward`, `file_info`, `search`, `write_file`, and `edit_file` tools.
 - Manual MCP config loading with streamable HTTP JSON-RPC tools.

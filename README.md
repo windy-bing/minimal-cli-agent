@@ -12,7 +12,7 @@ The project starts intentionally small, but the code is split into replaceable m
 
 - Runs as a terminal CLI.
 - Starts a persistent multi-turn interactive session by default when run without a task.
-- Supports slash commands for runtime profile/model/permission/policy/context/history/events/plan/review control.
+- Supports slash commands for runtime profile/model/permission/policy/context/doctor/history/events/plan/review control.
 - Reads startup defaults from `~/.minimal-agent/config.json` and project `.minimal-agent.json`; `/config save` persists runtime choices.
 - Injects layered project rules from `AGENTS.md`, `.agents/rules.md`, `.agents/rules.d/*.md`, and `.minimal-agent-instructions.md` with source labels, duplicate removal, budgets, and conflict reports.
 - Supports MCP HTTP servers through `--mcp-config`, with MCP tools registered into the same `ToolRegistry`.
@@ -441,6 +441,7 @@ Reserved but intentionally minimal:
 - MCP registration and discovery outcomes are recorded in session events and queryable through `/events`.
 - Plugin manifests are discovered from workspace/user plugin directories and can load skills plus MCP server configs.
 - Structured file writes validate JSON/YAML with sidecar schemas and return formatter suggestions on repairable failures.
+- `/doctor` runs local health checks for workspace, session backend, model config, policy, MCP, and plugins without touching the network.
 
 Current requested implementation checklist is complete.
 

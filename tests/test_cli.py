@@ -173,7 +173,7 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
-        self.assertIn("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit", printed)
+        self.assertIn("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /doctor, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit", printed)
 
     def test_detect_explicit_options_supports_space_and_equals_forms(self) -> None:
         explicit = detect_explicit_options([
@@ -519,6 +519,36 @@ class CliTest(unittest.TestCase):
         self.assertIn("allow_command_prefixes: git status", printed)
         self.assertIn("write_allow_paths: src/**", printed)
         self.assertIn('"approved_actions": [\n    "shell"\n  ]', printed)
+
+    def test_run_interactive_doctor_reports_local_health(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            mcp_config = root / "mcp.json"
+            mcp_config.write_text(
+                json.dumps({"mcpServers": {"coffee": {"url": "https://example.test/${TOKEN}"}}}),
+                encoding="utf-8",
+            )
+            store = JsonSessionStore(root / "session.json")
+            config = AgentConfig(
+                cwd=root,
+                provider="openai-compatible",
+                model="gpt-test",
+                api_key=None,
+                mcp_config=mcp_config,
+                permission_mode="plan",
+            )
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=store))
+
+            with patch("builtins.input", side_effect=["/doctor", "/doctor json", "/quit"]), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, ChatContext(), session_store=store)
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("overall: warn", printed)
+        self.assertIn("warn: model - openai-compatible usually requires an API key", printed)
+        self.assertIn("unresolved environment placeholders", printed)
+        self.assertIn('"overall": "warn"', printed)
 
     def test_run_interactive_memory_search_uses_sqlite_store(self) -> None:
         model = CountingModel()

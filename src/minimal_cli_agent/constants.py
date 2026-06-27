@@ -253,6 +253,7 @@ class InteractiveCommands:
     NETWORK: Final = "/network"
     SUMMARIZE: Final = "/summarize"
     CONTEXT: Final = "/context"
+    DOCTOR: Final = "/doctor"
     HISTORY: Final = "/history"
     EVENTS: Final = "/events"
     PLAN: Final = "/plan"
@@ -282,6 +283,7 @@ class InteractiveCommands:
         NETWORK: "Toggle network shell commands. Usage: /network on|off",
         SUMMARIZE: "Toggle model context summaries. Usage: /summarize on|off",
         CONTEXT: "Manage context. Usage: /context status|compact|clear",
+        DOCTOR: "Run local health checks for config, workspace, session, policy, MCP, and plugins. Usage: /doctor [json]",
         HISTORY: "Show or replay user prompt history. Usage: /history [number]",
         EVENTS: "Show persisted session events. Usage: /events [kind] [limit] [offset] [format=json]",
         PLAN: "Create, show, or clear an isolated plan. Usage: /plan <goal>|show|clear",
@@ -311,6 +313,7 @@ class InteractiveCommands:
         NETWORK,
         SUMMARIZE,
         CONTEXT,
+        DOCTOR,
         HISTORY,
         EVENTS,
         PLAN,

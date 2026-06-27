@@ -24,6 +24,7 @@ from minimal_cli_agent.exceptions import AgentError, ConfigurationError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import compact_messages
 from minimal_cli_agent.memory import JsonSessionStore, SQLiteSessionStore
+from minimal_cli_agent.mcp_tools import load_mcp_config
 from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact, build_plan_prompt, create_plan_artifact, extract_plan_paths, format_plan_artifact, format_plan_execution_context
 from minimal_cli_agent.plugins import (
     discover_plugin_paths,
@@ -858,7 +859,7 @@ def is_user_prompt_history_entry(content: str) -> bool:
 
 
 def print_quick_command_hint() -> None:
-    print("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit")
+    print("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /doctor, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit")
 
 
 def print_interactive_help() -> None:
@@ -922,6 +923,9 @@ def handle_interactive_command(raw: str, session: InteractiveSession) -> Interac
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.CONTEXT:
         handle_context_command(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.DOCTOR:
+        handle_doctor_command(session, argument)
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.HISTORY:
         replay = handle_history_command(session, argument)
@@ -1213,6 +1217,125 @@ def update_boolean_option(session: InteractiveSession, field_name: str, value: s
         return
     setattr(session.agent.config, field_name, value == "on")
     print(f"{label}: {value}")
+
+
+def handle_doctor_command(session: InteractiveSession, argument: str) -> None:
+    if argument and argument != "json":
+        print(f"Usage: {InteractiveCommands.DOCTOR} [json]")
+        return
+    report = build_doctor_report(session)
+    if argument == "json":
+        print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+    print(f"overall: {report['overall']}")
+    for check in report["checks"]:
+        detail = f" - {check['detail']}" if check["detail"] else ""
+        print(f"{check['status']}: {check['name']}{detail}")
+
+
+def build_doctor_report(session: InteractiveSession) -> dict[str, Any]:
+    checks = [
+        doctor_check_workspace(session),
+        doctor_check_session(session),
+        doctor_check_model(session),
+        doctor_check_policy(session),
+        *doctor_check_mcp(session),
+        *doctor_check_plugins(session),
+    ]
+    overall = "error" if any(check["status"] == "error" for check in checks) else "warn" if any(check["status"] == "warn" for check in checks) else "ok"
+    return {"overall": overall, "checks": checks}
+
+
+def doctor_item(name: str, status: str, detail: str = "") -> dict[str, str]:
+    return {"name": name, "status": status, "detail": detail}
+
+
+def doctor_check_workspace(session: InteractiveSession) -> dict[str, str]:
+    cwd = session.agent.config.cwd
+    if not cwd.exists():
+        return doctor_item("workspace", "error", f"cwd does not exist: {cwd}")
+    if not cwd.is_dir():
+        return doctor_item("workspace", "error", f"cwd is not a directory: {cwd}")
+    if not os.access(cwd, os.R_OK | os.W_OK | os.X_OK):
+        return doctor_item("workspace", "warn", f"cwd may not be fully readable/writable: {cwd}")
+    return doctor_item("workspace", "ok", str(cwd))
+
+
+def doctor_check_session(session: InteractiveSession) -> dict[str, str]:
+    store = session.session_store
+    if store is None:
+        return doctor_item("session", "warn", "session persistence is disabled")
+    path = getattr(store, "path", None)
+    backend = "sqlite" if isinstance(store, SQLiteSessionStore) else "json"
+    if path is None:
+        return doctor_item("session", "ok", f"backend={backend}")
+    path = Path(path)
+    parent = path.parent
+    if not parent.exists():
+        return doctor_item("session", "warn", f"parent directory will be created: {parent}")
+    if not os.access(parent, os.W_OK):
+        return doctor_item("session", "error", f"session parent is not writable: {parent}")
+    return doctor_item("session", "ok", f"backend={backend} path={path}")
+
+
+def doctor_check_model(session: InteractiveSession) -> dict[str, str]:
+    config = session.agent.config
+    if not config.model.strip():
+        return doctor_item("model", "error", "model name is empty")
+    if config.provider in {Providers.OPENAI_COMPATIBLE, Providers.ANTHROPIC, Providers.GEMINI} and not config.api_key:
+        return doctor_item("model", "warn", f"{config.provider} usually requires an API key")
+    return doctor_item("model", "ok", f"{config.provider}:{config.model} base_url={config.base_url}")
+
+
+def doctor_check_policy(session: InteractiveSession) -> dict[str, str]:
+    config = session.agent.config
+    if config.policy_file and not config.policy_file.is_file():
+        return doctor_item("policy", "error", f"policy file not found: {config.policy_file}")
+    rules = session.agent.harness.policy.rules
+    detail = (
+        f"mode={config.permission_mode} allow_network={config.allow_network} "
+        f"write_allow={len(rules.write_allow_paths)} write_deny={len(rules.write_deny_paths)}"
+    )
+    return doctor_item("policy", "ok", detail)
+
+
+def doctor_check_mcp(session: InteractiveSession) -> list[dict[str, str]]:
+    config = session.agent.config
+    if config.mcp_config is None:
+        return [doctor_item("mcp", "ok", "no explicit MCP config")]
+    try:
+        servers = load_mcp_config(config.mcp_config)
+    except ConfigurationError as exc:
+        return [doctor_item("mcp", "error", str(exc))]
+    checks = []
+    for server in servers:
+        status = "warn" if server.has_unresolved_placeholders() else "ok"
+        detail = f"{server.name} url={server.url} discover_tools={server.discover_tools}"
+        if status == "warn":
+            detail += " unresolved environment placeholders"
+        checks.append(doctor_item("mcp", status, detail))
+    return checks or [doctor_item("mcp", "warn", "MCP config contains no servers")]
+
+
+def doctor_check_plugins(session: InteractiveSession) -> list[dict[str, str]]:
+    paths = session.agent.config.plugin_paths
+    if not paths:
+        return [doctor_item("plugins", "ok", "no plugins loaded")]
+    checks: list[dict[str, str]] = []
+    for path in paths:
+        try:
+            manifest = load_plugin_manifest(path)
+        except ConfigurationError as exc:
+            checks.append(doctor_item("plugins", "error", str(exc)))
+            continue
+        checks.append(
+            doctor_item(
+                "plugins",
+                "ok",
+                f"{manifest.name} skills={len(manifest.skill_paths)} mcp_configs={len(manifest.mcp_config_paths) + len(manifest.inline_mcp_configs)}",
+            )
+        )
+    return checks
 
 
 def handle_context_command(session: InteractiveSession, action: str) -> None:
