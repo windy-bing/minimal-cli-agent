@@ -87,21 +87,24 @@ Implemented:
 - Lock-protected atomic JSON session writes with recent-message retention.
 - Queryable recent session events through `/events`.
 - `ToolRegistry` for tool discovery.
-- Built-in workspace `read_file`, `read_tail`, `read_forward`, `search`, `write_file`, and `edit_file` tools.
+- Built-in workspace `read_file`, `read_tail`, `read_forward`, `file_info`, `search`, `write_file`, and `edit_file` tools.
 - Manual MCP config loading with streamable HTTP JSON-RPC tools.
 - Generic MCP list/call tools plus opt-in concrete tool registration from `tools/list` when `discoverTools` is enabled.
 - Local `SKILL.md` loading into the system prompt through `--skill`.
 - Workspace skill discovery and bulk loading through `/skills`.
+- Project rule injection from `AGENTS.md`, `.agents/rules.md`, and `.minimal-agent-instructions.md` with source labels, duplicate removal, and a prompt budget.
 - `search` has top-k, max-files, timeout, ignore-dir, extension, and `.gitignore` / `.agentignore` filters.
-- Structured write validation for JSON, TOML, XML, and YAML when PyYAML is available.
+- Structured write validation for JSON, TOML, XML, JSON sidecar schemas, and YAML when PyYAML is available.
 - Tool aliases plus recoverable discovery and validation observations.
 - Safe close-match suggestions for unknown tool names, without automatic fuzzy execution.
-- Focused `ToolSpec.parameters_schema` JSON Schema validation with nested objects, arrays, enum, oneOf/anyOf, bounds, and field-level repair observations.
+- Focused `ToolSpec.parameters_schema` JSON Schema validation with nested objects, arrays, enum, const, oneOf/anyOf/allOf/not, patterns, uniqueness, bounds, and field-level repair observations.
+- `ToolSpec` exposes risk level, output schema, and bounded retry metadata; successful tool outputs can be schema-verified during AutoVerify.
 - File writer tools combine same-process locks with cross-process lock files under `.agent/locks`.
-- File readers reject likely binary files and report file size, chars read, offsets, line paging state, and EOF metadata.
+- File readers reject likely binary files and report file size, chars read, offsets, line paging state, and EOF metadata; `file_info` gives a binary-safe file summary.
 - `read_forward` supports both byte-window paging and line-window paging.
 - `search` ranks matches before returning bounded top-k output.
-- `ResolveDecision` decision hooks can override policy decisions before confirmation.
+- `ResolveDecision` decision hooks run by priority, can override policy decisions before confirmation, and record conflict audit events.
+- Tool execution records machine-readable events with action, status, risk, attempts, schema state, and metadata.
 - Consistent tool observation formatting with `status`, `exit_code`, `command`, and `output`.
 - Secret redaction for command output and observations.
 - Network command hard gate with explicit `--allow-network` opt-in.
@@ -125,7 +128,6 @@ Discovery -> Validation -> Permission -> PreHook -> ResolveDecision
 
 Reserved:
 
-- `ResolveDecision` has a decision hook baseline. Richer priority rules and conflict reporting remain reserved.
 - `Confirmation` uses an injectable handler. CLI `input()` is the default adapter, and UI clients can provide their own handler.
 - `autoEdit` automatically approves file writer tools; shell commands still ask until explicitly approved once or for the session.
 - Tool schema validation is a focused JSON Schema subset, not a complete Draft implementation.

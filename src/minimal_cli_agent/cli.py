@@ -594,7 +594,7 @@ def summarize_tool_call(tool: str, payload: str) -> str:
     if not isinstance(data, dict):
         return f"{tool}: {first_line(payload)}"
 
-    if tool in {Tools.READ_FILE, Tools.READ_TAIL, Tools.READ_FORWARD}:
+    if tool in {Tools.READ_FILE, Tools.READ_TAIL, Tools.READ_FORWARD, Tools.FILE_INFO}:
         return f"{tool}: {compact_path(str(data.get('path', '<missing>')))}"
     if tool == Tools.SEARCH:
         pattern = str(data.get("pattern", ""))
@@ -632,7 +632,7 @@ def summarize_command(command: str) -> str:
     parts = command.split(maxsplit=1)
     tool = parts[0]
     target = compact_path(parts[1]) if len(parts) > 1 else ""
-    if tool in {Tools.READ_FILE, Tools.READ_TAIL, Tools.READ_FORWARD, Tools.SEARCH, Tools.WRITE_FILE, Tools.EDIT_FILE}:
+    if tool in {Tools.READ_FILE, Tools.READ_TAIL, Tools.READ_FORWARD, Tools.FILE_INFO, Tools.SEARCH, Tools.WRITE_FILE, Tools.EDIT_FILE}:
         return f"{tool} {target}".strip()
     return first_line(command)
 
@@ -991,7 +991,7 @@ def update_skill(session: InteractiveSession, skill_text: str) -> None:
     path = resolve_skill_path(skill_text, session.agent.config.cwd)
     if path not in session.agent.config.skill_paths:
         session.agent.config.skill_paths = (*session.agent.config.skill_paths, path)
-    prompt = build_system_prompt(INTERACTIVE_SYSTEM_PROMPT, session.agent.config.skill_paths)
+    prompt = build_system_prompt(INTERACTIVE_SYSTEM_PROMPT, session.agent.config.skill_paths, session.agent.config.cwd)
     upsert_system_prompt(session.context, prompt)
     rebuild_agent(session)
     print_config(session.agent.config)
@@ -1023,7 +1023,7 @@ def handle_skills_command(session: InteractiveSession, argument: str) -> None:
     for path in paths:
         if path not in session.agent.config.skill_paths:
             session.agent.config.skill_paths = (*session.agent.config.skill_paths, path)
-    prompt = build_system_prompt(INTERACTIVE_SYSTEM_PROMPT, session.agent.config.skill_paths)
+    prompt = build_system_prompt(INTERACTIVE_SYSTEM_PROMPT, session.agent.config.skill_paths, session.agent.config.cwd)
     upsert_system_prompt(session.context, prompt)
     rebuild_agent(session)
     print_config(session.agent.config)
@@ -1348,7 +1348,7 @@ def relative_or_absolute_path(path: Path, cwd: Path) -> str:
 
 def with_configured_skills(config: AgentConfig, options: LoopOptions | None) -> LoopOptions:
     base = options or LoopOptions()
-    prompt = build_system_prompt(base.system_prompt or SYSTEM_PROMPT, config.skill_paths)
+    prompt = build_system_prompt(base.system_prompt or SYSTEM_PROMPT, config.skill_paths, config.cwd)
     return LoopOptions(
         allow_final_text=base.allow_final_text,
         system_prompt=prompt,

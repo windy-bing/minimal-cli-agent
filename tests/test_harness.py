@@ -103,6 +103,21 @@ class HarnessTest(unittest.TestCase):
         self.assertEqual(observation.result.exit_code, 1)
         self.assertIn("binary", observation.result.output)
 
+    def test_file_info_summarizes_binary_file(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "image.bin"
+            path.write_bytes(b"abc\x00def")
+            harness = AgentHarness(AgentConfig(cwd=Path(tmp), permission_mode="plan"))
+
+            observation = harness.execute_tool(ToolCall(name=Tools.FILE_INFO, payload=json.dumps({"path": "image.bin"})))
+
+        data = json.loads(observation.result.output)
+        self.assertEqual(observation.result.exit_code, 0)
+        self.assertTrue(data["is_binary"])
+        self.assertEqual(data["path"], "image.bin")
+        self.assertRegex(data["sha256"], r"^[0-9a-f]{64}$")
+        self.assertIn("hex_preview", data)
+
     def test_search_returns_top_k_matches(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -230,6 +245,32 @@ class HarnessTest(unittest.TestCase):
             self.assertEqual(observation.result.exit_code, 0)
             self.assertEqual(observation.result.metadata["write_lock"], "cross_process")
             self.assertTrue(list((Path(tmp) / ".agent" / "locks").glob("*.lock")))
+
+    def test_write_file_rejects_json_that_violates_sidecar_schema(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "config.schema.json").write_text(
+                json.dumps(
+                    {
+                        "type": "object",
+                        "required": ["name"],
+                        "properties": {"name": {"type": "string", "pattern": "^[a-z]+$"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="autoEdit"))
+
+            observation = harness.execute_tool(
+                ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": "config.json", "content": '{"name":"ABC"}'}))
+            )
+
+            self.assertFalse((root / "config.json").exists())
+
+        self.assertTrue(observation.result.skipped)
+        self.assertEqual(observation.result.exit_code, 2)
+        self.assertIn("schema validation failed", observation.result.output)
+        self.assertIn("name: must match pattern", observation.result.output)
 
     def test_edit_file_replaces_line_range(self) -> None:
         with TemporaryDirectory() as tmp:

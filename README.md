@@ -14,6 +14,7 @@ The project starts intentionally small, but the code is split into replaceable m
 - Starts a persistent multi-turn interactive session by default when run without a task.
 - Supports slash commands for runtime profile/model/permission/context/history/plan/review control.
 - Reads startup defaults from `~/.minimal-agent/config.json` and project `.minimal-agent.json`; `/config save` persists runtime choices.
+- Injects bounded project rules from `AGENTS.md`, `.agents/rules.md`, and `.minimal-agent-instructions.md` with source labels and duplicate removal.
 - Supports MCP HTTP servers through `--mcp-config`, with MCP tools registered into the same `ToolRegistry`.
 - Supports local instruction skills through `--skill`, including the bundled Luckin Coffee `my-coffee` skill.
 - Supports local Ollama chat models by default.
@@ -39,6 +40,10 @@ ls -la
 ```
 
 ```tool-action
+{"tool":"file_info","path":"README.md"}
+```
+
+```tool-action
 {"tool":"search","pattern":"permission","path":".","top_k":20,"timeout_ms":2000,"ignore_dirs":["dist"],"include_extensions":[".py"]}
 ```
 
@@ -52,12 +57,12 @@ ls -la
 ````
 
 - Executes commands with timeout and non-interactive environment variables.
-- Reads, pages, tails, searches, and writes workspace files through structured tools instead of forcing file operations through shell commands.
+- Reads, pages, tails, summarizes, searches, and writes workspace files through structured tools instead of forcing file operations through shell commands.
 - Supports `edit_file` for incremental 1-based line range replacement without rewriting an entire file in the model output.
 - Serializes same-file writes inside the file tool environment.
 - Search supports `top_k`, `max_files`, `timeout_ms`, extra `ignore_dirs`, and `include_extensions`.
 - Search reads workspace `.gitignore` and `.agentignore` files for common directory and glob ignore patterns.
-- Validates JSON, TOML, and XML before `write_file` or `edit_file` writes them; YAML is validated when PyYAML is available.
+- Validates JSON, TOML, and XML before `write_file` or `edit_file` writes them; YAML is validated when PyYAML is available. JSON files can also be validated against sibling `*.schema.json` sidecar schemas.
 - Redacts common API keys, bearer tokens, and secret-looking values from command observations.
 - Blocks obvious network shell commands unless `--allow-network` is passed.
 - Supports shell policy allow prefixes, additional deny rules, and workspace write scopes through `--policy-file`.
@@ -397,13 +402,14 @@ Implemented:
 - `--max-steps 0` runs until the model exits or the user interrupts the turn.
 - Multiple action blocks per model turn are executed sequentially in output order.
 - `ToolRegistry` and staged `ToolExecutionPipeline`.
-- Built-in `read_file`, `read_tail`, `read_forward`, `search`, `write_file`, and `edit_file` tools for bounded workspace file access.
+- Built-in `read_file`, `read_tail`, `read_forward`, `file_info`, `search`, `write_file`, and `edit_file` tools for bounded workspace file access.
 - File writes use same-process and cross-process lock files under `.agent/locks`.
-- File readers detect likely binary files and include metadata such as file size, chars read, paging offsets, and EOF state.
+- File readers detect likely binary files and include metadata such as file size, chars read, paging offsets, and EOF state; `file_info` provides binary-safe size/hash/preview summaries.
 - `read_forward` supports byte paging and line paging through `mode:"lines"`, `line_offset`, and `line_limit`.
 - `search` respects built-in ignore dirs, explicit `ignore_dirs`, workspace `.gitignore` / `.agentignore` patterns, and ranked top-k output.
-- Structured write validation for JSON, TOML, XML, and optional PyYAML-backed YAML.
-- `ToolSpec` supports a focused JSON Schema subset with nested objects, arrays, enum, oneOf/anyOf, bounds, and field-level validation errors.
+- Structured write validation for JSON, TOML, XML, optional PyYAML-backed YAML, and JSON sidecar schemas.
+- `ToolSpec` supports risk levels, output schemas, bounded retry counts, and a focused JSON Schema subset with nested objects, arrays, enum, const, oneOf/anyOf/allOf/not, patterns, uniqueness, bounds, and field-level validation errors.
+- Tool execution events record action, status, risk, attempts, metadata, and whether an output schema was enforced.
 - Active plans are injected into execute turns; when a plan names concrete paths, writer tools are constrained to those planned paths.
 - `ShellAdapter` supports system shell, bash, zsh, sh, PowerShell, cmd, and Git Bash style command execution, with shell metadata in observations.
 - `ResolveDecision` supports decision hooks that can override policy decisions before confirmation.

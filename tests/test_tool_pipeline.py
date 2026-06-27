@@ -115,8 +115,69 @@ class ToolPipelineTest(unittest.TestCase):
         descriptions = harness.tool_registry.descriptions()
 
         self.assertIn("read_tail", descriptions)
+        self.assertIn("Risk: low", descriptions)
         self.assertIn("default=100", descriptions)
         self.assertIn("mode(string, default=\"bytes\", enum=\"bytes\"|\"lines\")", descriptions)
+
+    def test_tool_execution_event_records_risk_and_attempts(self) -> None:
+        with TemporaryDirectory() as tmp:
+            store = JsonSessionStore(Path(tmp) / "session.json")
+            harness = AgentHarness(AgentConfig(permission_mode="plan"), session_store=store)
+
+            harness.execute_tool(ToolCall(name=Tools.FILE_INFO, payload=json.dumps({"path": "missing.txt"})))
+            events = store.query_events(kind=EventKinds.TOOL_EXECUTION, limit=1)
+
+        self.assertEqual(events[0].data["action"], Tools.FILE_INFO)
+        self.assertEqual(events[0].data["status"], "failed")
+        self.assertEqual(events[0].data["risk"], "low")
+        self.assertEqual(events[0].data["attempts"], 1)
+
+    def test_tool_pipeline_retries_failed_result_when_spec_allows(self) -> None:
+        registry = ToolRegistry()
+        calls = {"count": 0}
+
+        def flaky(payload: str) -> CommandResult:
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return CommandResult("flaky", 1, "temporary")
+            return CommandResult("flaky", 0, "ok")
+
+        registry.register(ToolSpec(name="flaky", description="Flaky.", handler=flaky, retry_count=1))
+        harness = AgentHarness(AgentConfig(permission_mode="yolo"), tool_registry=registry)
+        harness.tool_pipeline.hooks.decision_hooks.append(
+            lambda call, decision: ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="test tool")
+        )
+
+        result = harness.tool_pipeline.execute(ToolCall(name="flaky", payload="x"))
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(result.output, "ok")
+        self.assertEqual(result.metadata["attempts"], 2)
+
+    def test_output_schema_validation_turns_bad_output_into_repair_observation(self) -> None:
+        registry = ToolRegistry()
+        registry.register(
+            ToolSpec(
+                name="bad_output",
+                description="Bad output.",
+                handler=lambda payload: CommandResult("bad_output", 0, "ok", metadata={"value": "wrong"}),
+                output_schema={
+                    "type": "object",
+                    "required": ["value"],
+                    "properties": {"value": {"type": "integer"}},
+                },
+            )
+        )
+        harness = AgentHarness(AgentConfig(permission_mode="yolo"), tool_registry=registry)
+        harness.tool_pipeline.hooks.decision_hooks.append(
+            lambda call, decision: ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="test tool")
+        )
+
+        result = harness.tool_pipeline.execute(ToolCall(name="bad_output", payload="x"))
+
+        self.assertTrue(result.skipped)
+        self.assertEqual(result.exit_code, 2)
+        self.assertIn("Tool output validation failed", result.output)
 
     def test_validation_error_returns_repair_observation(self) -> None:
         harness = AgentHarness(AgentConfig(permission_mode="yolo"))
@@ -219,6 +280,29 @@ class ToolPipelineTest(unittest.TestCase):
 
         self.assertEqual(validate_object_schema({"value": "abc"}, schema), [])
         self.assertIn("value: expected exactly one oneOf schema to match", validate_object_schema({"value": "x"}, schema))
+
+    def test_schema_validation_supports_draft_subset_keywords(self) -> None:
+        from minimal_cli_agent.tool_registry import validate_object_schema
+
+        schema = {
+            "type": "object",
+            "minProperties": 2,
+            "properties": {
+                "name": {"type": "string", "pattern": "^[a-z]+$"},
+                "count": {"type": "integer", "multipleOf": 2},
+                "tags": {"type": "array", "uniqueItems": True},
+                "kind": {"const": "demo"},
+            },
+            "allOf": [{"type": "object", "required": ["name", "kind"]}],
+        }
+
+        self.assertEqual(validate_object_schema({"name": "abc", "count": 4, "tags": ["x", "y"], "kind": "demo"}, schema), [])
+        errors = validate_object_schema({"name": "ABC", "count": 3, "tags": ["x", "x"], "kind": "other"}, schema)
+
+        self.assertIn("name: must match pattern ^[a-z]+$", errors)
+        self.assertIn("count: must be a multiple of 2", errors)
+        self.assertIn("tags: items must be unique", errors)
+        self.assertIn('kind: expected constant "demo"', errors)
 
     def test_tool_alias_resolves_to_registered_tool(self) -> None:
         harness = AgentHarness(AgentConfig(permission_mode="plan"))

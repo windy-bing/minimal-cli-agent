@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from minimal_cli_agent.constants import FileToolDefaults, ToolPayloadFields, Tools
+from minimal_cli_agent.tool_registry import validate_object_schema
 from minimal_cli_agent.types import AgentConfig, CommandResult, ToolValidationError
 
 READ_FILE_SCHEMA = {
@@ -51,6 +52,23 @@ READ_FORWARD_SCHEMA = {
             "minimum": 1,
             "maximum": FileToolDefaults.TAIL_MAX_LINES,
         },
+    },
+}
+
+FILE_INFO_SCHEMA = {
+    "type": "object",
+    "required": [ToolPayloadFields.PATH],
+    "properties": {ToolPayloadFields.PATH: {"type": "string"}},
+}
+
+FILE_INFO_OUTPUT_SCHEMA = {
+    "type": "object",
+    "required": ["file_size", "is_binary", "sha256", "path"],
+    "properties": {
+        "path": {"type": "string"},
+        "file_size": {"type": "integer", "minimum": 0},
+        "is_binary": {"type": "boolean"},
+        "sha256": {"type": "string", "pattern": r"^[0-9a-f]{64}$"},
     },
 }
 
@@ -248,6 +266,25 @@ class FileToolEnvironment:
             ),
         )
 
+    def file_info(self, payload: str) -> CommandResult:
+        try:
+            data = parse_payload(payload)
+            path = resolve_workspace_path(self.config.cwd, str(data[ToolPayloadFields.PATH]))
+        except ValueError as exc:
+            return CommandResult(command=f"{Tools.FILE_INFO} {payload}", exit_code=1, output=str(exc))
+        if not path.exists():
+            return CommandResult(command=f"{Tools.FILE_INFO} {path}", exit_code=1, output="file does not exist")
+        if not path.is_file():
+            return CommandResult(command=f"{Tools.FILE_INFO} {path}", exit_code=1, output="path is not a file")
+
+        metadata = file_info_metadata(path, self.config.cwd.resolve())
+        return CommandResult(
+            command=f"{Tools.FILE_INFO} {path}",
+            exit_code=0,
+            output=json.dumps(metadata, ensure_ascii=False, indent=2),
+            metadata=metadata,
+        )
+
     def search(self, payload: str) -> CommandResult:
         try:
             data = parse_payload(payload)
@@ -417,6 +454,15 @@ def read_forward_validator(payload: str) -> ToolValidationError | None:
     )
 
 
+def file_info_validator(payload: str) -> ToolValidationError | None:
+    return validate_json_fields(
+        tool_name=Tools.FILE_INFO,
+        payload=payload,
+        required_fields=(ToolPayloadFields.PATH,),
+        expected_format=Tools.FILE_INFO_EXPECTED_FORMAT,
+    )
+
+
 def search_validator(payload: str) -> ToolValidationError | None:
     return validate_json_fields(
         tool_name=Tools.SEARCH,
@@ -528,6 +574,37 @@ def file_read_metadata(path: Path, chars_read: int, **extra: Any) -> dict[str, A
     }
     metadata.update(extra)
     return metadata
+
+
+def file_info_metadata(path: Path, workspace: Path) -> dict[str, Any]:
+    sample = read_file_sample(path)
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    is_binary = is_probably_binary(path)
+    metadata: dict[str, Any] = {
+        "path": path.relative_to(workspace).as_posix(),
+        "file_size": path.stat().st_size,
+        "is_binary": is_binary,
+        "sha256": digest.hexdigest(),
+        "sample_bytes": len(sample),
+    }
+    if not is_binary:
+        text = sample.decode("utf-8", errors="replace")
+        metadata["line_count_sample"] = len(text.splitlines())
+        metadata["preview"] = text[:500]
+    else:
+        metadata["hex_preview"] = sample[:64].hex()
+    return metadata
+
+
+def read_file_sample(path: Path, sample_size: int = 4096) -> bytes:
+    try:
+        with path.open("rb") as file:
+            return file.read(sample_size)
+    except OSError:
+        return b""
 
 
 def split_replacement_lines(content: str) -> list[str]:
@@ -707,9 +784,10 @@ def should_ignore_path(path: Path, workspace: Path, ignore_dirs: tuple[str, ...]
 
 def validate_structured_content(path: Path, content: str) -> str | None:
     suffix = path.suffix.lower()
+    parsed_json: Any = None
     try:
         if suffix in FileToolDefaults.JSON_SUFFIXES:
-            json.loads(content)
+            parsed_json = json.loads(content)
         elif suffix in FileToolDefaults.TOML_SUFFIXES:
             tomllib.loads(content)
         elif suffix in FileToolDefaults.XML_SUFFIXES:
@@ -718,6 +796,38 @@ def validate_structured_content(path: Path, content: str) -> str | None:
             return validate_yaml_content(content)
     except (json.JSONDecodeError, tomllib.TOMLDecodeError, ET.ParseError) as exc:
         return f"Structured file validation failed for {path.name}: {exc}"
+    if suffix in FileToolDefaults.JSON_SUFFIXES:
+        schema_error = validate_json_sidecar_schema(path, parsed_json)
+        if schema_error is not None:
+            return schema_error
+    return None
+
+
+def validate_json_sidecar_schema(path: Path, data: Any) -> str | None:
+    schema_path = find_json_schema_path(path)
+    if schema_path is None:
+        return None
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return f"Structured file schema validation failed for {path.name}: invalid schema {schema_path.name}: {exc}"
+    if not isinstance(schema, dict):
+        return f"Structured file schema validation failed for {path.name}: schema {schema_path.name} must be a JSON object"
+    errors = validate_object_schema(data, schema)
+    if errors:
+        rendered = "\n".join(f"- {error}" for error in errors)
+        return f"Structured file schema validation failed for {path.name} using {schema_path.name}:\n{rendered}"
+    return None
+
+
+def find_json_schema_path(path: Path) -> Path | None:
+    candidates = (
+        path.with_suffix(".schema.json"),
+        path.with_name(f"{path.name}.schema.json"),
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
     return None
 
 

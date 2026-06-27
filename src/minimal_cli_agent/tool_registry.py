@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -34,6 +35,9 @@ class ToolSpec:
     aliases: tuple[str, ...] = field(default_factory=tuple)
     validator: ToolValidator | None = None
     parameters_schema: dict[str, Any] | None = None
+    output_schema: dict[str, Any] | None = None
+    risk_level: str = "low"
+    retry_count: int = 0
 
     def validate(self, payload: str) -> ToolValidationError | None:
         if self.parameters_schema is not None:
@@ -52,6 +56,19 @@ class ToolSpec:
         if self.parameters_schema is None:
             return self.expected_format
         return describe_schema(self.parameters_schema)
+
+    def validate_output(self, result: CommandResult) -> list[str]:
+        if self.output_schema is None:
+            return []
+        data: Any
+        if result.metadata:
+            data = result.metadata
+        else:
+            try:
+                data = json.loads(result.output)
+            except json.JSONDecodeError:
+                data = result.output
+        return validate_object_schema(data, self.output_schema)
 
 
 class ToolRegistry:
@@ -86,7 +103,10 @@ class ToolRegistry:
         return self._tools[canonical_name].handler(payload)
 
     def descriptions(self) -> str:
-        return "\n".join(f"- {spec.name}: {spec.description} Parameters: {spec.schema_documentation()}" for spec in self._tools.values())
+        return "\n".join(
+            f"- {spec.name}: {spec.description} Risk: {spec.risk_level}. Parameters: {spec.schema_documentation()}"
+            for spec in self._tools.values()
+        )
 
 
 def validate_payload_schema(
@@ -183,10 +203,25 @@ def validate_object_schema(data: Any, schema: dict[str, Any]) -> list[str]:
 def validate_schema_value(path: str, value: Any, schema: dict[str, Any], root: bool = False) -> list[str]:
     errors: list[str] = []
 
+    if "const" in schema and value != schema["const"]:
+        return [f"{path}: expected constant {json.dumps(schema['const'])}"]
+
     enum_values = schema.get("enum")
     if isinstance(enum_values, list) and value not in enum_values:
         allowed = ", ".join(json.dumps(item) for item in enum_values)
         return [f"{path}: expected one of {allowed}"]
+
+    all_of = schema.get("allOf")
+    if isinstance(all_of, list):
+        for candidate in all_of:
+            if isinstance(candidate, dict):
+                errors.extend(validate_schema_value(path, value, candidate, root))
+        if errors:
+            return errors
+
+    not_schema = schema.get("not")
+    if isinstance(not_schema, dict) and not validate_schema_value(path, value, not_schema, root):
+        return [f"{path}: must not match forbidden schema"]
 
     one_of = schema.get("oneOf")
     if isinstance(one_of, list):
@@ -214,6 +249,12 @@ def validate_schema_value(path: str, value: Any, schema: dict[str, Any], root: b
 
         properties = schema.get("properties", {})
         required = schema.get("required", [])
+        min_properties = schema.get("minProperties")
+        max_properties = schema.get("maxProperties")
+        if isinstance(min_properties, int) and len(value) < min_properties:
+            errors.append(f"{path}: must contain >= {min_properties} properties")
+        if isinstance(max_properties, int) and len(value) > max_properties:
+            errors.append(f"{path}: must contain <= {max_properties} properties")
         if isinstance(required, list):
             for field_name in required:
                 if field_name not in value or value[field_name] is None:
@@ -246,6 +287,8 @@ def validate_schema_value(path: str, value: Any, schema: dict[str, Any], root: b
             errors.append(f"{path}: must contain >= {min_items} items")
         if isinstance(max_items, int) and len(value) > max_items:
             errors.append(f"{path}: must contain <= {max_items} items")
+        if schema.get("uniqueItems") is True and not has_unique_json_items(value):
+            errors.append(f"{path}: items must be unique")
         item_schema = schema.get("items")
         if isinstance(item_schema, dict):
             item_type = item_schema.get("type")
@@ -265,6 +308,13 @@ def validate_schema_value(path: str, value: Any, schema: dict[str, Any], root: b
             errors.append(f"{path}: length must be >= {min_length}")
         if isinstance(max_length, int) and len(value) > max_length:
             errors.append(f"{path}: length must be <= {max_length}")
+        pattern = schema.get("pattern")
+        if isinstance(pattern, str):
+            try:
+                if re.search(pattern, value) is None:
+                    errors.append(f"{path}: must match pattern {pattern}")
+            except re.error:
+                errors.append(f"{path}: schema pattern is invalid")
         return errors
 
     if expected_type == "integer":
@@ -296,7 +346,22 @@ def validate_number_bounds(path: str, value: int | float, schema: dict[str, Any]
         errors.append(f"{path}: must be >= {minimum}")
     if isinstance(maximum, (int, float)) and value > maximum:
         errors.append(f"{path}: must be <= {maximum}")
+    multiple_of = schema.get("multipleOf")
+    if isinstance(multiple_of, (int, float)) and multiple_of != 0:
+        quotient = value / multiple_of
+        if abs(quotient - round(quotient)) > 1e-9:
+            errors.append(f"{path}: must be a multiple of {multiple_of}")
     return errors
+
+
+def has_unique_json_items(values: list[Any]) -> bool:
+    seen: set[str] = set()
+    for value in values:
+        marker = json.dumps(value, sort_keys=True, ensure_ascii=False)
+        if marker in seen:
+            return False
+        seen.add(marker)
+    return True
 
 
 def describe_bounds(schema: dict[str, Any]) -> str:

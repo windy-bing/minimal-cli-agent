@@ -72,6 +72,7 @@ class EventKinds:
     PERMISSION_DECISION: Final = "permission_decision"
     TOOL_DECISION: Final = "tool_decision"
     TOOL_DECISION_CONFLICT: Final = "tool_decision_conflict"
+    TOOL_EXECUTION: Final = "tool_execution"
 
 
 class PermissionEventFields:
@@ -88,6 +89,17 @@ class ToolDecisionEventFields:
     FINAL_DECISION: Final = "final_decision"
     REASON: Final = "reason"
     HOOKS: Final = "hooks"
+    PAYLOAD: Final = "payload"
+
+
+class ToolExecutionEventFields:
+    ACTION: Final = "action"
+    EXIT_CODE: Final = "exit_code"
+    STATUS: Final = "status"
+    ATTEMPTS: Final = "attempts"
+    RISK: Final = "risk"
+    OUTPUT_SCHEMA: Final = "output_schema"
+    METADATA: Final = "metadata"
     PAYLOAD: Final = "payload"
 
 
@@ -151,6 +163,7 @@ class Defaults:
     LOCAL_CONFIG_FILE: Final = ".minimal-agent.json"
     USER_CONFIG_DIR: Final = ".minimal-agent"
     USER_CONFIG_FILE: Final = "config.json"
+    PROJECT_RULES_MAX_CHARS: Final = "8000"
 
 
 class FileToolDefaults:
@@ -186,6 +199,9 @@ class Tools:
     READ_FORWARD: Final = "read_forward"
     READ_FORWARD_ALIASES: Final = ("readForward",)
     READ_FORWARD_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt","offset":0,"limit":8192}'
+    FILE_INFO: Final = "file_info"
+    FILE_INFO_ALIASES: Final = ("stat_file", "fileInfo")
+    FILE_INFO_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt"}'
     SEARCH: Final = "search"
     SEARCH_ALIASES: Final = ("grep", "rg")
     SEARCH_EXPECTED_FORMAT: Final = '{"pattern":"needle","path":".","top_k":20,"max_files":200,"timeout_ms":2000}'
@@ -195,7 +211,7 @@ class Tools:
     EDIT_FILE: Final = "edit_file"
     EDIT_FILE_ALIASES: Final = ("edit", "patch_file", "patchFile")
     EDIT_FILE_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt","start_line":10,"end_line":12,"content":"replacement"}'
-    READ_ONLY: Final = (READ_FILE, READ_TAIL, READ_FORWARD, SEARCH)
+    READ_ONLY: Final = (READ_FILE, READ_TAIL, READ_FORWARD, FILE_INFO, SEARCH)
     WRITERS: Final = (WRITE_FILE, EDIT_FILE)
 
 

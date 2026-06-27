@@ -8,12 +8,15 @@ from minimal_cli_agent.environment import LocalEnvironment
 from minimal_cli_agent.file_tools import (
     FileToolEnvironment,
     EDIT_FILE_SCHEMA,
+    FILE_INFO_OUTPUT_SCHEMA,
+    FILE_INFO_SCHEMA,
     READ_FILE_SCHEMA,
     READ_FORWARD_SCHEMA,
     READ_TAIL_SCHEMA,
     SEARCH_SCHEMA,
     WRITE_FILE_SCHEMA,
     edit_file_validator,
+    file_info_validator,
     read_file_validator,
     read_forward_validator,
     read_tail_validator,
@@ -101,6 +104,18 @@ class AgentHarness:
         )
         self.tool_registry.register(
             ToolSpec(
+                name=Tools.FILE_INFO,
+                description="Summarize file metadata, binary status, hash, and a small safe preview inside the workspace.",
+                handler=self.file_environment.file_info,
+                expected_format=Tools.FILE_INFO_EXPECTED_FORMAT,
+                aliases=Tools.FILE_INFO_ALIASES,
+                validator=file_info_validator,
+                parameters_schema=FILE_INFO_SCHEMA,
+                output_schema=FILE_INFO_OUTPUT_SCHEMA,
+            )
+        )
+        self.tool_registry.register(
+            ToolSpec(
                 name=Tools.SEARCH,
                 description="Search workspace text files with top-k and file-count limits.",
                 handler=self.file_environment.search,
@@ -119,6 +134,7 @@ class AgentHarness:
                 aliases=Tools.WRITE_FILE_ALIASES,
                 validator=write_file_validator,
                 parameters_schema=WRITE_FILE_SCHEMA,
+                risk_level="medium",
             )
         )
         self.tool_registry.register(
@@ -130,6 +146,7 @@ class AgentHarness:
                 aliases=Tools.EDIT_FILE_ALIASES,
                 validator=edit_file_validator,
                 parameters_schema=EDIT_FILE_SCHEMA,
+                risk_level="medium",
             )
         )
         if self.config.mcp_config is not None:

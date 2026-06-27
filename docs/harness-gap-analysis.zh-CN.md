@@ -13,7 +13,7 @@
 
 | 主题 | 当前状态 | 下一步 |
 | --- | --- | --- |
-| 工具执行管道 | 已有 `ToolExecutionPipeline` 阶段形状，`ResolveDecision` 已支持 decision hook 优先级、冲突报告和 session 审计事件，但 `AutoVerify` 很薄 | 补确认 UI 适配、重试和格式化策略 |
+| 工具执行管道 | 已有 `ToolExecutionPipeline` 阶段形状，`ResolveDecision` 已支持 decision hook 优先级、冲突报告和 session 审计事件；`AutoVerify` 已支持输出 schema 校验，工具可配置有限重试 | 补确认 UI 适配和更丰富格式化策略 |
 | 权限 hard gate | 已有 `ShellPermissionPolicy`、`ToolDecision`、`plan` 跳过执行、`yolo` 仍受硬拒绝规则限制；policy 文件支持命令 allow 前缀、追加 deny token 和写入 allow/deny 路径范围 | 后续增加更丰富的策略报告、角色化能力和可查询审计日志 |
 | 上下文压缩 | 默认启用模型摘要式压缩，仍缺原始 transcript 双轨保留和可召回 memory | 增加原始 transcript 保留、可召回 summary/memory |
 | Memory 管理 | 默认 JSON session 已支持 lock 保护、原子写、最近消息裁剪、active plan、typed workflow state 和 `/events` 最近事件查询 | 后续实现 SQLite session log 和 memory retrieval |
@@ -26,17 +26,17 @@
 
 | 主题 | 风险 | 建议 |
 | --- | --- | --- |
-| 完整 JSON Schema | 已有聚焦 JSON Schema 子集，支持 nested object、array、enum、oneOf/anyOf、边界约束、默认值注入、schema 文档生成和字段级 repair observation | 后续补更完整 Draft 兼容 |
+| 完整 JSON Schema | 已有聚焦 JSON Schema 子集，支持 nested object、array、enum、const、oneOf/anyOf/allOf/not、pattern、uniqueItems、multipleOf、边界约束、默认值注入、schema 文档生成和字段级 repair observation | 后续补更完整 Draft 兼容 |
 | 工具模糊识别 | 已在 Discovery 阶段返回安全的相近工具名建议，但不会自动执行猜测 | 后续可加入风险等级过滤和更细的提示文案 |
-| 文件读取工具性能 | 已实现 `read_tail` / `read_forward` 基线，`read_forward` 支持 byte/line 双模式，读文件 observation 会带分页 metadata，并会拒绝疑似二进制文件 | 后续补编码策略、二进制专用摘要和持久分页游标 |
+| 文件读取工具性能 | 已实现 `read_tail` / `read_forward` / `file_info` 基线，`read_forward` 支持 byte/line 双模式，读文件 observation 会带分页 metadata，并会拒绝疑似二进制文件；`file_info` 提供二进制安全摘要 | 后续补编码策略和持久分页游标 |
 | grep/search top-k | 已实现 `search(pattern,path,top_k,max_files,timeout_ms)`，支持额外 ignore dirs、extension filter、项目 ignore 文件解析和相关性 ranking | 后续补渐进输出和更丰富的 ranking 特征 |
-| 结构化文本编辑校验 | `write_file`/`edit_file` 已有 JSON/TOML/XML 写入前校验，YAML 在 PyYAML 可用时校验；还没有 schema 级校验和自动格式化 | 下一步补 JSON Schema、YAML schema、格式化建议和字段级 repair observation |
+| 结构化文本编辑校验 | `write_file`/`edit_file` 已有 JSON/TOML/XML 写入前校验，YAML 在 PyYAML 可用时校验；JSON 已支持 sibling sidecar schema 校验 | 下一步补 YAML schema、格式化建议和字段级 repair observation |
 | Plan Mode 上下文隔离 | `/plan` 已使用独立 context；execute 阶段会读取 active plan，并在计划包含路径时约束 writer 工具路径 | 后续补 typed workflow state 和更细 tool allowlist |
 | OS shell adapter | 已有 `ShellAdapter`，支持 system/bash/zsh/sh/powershell/cmd/git-bash，并在 observation 暴露 shell/cwd/encoding/path separator | 后续补真实 Windows 环境集成测试和更细 path rules |
 | 环境变量刷新 | 长会话里环境变化不能被 runtime 感知 | Environment 每次执行前重建 env snapshot，并记录差异或允许 hook 更新 |
 | 编码和换行 | Windows/codepage/二进制输出可能破坏 observation | 统一 stdout/stderr decoding 策略，保留 raw bytes 截断摘要 |
 | 提示词预算治理 | 工具说明已由 schema 文档生成短描述，仍缺按预算裁剪和长说明召回 | Prompt 应该按角色和可用工具动态生成，长说明按需召回 |
-| AGENTS/项目规则注入治理 | 项目规则可能臃肿、冲突或被提示注入污染 | 项目规则需要分层、去重、冲突检测、来源标注和预算上限 |
+| AGENTS/项目规则注入治理 | 已支持 `AGENTS.md`、`.agents/rules.md`、`.minimal-agent-instructions.md` 的来源标注、去重和预算上限 | 后续补冲突检测和更细分层 |
 
 ## 已由当前设计规避
 
@@ -70,10 +70,10 @@
 
 目标是让工具错误可恢复、可审计、可验证。
 
-- `ToolSpec` 已支持聚焦 JSON Schema 子集、默认值注入和 schema 文档生成；下一步补风险等级和输出 schema。
+- `ToolSpec` 已支持聚焦 JSON Schema 子集、默认值注入、schema 文档生成、风险等级、输出 schema 和有限重试。
 - `Validation` 阶段已返回可恢复 observation 和字段级错误。
-- `Formatting` 阶段已有统一 observation 基线，包含 `status`、`exit_code`、`command` 和 `output`；下一步补输出 schema 和机器可解析事件。
-- `ToolExecutionPipeline` 已增加 decision hook 优先级、冲突报告、审计事件和测试覆盖；下一步补重试策略和更丰富的自动校验。
+- `Formatting` 阶段已有统一 observation 基线，包含 `status`、`exit_code`、`command` 和 `output`；工具执行会写机器可解析 event。
+- `ToolExecutionPipeline` 已增加 decision hook 优先级、冲突报告、审计事件、有限重试、输出 schema 自动校验和测试覆盖；下一步补更丰富的自动校验。
 
 ### Phase 2: File Tool Baseline
 
@@ -82,7 +82,7 @@
 - `read_tail(path, lines, max_bytes)` 已使用尾部窗口读取，不整文件读入。
 - `read_forward(path, offset, limit)` 已支持 byte offset 分页和最大输出；`mode:"lines"` 支持按行分页并返回下一页 offset。
 - `search(pattern, path, top_k, max_files, timeout_ms)` 已有 top-k、文件数、超时、额外忽略目录、扩展名过滤、`.gitignore` / `.agentignore` 解析和相关性 ranking。
-- `write_file` 和 `edit_file` 已对 JSON/TOML/XML 做 parse validation，YAML 在 PyYAML 可用时校验；下一步补 schema validation 和自动格式化。
+- `write_file` 和 `edit_file` 已对 JSON/TOML/XML 做 parse validation，YAML 在 PyYAML 可用时校验，JSON 可使用 sibling sidecar schema 校验；下一步补自动格式化。
 
 ### Phase 3: Plan/Execute Separation
 
@@ -109,7 +109,7 @@
 
 - 按 agent role 生成短 system prompt。
 - 工具说明短描述默认注入，长说明按需召回。
-- AGENTS/项目规则分层、去重、冲突检测、预算上限。
+- AGENTS/项目规则已支持来源标注、去重和预算上限；后续补冲突检测和更细分层。
 - JSON session event log 保存最近可查询事件；后续 EventStore 保存完整 transcript，WorkingMemory 只保存压缩上下文，RetrievalMemory 负责召回。
 
 ## 不建议现在做

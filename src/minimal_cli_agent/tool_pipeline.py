@@ -6,7 +6,7 @@ from typing import Callable
 from minimal_cli_agent.interfaces import PermissionPolicy
 from minimal_cli_agent.tool_registry import ToolRegistry
 from minimal_cli_agent.exceptions import PermissionDenied
-from minimal_cli_agent.constants import EventKinds, ToolDecisionEventFields, ToolDecisionKinds
+from minimal_cli_agent.constants import EventKinds, ToolDecisionEventFields, ToolDecisionKinds, ToolExecutionEventFields
 from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.types import CommandResult, ToolCall, ToolDecision, ToolDiscoveryError
 
@@ -71,7 +71,9 @@ class ToolExecutionPipeline:
         result = self._execution(canonical_call)
         self._post_hook(canonical_call, result)
         self._auto_verify(canonical_call, result)
-        return self._formatting(result)
+        formatted = self._formatting(result)
+        self._record_execution_event(canonical_call, spec, formatted)
+        return formatted
 
     def _discovery(self, call: ToolCall):
         return self.registry.require(call.name)
@@ -135,18 +137,56 @@ class ToolExecutionPipeline:
         return self.permission_policy.confirm(call.name, call.payload, decision)
 
     def _execution(self, call: ToolCall) -> CommandResult:
-        return self.registry.execute(call.name, call.payload)
+        spec = self.registry.require(call.name)
+        attempts = 0
+        result: CommandResult | None = None
+        for attempts in range(1, max(0, spec.retry_count) + 2):
+            result = self.registry.execute(call.name, call.payload)
+            result.metadata.setdefault("attempts", attempts)
+            if result.exit_code == 0 or result.skipped:
+                return result
+        assert result is not None
+        result.metadata.setdefault("attempts", attempts)
+        return result
 
     def _post_hook(self, call: ToolCall, result: CommandResult) -> None:
         for hook in self.hooks.post_hooks:
             hook(call, result)
 
     def _auto_verify(self, call: ToolCall, result: CommandResult) -> None:
+        spec = self.registry.require(call.name)
         if result.output is None:
             raise ValueError(f"Tool {call.name} returned an invalid result.")
+        output_errors = spec.validate_output(result) if result.exit_code == 0 and not result.skipped else []
+        if output_errors:
+            result.exit_code = 2
+            result.skipped = True
+            result.output = (
+                f"Tool output validation failed for {call.name}:\n"
+                + "\n".join(f"- {error}" for error in output_errors)
+                + f"\noriginal_output:\n{result.output}"
+            )
 
     def _formatting(self, result: CommandResult) -> CommandResult:
         return result
+
+    def _record_execution_event(self, call: ToolCall, spec, result: CommandResult) -> None:
+        if not self.audit_recorder:
+            return
+        status = "skipped" if result.skipped else "success" if result.exit_code == 0 else "failed"
+        self.audit_recorder(
+            EventKinds.TOOL_EXECUTION,
+            {
+                ToolExecutionEventFields.ACTION: call.name,
+                ToolExecutionEventFields.EXIT_CODE: result.exit_code,
+                ToolExecutionEventFields.STATUS: status,
+                ToolExecutionEventFields.ATTEMPTS: result.metadata.get("attempts", 1),
+                ToolExecutionEventFields.RISK: spec.risk_level,
+                ToolExecutionEventFields.OUTPUT_SCHEMA: bool(spec.output_schema),
+                ToolExecutionEventFields.METADATA: result.metadata,
+                ToolExecutionEventFields.PAYLOAD: redact_text(call.payload),
+            },
+        )
 
 
 def sorted_decision_hooks(hooks: list[DecisionHook | DecisionHookSpec]) -> list[DecisionHookSpec]:

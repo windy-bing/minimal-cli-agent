@@ -606,6 +606,21 @@ class CliTest(unittest.TestCase):
         self.assertIn("Active execution plan:", model.messages[0].content)
         self.assertIn("README.md", model.messages[0].content)
 
+    def test_run_turn_injects_project_rules_into_system_prompt(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "AGENTS.md").write_text("Always run focused tests.", encoding="utf-8")
+            model = CapturingModel("Done.\n```bash-action\nexit\n```")
+            config = AgentConfig(cwd=root, permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+
+            with patch("builtins.print"):
+                exit_code = run_turn(agent, "follow project rules", ChatContext())
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Project rules:", model.messages[0].content)
+        self.assertIn("Always run focused tests.", model.messages[0].content)
+
     def test_active_plan_restricts_writer_paths_when_paths_are_known(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

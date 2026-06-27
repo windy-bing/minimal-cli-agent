@@ -14,6 +14,7 @@
 - 不传 task 时默认启动带持久化的多轮交互 REPL。
 - 支持 slash commands，在运行时切换 profile/model/permission/context/history/plan/review。
 - 会读取 `~/.minimal-agent/config.json` 和项目 `.minimal-agent.json` 作为启动默认值；`/config save` 可持久化运行时选择。
+- 会注入 `AGENTS.md`、`.agents/rules.md` 和 `.minimal-agent-instructions.md` 中的项目规则，并带来源标注、去重和预算上限。
 - 支持通过 `--mcp-config` 接入 HTTP MCP server，并把 MCP 工具注册到同一个 `ToolRegistry`。
 - 支持通过 `--skill` 加载本地 instruction skill，包括已安装的瑞幸咖啡 `my-coffee` skill。
 - 默认支持本地 Ollama chat 模型。
@@ -39,6 +40,10 @@ ls -la
 ```
 
 ```tool-action
+{"tool":"file_info","path":"README.md"}
+```
+
+```tool-action
 {"tool":"search","pattern":"permission","path":".","top_k":20,"timeout_ms":2000,"ignore_dirs":["dist"],"include_extensions":[".py"]}
 ```
 
@@ -52,12 +57,12 @@ ls -la
 ````
 
 - 执行命令时带超时控制和非交互环境变量。
-- 通过结构化工具读取、分页读取、读取尾部、搜索和写入工作区文件，不强迫模型用 shell 操作文件。
+- 通过结构化工具读取、分页读取、读取尾部、摘要、搜索和写入工作区文件，不强迫模型用 shell 操作文件。
 - 支持 `edit_file` 做 1-based 行号范围增量替换，不需要让模型重写整个文件。
 - 文件工具环境会串行化同文件写入。
 - 搜索支持 `top_k`、`max_files`、`timeout_ms`、额外 `ignore_dirs` 和 `include_extensions`。
 - 搜索会读取工作区 `.gitignore` 和 `.agentignore`，支持常见目录和 glob 忽略模式。
-- `write_file` 或 `edit_file` 写入 JSON、TOML、XML 前会先校验格式；YAML 在安装 PyYAML 时也会校验。
+- `write_file` 或 `edit_file` 写入 JSON、TOML、XML 前会先校验格式；YAML 在安装 PyYAML 时也会校验。JSON 文件还可使用同目录 `*.schema.json` sidecar schema 校验结构。
 - 会从命令 observation 中清洗常见 API key、bearer token 和疑似密钥值。
 - 默认阻止明显的网络 shell 命令，除非显式传入 `--allow-network`。
 - 支持通过 `--policy-file` 配置 shell allow 前缀、追加 deny 规则和工作区写入范围。
@@ -75,6 +80,7 @@ ls -la
 - 未知工具会返回安全的相近工具名建议，但不会自动猜测并执行。
 - 工具参数校验会对结构化 payload 返回字段级 repair observation。
 - 工具管道 decision hooks 可以在确认前仲裁 `allow` / `ask` / `deny` / `skip` 决策。
+- ToolSpec 支持风险等级、输出 schema 和有限重试；工具执行事件会记录 action、status、risk、attempts、metadata 和输出 schema 状态。
 - 工具 observation 统一包含 `status`、`exit_code`、`command` 和 `output`。
 - Agent loop 运行在 `AgentHarness` 边界后面，tools、memory、policy、context、environment 可以独立演进。
 - 默认不限制 agent loop 步数（`max_steps=0`），直到模型退出或用户中断。
