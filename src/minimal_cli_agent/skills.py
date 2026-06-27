@@ -14,6 +14,17 @@ def resolve_skill_paths(items: list[str], cwd: Path) -> tuple[Path, ...]:
     return tuple(paths)
 
 
+def discover_skill_paths(cwd: Path) -> tuple[Path, ...]:
+    skills_dir = cwd / "skills"
+    if not skills_dir.is_dir():
+        return ()
+    paths = []
+    for path in sorted(skills_dir.glob(f"*/{SKILL_FILE_NAME}")):
+        if path.is_file():
+            paths.append(path.resolve())
+    return tuple(paths)
+
+
 def resolve_skill_path(item: str, cwd: Path) -> Path:
     candidate = Path(item).expanduser()
     if not candidate.is_absolute():

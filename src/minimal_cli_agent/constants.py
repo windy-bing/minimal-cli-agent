@@ -60,6 +60,7 @@ class SessionFields:
     MESSAGES: Final = "messages"
     EVENTS: Final = "events"
     PLAN: Final = "plan"
+    WORKFLOW: Final = "workflow"
     ROLE: Final = "role"
     CONTENT: Final = "content"
     KIND: Final = "kind"
@@ -218,10 +219,13 @@ class InteractiveCommands:
     SUMMARIZE: Final = "/summarize"
     CONTEXT: Final = "/context"
     HISTORY: Final = "/history"
+    EVENTS: Final = "/events"
     PLAN: Final = "/plan"
+    WORKFLOW: Final = "/workflow"
     REVIEW: Final = "/review"
     MCP: Final = "/mcp"
     SKILL: Final = "/skill"
+    SKILLS: Final = "/skills"
     EXIT: Final = "/exit"
     QUIT: Final = "/quit"
     PLAIN_EXIT: Final = "exit"
@@ -239,10 +243,13 @@ class InteractiveCommands:
         SUMMARIZE: "Toggle model context summaries. Usage: /summarize on|off",
         CONTEXT: "Manage context. Usage: /context status|compact|clear",
         HISTORY: "Show or replay user prompt history. Usage: /history [number]",
+        EVENTS: "Show persisted session events. Usage: /events [kind|number]",
         PLAN: "Create, show, or clear an isolated plan. Usage: /plan <goal>|show|clear",
+        WORKFLOW: "Manage typed workflow state. Usage: /workflow create <goal>|step <text>|done <number>|show|clear",
         REVIEW: "Ask the agent to review the current project or a path. Usage: /review [path]",
         MCP: "Load an MCP config file and rebuild tools. Usage: /mcp path/to/mcp.json",
         SKILL: "Load a skill by name or path. Usage: /skill my-coffee",
+        SKILLS: "Discover workspace skills. Usage: /skills [load <name>|load all]",
         EXIT: "Exit interactive mode.",
         QUIT: "Exit interactive mode.",
         PLAIN_EXIT: "Exit interactive mode.",
@@ -260,8 +267,11 @@ class InteractiveCommands:
         SUMMARIZE,
         CONTEXT,
         HISTORY,
+        EVENTS,
         PLAN,
+        WORKFLOW,
         REVIEW,
         MCP,
         SKILL,
+        SKILLS,
     )

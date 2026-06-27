@@ -6,6 +6,7 @@ from minimal_cli_agent.constants import EventKinds, PermissionEventFields
 from minimal_cli_agent.memory import JsonSessionStore, compact_messages
 from minimal_cli_agent.plan import PlanArtifact
 from minimal_cli_agent.types import EventRecord, Message
+from minimal_cli_agent.workflow import WorkflowArtifact, WorkflowStep
 
 
 class MemoryTest(unittest.TestCase):
@@ -68,6 +69,38 @@ class MemoryTest(unittest.TestCase):
         self.assertIsNotNone(plan)
         self.assertEqual(plan.goal, "ship feature")
         self.assertEqual(plan.steps, ["code", "test"])
+        self.assertIsNone(cleared)
+
+    def test_json_session_store_persists_and_queries_events(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.json"
+            store = JsonSessionStore(path)
+            store.append_event(EventRecord(kind="first", data={"value": 1}))
+            store.append_event(EventRecord(kind="second", data={"value": 2}))
+            store.append_event(EventRecord(kind="first", data={"value": 3}))
+
+            recent = store.query_events(limit=2)
+            filtered = store.query_events(kind="first", limit=10)
+
+        self.assertEqual([event.data["value"] for event in recent], [2, 3])
+        self.assertEqual([event.data["value"] for event in filtered], [1, 3])
+
+    def test_json_session_store_persists_and_clears_workflow(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.json"
+            store = JsonSessionStore(path)
+            store.save([Message(role="user", content="hello")])
+            store.save_workflow(WorkflowArtifact(goal="ship", steps=[WorkflowStep(title="test")]))
+
+            workflow = store.load_workflow()
+            messages = store.load()
+            store.save_workflow(None)
+            cleared = store.load_workflow()
+
+        self.assertEqual(messages, [Message(role="user", content="hello")])
+        self.assertIsNotNone(workflow)
+        self.assertEqual(workflow.goal, "ship")
+        self.assertEqual(workflow.steps[0].title, "test")
         self.assertIsNone(cleared)
 
     def test_json_session_store_keeps_recent_messages(self) -> None:

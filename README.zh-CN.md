@@ -61,11 +61,14 @@ ls -la
 - 默认阻止明显的网络 shell 命令，除非显式传入 `--allow-network`。
 - 支持通过 `--policy-file` 配置 shell allow 前缀、追加 deny 规则和工作区写入范围。
 - 支持产品化权限模式：`default`、`autoEdit`、`plan`、`yolo`。
-- 传入 `--session` 时，可以把最近 session messages、active plan 和权限审计事件持久化到 JSON，并使用 lock 文件和原子替换写入。
+- 传入 `--session` 时，可以把最近 session messages、active plan、typed workflow state 和权限审计事件持久化到 JSON，并使用 lock 文件和原子替换写入。
 - transcript 接近配置的上下文预算时，才会触发上下文压缩。
 - 可以通过 `--summarize-context` 使用模型生成旧上下文摘要。
 - 上下文压缩会保留初始用户目标，降低压缩后忘记原任务的风险。
 - 交互模式支持 readline 方向键历史，以及 `/history [number]` 查看和重放用户问题。
+- 支持 `/events` 查看持久化 session 事件。
+- 支持 `/skills` 自动发现工作区 skill，并通过 `/skills load <name>|all` 加载。
+- 支持 `/workflow` typed workflow state，用于 create/show/step/done/clear。
 - 暴露无状态 API：`Agent.chat_stream(message, context)`，以事件流形式产出 loop event。
 - 工具发现和参数校验失败时返回可恢复 observation，而不是直接把原始异常抛给用户。
 - 未知工具会返回安全的相近工具名建议，但不会自动猜测并执行。
@@ -159,18 +162,29 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 /summarize on
 /mcp examples/mcp/my-coffee.json
 /skill my-coffee
+/skills
+/skills load all
 /context status
 /context compact
 /context clear
 /history
 /history 1
+/events
 /plan improve test coverage
 /plan show
 /plan clear
+/workflow create improve test coverage
+/workflow step inspect failing tests
+/workflow done 1
+/workflow show
 /review src/minimal_cli_agent
 ```
 
 `/plan <goal>` 会用 `plan` 权限运行一次隔离的计划 turn，保存 typed plan artifact，并且不会把计划阶段 transcript 合并进当前聊天上下文。传入 `--session` 时，active plan 会和 messages、审计事件一起持久化。
+
+`/workflow create <goal>` 会创建 typed workflow artifact，可以用 `/workflow step <text>` 和 `/workflow done <number>` 更新。传入 `--session` 时，workflow state 会和 messages、plan、events 一起持久化。
+
+`/events [kind|number]` 会显示最近的持久化 session events。它依赖 `--session`，因为事件保存在 JSON session store 里。
 
 `/review [path]` 会通过同一个 agent loop 发起 review turn，所以它可以用 `read_file` 检查文件，并遵守当前 permission mode。
 
@@ -386,11 +400,14 @@ src/minimal_cli_agent/
 - 产品权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - 手动加载 MCP config，并注册 streamable HTTP JSON-RPC 工具。
 - 本地 instruction skill 加载与系统提示注入。
+- 通过 `/skills` 自动发现和批量加载工作区 skills。
 - JSON session event log，用于记录权限批准审计事件。
+- 可以通过 `/events` 查询最近的 session events。
 - JSON session 写入带文件锁、原子替换，并会裁剪到最近消息。
 - 权限确认可通过 confirmation handler 替换，CLI 支持 once/session/deny 选择式确认。
 - `pyproject.toml` 已包含面向 `src` 和 `tests` 的 Pyright `basic` 类型检查配置。
 - `/plan` 会创建隔离的 typed plan artifact，可查看、清除，并可持久化到 session 文件。
+- `/workflow` 会创建和更新 typed workflow state，可查看、清除，并可持久化到 session 文件。
 - 上下文压缩会在接近配置的模型上下文预算时触发，并在压缩摘要中保留初始用户目标。
 - 通过 `--summarize-context` 可选启用模型生成式上下文摘要。
 - 交互模式支持 readline 方向键历史和 `/history [number]`。
@@ -399,15 +416,15 @@ src/minimal_cli_agent/
 
 - 上下文压缩默认是本地截断；模型总结需要显式启用。
 - `autoEdit` 会自动批准文件写入类工具；shell 命令仍会确认，除非用户选择单次或当前 session 放行。
-- session 持久化目前是 JSON，不是 SQLite 或可查询事件数据库。
+- session 持久化目前是 JSON，不是 SQLite 或索引化事件数据库。
 - MCP 工具发现是启动时 best-effort；发现失败时仍保留通用 list/call 工具。
 
 暂不实现：
 
 - 并发工具执行和跨进程文件编辑锁。
 - SubAgent 和 GroupSession runtime。
-- MCP、plugin、skill 自动发现。
 - workflow scheduler 或 delegation engine。
+- MCP 和 plugin 自动发现。
 
 ## 参考文章保留的实践
 

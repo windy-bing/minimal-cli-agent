@@ -10,6 +10,7 @@ import tempfile
 from minimal_cli_agent.constants import Defaults, SessionFields
 from minimal_cli_agent.plan import PlanArtifact
 from minimal_cli_agent.types import EventRecord, Message
+from minimal_cli_agent.workflow import WorkflowArtifact
 
 
 class JsonSessionStore:
@@ -32,7 +33,8 @@ class JsonSessionStore:
             raw = self._read_raw_unlocked()
             existing_events = parse_events(raw)
             existing_plan = parse_plan(raw)
-            data = self._build_data(messages, existing_events, existing_plan)
+            existing_workflow = parse_workflow(raw)
+            data = self._build_data(messages, existing_events, existing_plan, existing_workflow)
             self._write_raw_unlocked(data)
 
     def load_events(self) -> list[EventRecord]:
@@ -44,8 +46,15 @@ class JsonSessionStore:
             messages = parse_messages(raw)
             events = [*parse_events(raw), event]
             existing_plan = parse_plan(raw)
-            data = self._build_data(messages, events, existing_plan)
+            existing_workflow = parse_workflow(raw)
+            data = self._build_data(messages, events, existing_plan, existing_workflow)
             self._write_raw_unlocked(data)
+
+    def query_events(self, kind: str | None = None, limit: int = 20) -> list[EventRecord]:
+        events = self.load_events()
+        if kind:
+            events = [event for event in events if event.kind == kind]
+        return events[-max(1, limit) :]
 
     def load_plan(self) -> PlanArtifact | None:
         return parse_plan(self._read_raw())
@@ -55,16 +64,37 @@ class JsonSessionStore:
             raw = self._read_raw_unlocked()
             messages = parse_messages(raw)
             events = parse_events(raw)
-            data = self._build_data(messages, events, plan)
+            existing_workflow = parse_workflow(raw)
+            data = self._build_data(messages, events, plan, existing_workflow)
             self._write_raw_unlocked(data)
 
-    def _build_data(self, messages: list[Message], events: list[EventRecord], plan: PlanArtifact | None) -> dict:
+    def load_workflow(self) -> WorkflowArtifact | None:
+        return parse_workflow(self._read_raw())
+
+    def save_workflow(self, workflow: WorkflowArtifact | None) -> None:
+        with self._locked():
+            raw = self._read_raw_unlocked()
+            messages = parse_messages(raw)
+            events = parse_events(raw)
+            existing_plan = parse_plan(raw)
+            data = self._build_data(messages, events, existing_plan, workflow)
+            self._write_raw_unlocked(data)
+
+    def _build_data(
+        self,
+        messages: list[Message],
+        events: list[EventRecord],
+        plan: PlanArtifact | None,
+        workflow: WorkflowArtifact | None,
+    ) -> dict:
         data = {
             SessionFields.MESSAGES: [message.to_dict() for message in messages[-self.max_messages :]],
             SessionFields.EVENTS: [event.to_dict() for event in events],
         }
         if plan is not None:
             data[SessionFields.PLAN] = plan.to_dict()
+        if workflow is not None:
+            data[SessionFields.WORKFLOW] = workflow.to_dict()
         return data
 
     def _read_raw(self):
@@ -131,6 +161,15 @@ def parse_plan(raw) -> PlanArtifact | None:
     if not isinstance(raw_plan, dict):
         return None
     return PlanArtifact.from_dict(raw_plan)
+
+
+def parse_workflow(raw) -> WorkflowArtifact | None:
+    if not isinstance(raw, dict):
+        return None
+    raw_workflow = raw.get(SessionFields.WORKFLOW)
+    if not isinstance(raw_workflow, dict):
+        return None
+    return WorkflowArtifact.from_dict(raw_workflow)
 
 
 def compact_messages(messages: list[Message], max_chars: int) -> list[Message]:

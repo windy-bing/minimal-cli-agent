@@ -5,10 +5,14 @@ from unittest.mock import patch
 
 from minimal_cli_agent.agent import Agent
 from minimal_cli_agent.cli import detect_explicit_options, format_duration, render_prompt, run_interactive, run_turn
+from minimal_cli_agent.constants import EventKinds, PermissionEventFields
 from minimal_cli_agent.exceptions import ModelRequestError
 from minimal_cli_agent.harness import AgentHarness
+from minimal_cli_agent.memory import JsonSessionStore
 from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message
+from minimal_cli_agent.types import EventRecord
+from minimal_cli_agent.workflow import WORKFLOW_METADATA_KEY
 
 
 class CountingModel:
@@ -168,7 +172,7 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
-        self.assertIn("Commands: /help, /config, /profile, /permission, /mcp, /skill, /context, /history, /plan, /review, /exit", printed)
+        self.assertIn("Commands: /help, /config, /profile, /permission, /mcp, /skill, /skills, /context, /history, /events, /plan, /workflow, /review, /exit", printed)
 
     def test_detect_explicit_options_supports_space_and_equals_forms(self) -> None:
         explicit = detect_explicit_options([
@@ -401,6 +405,69 @@ class CliTest(unittest.TestCase):
         self.assertEqual(model.calls, 0)
         self.assertIn("1: real question", printed)
         self.assertNotIn("Command finished", printed)
+
+    def test_run_interactive_events_lists_session_events(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            store = JsonSessionStore(Path(tmp) / "session.json")
+            store.append_event(EventRecord(kind=EventKinds.PERMISSION_DECISION, data={PermissionEventFields.DECISION: "allow"}))
+            config = AgentConfig(permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=store))
+
+            with patch("builtins.input", side_effect=["/events", "/quit"]), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, ChatContext(), session_store=store)
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn(EventKinds.PERMISSION_DECISION, printed)
+        self.assertIn("allow", printed)
+
+    def test_run_interactive_skills_discovers_and_loads_workspace_skill(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            skill = root / "skills" / "demo"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("# Demo Skill", encoding="utf-8")
+            config = AgentConfig(cwd=root, permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+
+            with patch("builtins.input", side_effect=["/skills", "/skills load demo", "/quit"]), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, ChatContext())
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("demo", printed)
+        self.assertEqual(agent.config.skill_paths[0].parent.name, "demo")
+
+    def test_run_interactive_workflow_manages_typed_state(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            store = JsonSessionStore(Path(tmp) / "session.json")
+            config = AgentConfig(permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=store))
+            context = ChatContext()
+
+            with patch(
+                "builtins.input",
+                side_effect=[
+                    "/workflow step inspect docs",
+                    "/workflow done 1",
+                    "/workflow show",
+                    "/quit",
+                ],
+            ), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, context, session_store=store, first_message="/workflow create ship feature")
+
+            persisted = store.load_workflow()
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIsNotNone(persisted)
+        self.assertEqual(context.metadata[WORKFLOW_METADATA_KEY].goal, "ship feature")
+        self.assertEqual(context.metadata[WORKFLOW_METADATA_KEY].steps[0].status, "done")
+        self.assertIn("workflow saved", printed)
+        self.assertIn("1. [x] inspect docs", printed)
 
     def test_run_interactive_review_command_runs_agent_turn(self) -> None:
         model = SequenceModel(["review done"])

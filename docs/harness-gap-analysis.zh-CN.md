@@ -16,11 +16,11 @@
 | 工具执行管道 | 已有 `ToolExecutionPipeline` 阶段形状，`ResolveDecision` 已有 decision hook 仲裁基线，但 `AutoVerify` 很薄 | 补 hook 优先级、冲突报告、确认 UI 适配、重试和格式化策略 |
 | 权限 hard gate | 已有 `ShellPermissionPolicy`、`ToolDecision`、`plan` 跳过执行、`yolo` 仍受硬拒绝规则限制；policy 文件支持命令 allow 前缀、追加 deny token 和写入 allow/deny 路径范围 | 后续增加更丰富的策略报告、角色化能力和可查询审计日志 |
 | 上下文压缩 | 当前是本地裁剪加提示，不是语义压缩 | 增加模型总结、原始 transcript 保留、可召回 summary/memory |
-| Memory 管理 | JSON session 已支持 lock 保护、原子写、最近消息裁剪和 active plan 持久化 | 后续实现 EventStore 或 SQLite session log，再做 memory retrieval |
+| Memory 管理 | JSON session 已支持 lock 保护、原子写、最近消息裁剪、active plan、typed workflow state 和 `/events` 最近事件查询 | 后续实现 SQLite session log 和 memory retrieval |
 | SubAgent / GroupSession | 已作为 roadmap 预留 | 先实现 `SubAgentRunner` 和隔离 session，再做 group event log |
-| Workflow 委托 | 已规划 `plan/delegate/wait/merge/verify` 原语 | 需要 typed workflow state，而不是 prompt 内隐式计划 |
+| Workflow 委托 | 已有 `/workflow create/step/done/show/clear` typed workflow state | 后续补 delegate/wait/merge/verify 和 scheduler |
 | 并发和文件锁 | 已支持单轮多 action 串行执行和同进程同文件写锁，但明确暂不并发 | 后续再做读写分桶、跨进程文件编辑锁、取消和超时传播 |
-| MCP / plugin / skill | 已规划挂在 `ToolRegistry` 后面 | 先定义 tool manifest，再接 MCP discovery |
+| MCP / plugin / skill | MCP 挂在 `ToolRegistry` 后面；`/skills` 可发现并加载工作区 skills | 后续定义 plugin/tool manifest，再接 MCP/plugin discovery |
 
 ## 未规划未实现
 
@@ -110,7 +110,7 @@
 - 按 agent role 生成短 system prompt。
 - 工具说明短描述默认注入，长说明按需召回。
 - AGENTS/项目规则分层、去重、冲突检测、预算上限。
-- EventStore 保存完整 transcript，WorkingMemory 只保存压缩上下文，RetrievalMemory 负责召回。
+- JSON session event log 保存最近可查询事件；后续 EventStore 保存完整 transcript，WorkingMemory 只保存压缩上下文，RetrievalMemory 负责召回。
 
 ## 不建议现在做
 

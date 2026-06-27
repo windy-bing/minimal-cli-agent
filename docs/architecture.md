@@ -85,11 +85,13 @@ Implemented:
 - `ModelGateway` for provider/model abstraction, fallback routes, bounded retries, per-route concurrency, circuit breaking, usage ledgers, token/cost quotas, prompt version metadata, and API key pool rotation.
 - JSON session event log for permission approval audit records.
 - Lock-protected atomic JSON session writes with recent-message retention.
+- Queryable recent session events through `/events`.
 - `ToolRegistry` for tool discovery.
 - Built-in workspace `read_file`, `read_tail`, `read_forward`, `search`, `write_file`, and `edit_file` tools.
 - Manual MCP config loading with streamable HTTP JSON-RPC tools.
 - Generic MCP list/call tools plus opt-in concrete tool registration from `tools/list` when `discoverTools` is enabled.
 - Local `SKILL.md` loading into the system prompt through `--skill`.
+- Workspace skill discovery and bulk loading through `/skills`.
 - `search` has top-k, max-files, timeout, ignore-dir, extension, and `.gitignore` / `.agentignore` filters.
 - Structured write validation for JSON, TOML, XML, and YAML when PyYAML is available.
 - Tool aliases plus recoverable discovery and validation observations.
@@ -104,6 +106,7 @@ Implemented:
 - Network command hard gate with explicit `--allow-network` opt-in.
 - Configurable policy file rules for shell allow prefixes, additional deny tokens, write allow paths, and write deny paths.
 - Typed plan artifact stored in `ChatContext.metadata` and persisted in JSON sessions.
+- Typed workflow state stored in `ChatContext.metadata` and persisted in JSON sessions.
 - Execute turns read the active plan, inject it into the system prompt, and constrain writer tools to planned paths when paths are known.
 - ShellAdapter support for system shell, bash, zsh, sh, PowerShell, cmd, and Git Bash style execution with shell/cwd/encoding/path metadata in observations.
 - Injectable permission confirmation handler; the CLI supports selectable allow-once, allow-session-action, and deny choices.
@@ -124,18 +127,18 @@ Reserved:
 - `Confirmation` uses an injectable handler. CLI `input()` is the default adapter, and UI clients can provide their own handler.
 - `autoEdit` automatically approves file writer tools; shell commands still ask until explicitly approved once or for the session.
 - Tool schema validation is a focused JSON Schema subset, not a complete Draft implementation.
-- The event log is JSON-backed. It is durable, but not yet indexed or queryable like SQLite.
+- The event log is JSON-backed and queryable for recent events, but not indexed like SQLite.
 - MCP concrete tool discovery is opt-in at startup. Generic list/call tools remain available without touching the network.
-- Skills are manually selected by CLI option or slash command; automatic discovery is reserved.
+- Skills can be discovered from the workspace and loaded manually or in bulk through `/skills`.
 
 Not implemented yet:
 
 - Parallel tool execution and cross-process file edit locks.
 - File-level write locks.
-- Automatic MCP/plugin/skill discovery.
 - SubAgent runner.
 - GroupSession event store.
 - Workflow scheduler.
+- Automatic MCP/plugin discovery.
 
 ## Roadmap
 
@@ -212,6 +215,7 @@ Current support:
 - Every MCP server gets generic `mcp_<server>_list_tools` and `mcp_<server>_call_tool` actions.
 - When `discoverTools` is enabled and `tools/list` works at startup, each remote tool is also exposed as a concrete local tool.
 - `--skill` loads a local `SKILL.md` by name or path and injects it into the system prompt.
+- `/skills` lists workspace skills under `skills/<name>/SKILL.md` and can load one skill or all discovered skills.
 - `/mcp` and `/skill` can load configs or skills inside the interactive REPL.
 
 Plugins should register:
@@ -236,3 +240,10 @@ Suggested primitives:
 - `verify`: run tests, lint, or review checks.
 
 The main agent remains responsible for final integration and user-facing status.
+
+Current support:
+
+- `/workflow create <goal>` creates a typed workflow state.
+- `/workflow step <text>` and `/workflow done <number>` update workflow progress.
+- `/workflow show` and `/workflow clear` inspect or remove the active workflow.
+- With `--session`, workflow state is persisted next to messages, plans, and events.

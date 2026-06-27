@@ -2,7 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from minimal_cli_agent.skills import build_system_prompt, resolve_skill_path, resolve_skill_paths
+from minimal_cli_agent.skills import build_system_prompt, discover_skill_paths, resolve_skill_path, resolve_skill_paths
 
 
 class SkillsTest(unittest.TestCase):
@@ -28,6 +28,20 @@ class SkillsTest(unittest.TestCase):
             paths = resolve_skill_paths(["demo"], root)
 
         self.assertEqual(len(paths), 1)
+
+    def test_discover_skill_paths_lists_workspace_skills(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "skills" / "alpha"
+            second = root / "skills" / "beta"
+            first.mkdir(parents=True)
+            second.mkdir(parents=True)
+            (first / "SKILL.md").write_text("# Alpha", encoding="utf-8")
+            (second / "SKILL.md").write_text("# Beta", encoding="utf-8")
+
+            paths = discover_skill_paths(root)
+
+        self.assertEqual([path.parent.name for path in paths], ["alpha", "beta"])
 
     def test_build_system_prompt_appends_skill_content(self) -> None:
         with TemporaryDirectory() as tmp:

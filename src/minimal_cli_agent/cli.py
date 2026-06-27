@@ -26,8 +26,16 @@ from minimal_cli_agent.memory import JsonSessionStore
 from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact, build_plan_prompt, create_plan_artifact, extract_plan_paths, format_plan_artifact, format_plan_execution_context
 from minimal_cli_agent.prompts import INTERACTIVE_SYSTEM_PROMPT, SYSTEM_PROMPT
 from minimal_cli_agent.profiles import resolve_profile
-from minimal_cli_agent.skills import build_system_prompt, resolve_skill_path, resolve_skill_paths
+from minimal_cli_agent.skills import build_system_prompt, discover_skill_paths, resolve_skill_path, resolve_skill_paths
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, Message, ModelRoute, ToolCall, ToolDecision
+from minimal_cli_agent.workflow import (
+    WORKFLOW_METADATA_KEY,
+    WorkflowArtifact,
+    add_workflow_step,
+    complete_workflow_step,
+    create_workflow,
+    format_workflow_artifact,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -154,6 +162,9 @@ def main(argv: list[str] | None = None) -> int:
             plan = session_store.load_plan()
             if plan is not None:
                 context.metadata[PLAN_METADATA_KEY] = plan
+            workflow = session_store.load_workflow()
+            if workflow is not None:
+                context.metadata[WORKFLOW_METADATA_KEY] = workflow
         agent = Agent(config=config, harness=harness)
         if args.interactive or not task:
             return run_interactive(agent, context, session_store, first_message=task or None)
@@ -615,7 +626,7 @@ def is_user_prompt_history_entry(content: str) -> bool:
 
 
 def print_quick_command_hint() -> None:
-    print("Commands: /help, /config, /profile, /permission, /mcp, /skill, /context, /history, /plan, /review, /exit")
+    print("Commands: /help, /config, /profile, /permission, /mcp, /skill, /skills, /context, /history, /events, /plan, /workflow, /review, /exit")
 
 
 def print_interactive_help() -> None:
@@ -680,8 +691,14 @@ def handle_interactive_command(raw: str, session: InteractiveSession) -> Interac
     if command == InteractiveCommands.HISTORY:
         replay = handle_history_command(session, argument)
         return InteractiveCommandResult(handled=True, replay_message=replay)
+    if command == InteractiveCommands.EVENTS:
+        handle_events_command(session, argument)
+        return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.PLAN:
         handle_plan_command(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.WORKFLOW:
+        handle_workflow_command(session, argument)
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.REVIEW:
         review_target = argument or "the current project"
@@ -704,6 +721,9 @@ def handle_interactive_command(raw: str, session: InteractiveSession) -> Interac
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.SKILL:
         update_skill(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.SKILLS:
+        handle_skills_command(session, argument)
         return InteractiveCommandResult(handled=True)
     return InteractiveCommandResult()
 
@@ -775,6 +795,38 @@ def update_skill(session: InteractiveSession, skill_text: str) -> None:
     print_config(session.agent.config)
 
 
+def handle_skills_command(session: InteractiveSession, argument: str) -> None:
+    discovered = discover_skill_paths(session.agent.config.cwd)
+    if not argument:
+        if not discovered:
+            print("no workspace skills found")
+            return
+        for index, path in enumerate(discovered, start=1):
+            loaded = " (loaded)" if path in session.agent.config.skill_paths else ""
+            print(f"{index}: {path.parent.name}{loaded} - {relative_skill_path(path, session.agent.config.cwd)}")
+        return
+
+    parts = argument.split(maxsplit=1)
+    if parts[0] != "load" or len(parts) != 2:
+        print(f"Usage: {InteractiveCommands.SKILLS} [load <name>|load all]")
+        return
+    target = parts[1].strip()
+    if target == "all":
+        paths = discovered
+    else:
+        paths = tuple(path for path in discovered if path.parent.name == target)
+    if not paths:
+        print(f"skill not found: {target}")
+        return
+    for path in paths:
+        if path not in session.agent.config.skill_paths:
+            session.agent.config.skill_paths = (*session.agent.config.skill_paths, path)
+    prompt = build_system_prompt(INTERACTIVE_SYSTEM_PROMPT, session.agent.config.skill_paths)
+    upsert_system_prompt(session.context, prompt)
+    rebuild_agent(session)
+    print_config(session.agent.config)
+
+
 def update_permission(session: InteractiveSession, mode: str) -> None:
     if mode not in PermissionModes.ALL:
         print(f"Usage: {InteractiveCommands.PERMISSION} {'|'.join(PermissionModes.ALL)}")
@@ -782,6 +834,13 @@ def update_permission(session: InteractiveSession, mode: str) -> None:
     session.agent.config.permission_mode = mode
     rebuild_agent(session)
     print_config(session.agent.config)
+
+
+def relative_skill_path(path: Path, cwd: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(cwd.resolve()))
+    except ValueError:
+        return str(path)
 
 
 def update_boolean_option(session: InteractiveSession, field_name: str, value: str, label: str) -> None:
@@ -846,6 +905,25 @@ def handle_history_command(session: InteractiveSession, argument: str) -> str | 
     return None
 
 
+def handle_events_command(session: InteractiveSession, argument: str) -> None:
+    if session.session_store is None:
+        print("no session store configured")
+        return
+    kind = ""
+    limit = 20
+    if argument:
+        if argument.isdigit():
+            limit = int(argument)
+        else:
+            kind = argument
+    events = session.session_store.query_events(kind=kind or None, limit=limit)
+    if not events:
+        print("no events")
+        return
+    for index, event in enumerate(events, start=1):
+        print(f"{index}: {event.timestamp} {event.kind} {json.dumps(event.data, ensure_ascii=False, sort_keys=True)}")
+
+
 def handle_plan_command(session: InteractiveSession, argument: str) -> None:
     if not argument or argument == "show":
         plan = session.context.metadata.get(PLAN_METADATA_KEY)
@@ -886,6 +964,84 @@ def handle_plan_command(session: InteractiveSession, argument: str) -> None:
         session.session_store.save_plan(plan)
     print("plan saved")
     print(format_plan_artifact(plan))
+
+
+def handle_workflow_command(session: InteractiveSession, argument: str) -> None:
+    action, value = split_command_argument(argument)
+    workflow = active_workflow_from_context(session.context)
+    if action in {"", "show"}:
+        if workflow is None:
+            print("no active workflow")
+            return
+        print(format_workflow_artifact(workflow))
+        return
+    if action == "clear":
+        session.context.metadata.pop(WORKFLOW_METADATA_KEY, None)
+        if session.session_store:
+            session.session_store.save_workflow(None)
+        print("workflow cleared")
+        return
+    if action == "create":
+        if not value:
+            print(f"Usage: {InteractiveCommands.WORKFLOW} create <goal>")
+            return
+        workflow = create_workflow(value)
+        save_workflow(session, workflow)
+        print("workflow saved")
+        print(format_workflow_artifact(workflow))
+        return
+    if action == "step":
+        if workflow is None:
+            print("no active workflow")
+            return
+        if not value:
+            print(f"Usage: {InteractiveCommands.WORKFLOW} step <text>")
+            return
+        workflow = add_workflow_step(workflow, value)
+        save_workflow(session, workflow)
+        print("workflow step added")
+        print(format_workflow_artifact(workflow))
+        return
+    if action == "done":
+        if workflow is None:
+            print("no active workflow")
+            return
+        try:
+            index = int(value)
+        except ValueError:
+            print(f"Usage: {InteractiveCommands.WORKFLOW} done <number>")
+            return
+        if index < 1 or index > len(workflow.steps):
+            print(f"workflow step out of range: {index}")
+            return
+        workflow = complete_workflow_step(workflow, index)
+        save_workflow(session, workflow)
+        print("workflow step completed")
+        print(format_workflow_artifact(workflow))
+        return
+    print(f"Usage: {InteractiveCommands.WORKFLOW} create <goal>|step <text>|done <number>|show|clear")
+
+
+def split_command_argument(argument: str) -> tuple[str, str]:
+    parts = argument.split(maxsplit=1)
+    if not parts:
+        return "", ""
+    return parts[0], parts[1].strip() if len(parts) > 1 else ""
+
+
+def active_workflow_from_context(context: ChatContext) -> WorkflowArtifact | None:
+    raw = context.metadata.get(WORKFLOW_METADATA_KEY)
+    if isinstance(raw, WorkflowArtifact):
+        return raw
+    if isinstance(raw, dict):
+        return WorkflowArtifact.from_dict(raw)
+    return None
+
+
+def save_workflow(session: InteractiveSession, workflow: WorkflowArtifact) -> None:
+    session.context.metadata[WORKFLOW_METADATA_KEY] = workflow
+    if session.session_store:
+        session.session_store.save_workflow(workflow)
 
 
 def rebuild_agent(session: InteractiveSession, config: AgentConfig | None = None) -> None:

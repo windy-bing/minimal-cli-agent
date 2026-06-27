@@ -61,11 +61,14 @@ ls -la
 - Blocks obvious network shell commands unless `--allow-network` is passed.
 - Supports shell policy allow prefixes, additional deny rules, and workspace write scopes through `--policy-file`.
 - Supports product permission modes: `default`, `autoEdit`, `plan`, and `yolo`.
-- Persists recent session messages, active plan, and permission audit events to JSON when `--session` is provided, using a lock file and atomic replace.
+- Persists recent session messages, active plan, typed workflow state, and permission audit events to JSON when `--session` is provided, using a lock file and atomic replace.
 - Applies context compaction only when the transcript approaches the configured context budget.
 - Can use model-generated context summaries with `--summarize-context`.
 - Preserves the initial user goal when context is compacted.
 - Supports interactive prompt history through arrow keys when readline is available and `/history [number]`.
+- Supports `/events` for persisted session event inspection.
+- Supports `/skills` workspace skill discovery and `/skills load <name>|all`.
+- Supports `/workflow` typed workflow state for create/show/step/done/clear.
 - Exposes a stateless `Agent.chat_stream(message, context)` API that yields loop events.
 - Returns recoverable tool discovery and validation observations instead of surfacing raw exceptions.
 - Unknown tools return safe close-match suggestions without automatically executing guesses.
@@ -159,18 +162,29 @@ Most startup options can also be changed inside the REPL:
 /summarize on
 /mcp examples/mcp/my-coffee.json
 /skill my-coffee
+/skills
+/skills load all
 /context status
 /context compact
 /context clear
 /history
 /history 1
+/events
 /plan improve test coverage
 /plan show
 /plan clear
+/workflow create improve test coverage
+/workflow step inspect failing tests
+/workflow done 1
+/workflow show
 /review src/minimal_cli_agent
 ```
 
 `/plan <goal>` runs an isolated planning turn with `plan` permissions, saves a typed plan artifact, and does not merge the planning transcript into the active chat context. With `--session`, the active plan is persisted alongside messages and audit events.
+
+`/workflow create <goal>` starts a typed workflow artifact that can be updated with `/workflow step <text>` and `/workflow done <number>`. With `--session`, workflow state is persisted alongside messages, plans, and events.
+
+`/events [kind|number]` shows recent persisted session events. It requires `--session` because events live in the JSON session store.
 
 `/review [path]` runs a review turn through the same agent loop, so it can inspect files with `read_file` and use the current permission mode.
 
@@ -386,11 +400,14 @@ Implemented:
 - Product permission modes: `default`, `autoEdit`, `plan`, `yolo`.
 - Manual MCP config loading with streamable HTTP JSON-RPC tools.
 - Local instruction skill loading into the system prompt.
+- Workspace skill discovery and bulk loading through `/skills`.
 - JSON session event log for permission approval audit records.
+- Queryable recent session events through `/events`.
 - JSON session writes are lock-protected, atomically replaced, and capped to recent messages.
 - Permission confirmation is injectable through a confirmation handler; the CLI supports selectable once/session/deny approval.
 - `pyproject.toml` includes a Pyright `basic` type-checking configuration for `src` and `tests`.
 - `/plan` creates an isolated typed plan artifact that can be shown, cleared, and persisted in the session file.
+- `/workflow` creates and updates typed workflow state that can be shown, cleared, and persisted in the session file.
 - Context compaction is triggered near the configured model context budget, and compacted summaries preserve the initial user goal.
 - Optional model-generated context summaries with `--summarize-context`.
 - Interactive prompt history is available through readline arrow keys and `/history [number]`.
@@ -399,15 +416,15 @@ Reserved but intentionally minimal:
 
 - Context compression defaults to local truncation; model summarization is opt-in.
 - `autoEdit` automatically approves file writer tools; shell commands still ask until explicitly approved once or for the session.
-- Session persistence is JSON, not SQLite or a queryable event database.
+- Session persistence is JSON, not SQLite or an indexed event database.
 - MCP tool discovery is best-effort at startup; generic list/call tools remain available when discovery cannot run.
 
 Not implemented yet:
 
 - Parallel tool execution and cross-process file edit locks.
 - SubAgent and GroupSession runtime.
-- Automatic MCP/plugin/skill discovery.
 - Workflow scheduler or delegation engine.
+- Automatic MCP/plugin discovery.
 
 ## Notes From The Reference Article
 
