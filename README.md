@@ -136,6 +136,10 @@ In interactive mode, normal conversation can be answered directly. The model onl
 
 Interactive tool output is compact by default: the terminal shows the tool name, target path or command summary, status, and output size instead of dumping full file contents. The full observation is still kept in the agent context for the model.
 
+Interactive prompts are styled and include the active provider/model and permission mode. `Ctrl-C` at the input prompt clears the current input and keeps the REPL alive; `Ctrl-C` during a running turn interrupts that turn and returns to the prompt. Each turn prints total elapsed time when it finishes.
+
+If you type and press Enter while a multi-step turn is running, the line is queued as supplemental user input. The agent adds it to the full conversation context before the next model call in that same turn.
+
 Use `--permission autoEdit` when you want the loop to modify project files through file writer tools without asking every time. `plan` remains read-only: it can read files but skips shell commands and file writes.
 
 If a turn in `plan` mode reaches a required file edit, the REPL asks whether to switch to `autoEdit` and retry the same user request instead of making you type it again.

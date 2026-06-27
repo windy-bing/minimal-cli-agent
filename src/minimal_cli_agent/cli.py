@@ -6,7 +6,9 @@ from dataclasses import dataclass, field
 import json
 import os
 import re
+import select
 import sys
+import time
 from pathlib import Path
 
 try:
@@ -175,6 +177,7 @@ def run_turn(
 class TurnExecutionSummary:
     exit_code: int
     plan_blocked: bool = False
+    elapsed_seconds: float = 0.0
 
 
 def run_turn_with_summary(
@@ -185,6 +188,7 @@ def run_turn_with_summary(
     options: LoopOptions | None = None,
     compact_output: bool = False,
 ) -> TurnExecutionSummary:
+    started = time.monotonic()
     options = with_configured_skills(agent.config, options)
     options = with_active_plan_context(context, options)
     upsert_system_prompt(context, options.system_prompt)
@@ -199,16 +203,20 @@ def run_turn_with_summary(
                 event = next(stream)
             except KeyboardInterrupt:
                 print("\nTurn interrupted.")
-                return TurnExecutionSummary(exit_code=130, plan_blocked=plan_blocked)
+                return TurnExecutionSummary(exit_code=130, plan_blocked=plan_blocked, elapsed_seconds=time.monotonic() - started)
             except AgentError as exc:
                 print(f"error: {exc}")
-                return TurnExecutionSummary(exit_code=1, plan_blocked=plan_blocked)
+                return TurnExecutionSummary(exit_code=1, plan_blocked=plan_blocked, elapsed_seconds=time.monotonic() - started)
             except StopIteration as exc:
                 result = exc.value
                 context.messages = result.final_messages
                 if session_store:
                     session_store.save(context.messages)
-                return TurnExecutionSummary(exit_code=0 if result.success else 1, plan_blocked=plan_blocked)
+                return TurnExecutionSummary(
+                    exit_code=0 if result.success else 1,
+                    plan_blocked=plan_blocked,
+                    elapsed_seconds=time.monotonic() - started,
+                )
             if compact_output:
                 print_compact_event(event)
             else:
@@ -226,7 +234,11 @@ def with_active_plan_context(context: ChatContext, options: LoopOptions) -> Loop
         return options
     prompt = options.system_prompt or SYSTEM_PROMPT
     prompt = f"{prompt}\n\n{format_plan_execution_context(plan)}"
-    return LoopOptions(allow_final_text=options.allow_final_text, system_prompt=prompt)
+    return LoopOptions(
+        allow_final_text=options.allow_final_text,
+        system_prompt=prompt,
+        interrupt_input_reader=options.interrupt_input_reader,
+    )
 
 
 def active_plan_from_context(context: ChatContext) -> PlanArtifact | None:
@@ -298,10 +310,14 @@ def run_interactive(
     while True:
         if pending is None:
             try:
-                pending = input("\nminimal-agent> ").strip()
-            except (EOFError, KeyboardInterrupt):
+                pending = input(render_prompt(session.agent.config)).strip()
+            except EOFError:
                 print()
                 return 0
+            except KeyboardInterrupt:
+                print("\nInput cleared. Type /exit to stop.")
+                pending = None
+                continue
 
         if pending in InteractiveCommands.EXIT_COMMANDS:
             return 0
@@ -333,9 +349,14 @@ def run_interactive(
                 pending,
                 session.context,
                 session.session_store,
-                LoopOptions(allow_final_text=True, system_prompt=INTERACTIVE_SYSTEM_PROMPT),
+                LoopOptions(
+                    allow_final_text=True,
+                    system_prompt=INTERACTIVE_SYSTEM_PROMPT,
+                    interrupt_input_reader=read_supplemental_stdin,
+                ),
                 compact_output=True,
             )
+            print(f"[time] task elapsed {format_duration(summary.elapsed_seconds)}")
             if should_retry_with_auto_edit(session, pending, summary):
                 pending = retry_in_auto_edit(session, pending)
                 continue
@@ -500,6 +521,45 @@ def retry_in_auto_edit(session: InteractiveSession, message: str) -> str:
     )
     print("permission: autoEdit")
     return message
+
+
+def render_prompt(config: AgentConfig) -> str:
+    cyan = "\033[36m" if sys.stdout.isatty() else ""
+    dim = "\033[2m" if sys.stdout.isatty() else ""
+    reset = "\033[0m" if sys.stdout.isatty() else ""
+    cwd = compact_path(str(config.cwd))
+    model = f"{config.provider}/{config.model}"
+    return (
+        f"\n{cyan}╭─ minimal-agent{reset} {dim}{cwd}{reset}\n"
+        f"{dim}│ model: {model}  permission: {config.permission_mode}{reset}\n"
+        f"{cyan}╰─>{reset} "
+    )
+
+
+def read_supplemental_stdin() -> str | None:
+    if not sys.stdin.isatty():
+        return None
+    try:
+        ready, _, _ = select.select([sys.stdin], [], [], 0)
+    except (OSError, ValueError):
+        return None
+    if not ready:
+        return None
+    line = sys.stdin.readline()
+    text = line.strip()
+    if text:
+        print(f"[input] queued supplemental user input ({len(text)} chars)")
+    return text or None
+
+
+def format_duration(seconds: float) -> str:
+    if seconds < 1:
+        return f"{seconds * 1000:.0f}ms"
+    if seconds < 60:
+        return f"{seconds:.2f}s"
+    minutes = int(seconds // 60)
+    remainder = seconds - minutes * 60
+    return f"{minutes}m{remainder:.1f}s"
 
 
 def configure_readline_history(history: list[str]) -> None:
@@ -857,7 +917,11 @@ def print_config(config: AgentConfig) -> None:
 def with_configured_skills(config: AgentConfig, options: LoopOptions | None) -> LoopOptions:
     base = options or LoopOptions()
     prompt = build_system_prompt(base.system_prompt or SYSTEM_PROMPT, config.skill_paths)
-    return LoopOptions(allow_final_text=base.allow_final_text, system_prompt=prompt)
+    return LoopOptions(
+        allow_final_text=base.allow_final_text,
+        system_prompt=prompt,
+        interrupt_input_reader=base.interrupt_input_reader,
+    )
 
 
 def upsert_system_prompt(context: ChatContext, system_prompt: str | None) -> None:

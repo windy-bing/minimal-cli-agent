@@ -69,6 +69,9 @@ class Agent:
 
             combined_observation = "\n\n".join(observations)
             messages.append(Message(role="user", content=combined_observation))
+            supplemental_input = read_supplemental_input(options)
+            if supplemental_input:
+                messages.append(Message(role="user", content=f"User supplemental input during this task:\n{supplemental_input}"))
 
         messages.append(Message(role="user", content="Max steps reached. Stop and summarize current state."))
         yield LoopEvent(type=LoopEventTypes.MAX_STEPS, data={LoopEventData.MAX_STEPS: self.config.max_steps})
@@ -98,6 +101,13 @@ class Agent:
                 self.harness.save_messages(result.final_messages)
                 return result.final_messages
             print_event(event)
+
+
+def read_supplemental_input(options: LoopOptions) -> str:
+    if options.interrupt_input_reader is None:
+        return ""
+    value = options.interrupt_input_reader()
+    return value.strip() if value else ""
 
 
 def print_event(event: LoopEvent) -> None:

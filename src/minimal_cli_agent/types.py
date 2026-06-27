@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from minimal_cli_agent.constants import Defaults, PermissionModes, Providers, SessionFields
 from minimal_cli_agent.redaction import redact_text
@@ -61,6 +61,7 @@ class LoopResult:
 class LoopOptions:
     allow_final_text: bool = False
     system_prompt: str | None = None
+    interrupt_input_reader: Callable[[], str | None] | None = None
 
 
 @dataclass(frozen=True)

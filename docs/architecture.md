@@ -75,6 +75,8 @@ Implemented:
 - Multiple action blocks per model turn, executed sequentially in output order.
 - Multi-turn CLI REPL that reuses one `ChatContext` across turns.
 - REPL slash commands for runtime profile/provider/model/base URL/permission/network/context/history/plan/review control.
+- Styled REPL prompts show active provider/model and permission mode; prompt `Ctrl-C` clears input, turn `Ctrl-C` interrupts the turn, and completed turns print elapsed time.
+- Supplemental user input typed during a multi-step turn is added to the full conversation context before the next model call.
 - Isolated `/plan` command that creates a typed plan artifact without merging planning transcript into active chat context.
 - Context compaction triggers near the configured model context budget and preserves the initial user goal in compacted summaries.
 - Optional model-generated context summaries with `--summarize-context`.

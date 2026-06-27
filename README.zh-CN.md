@@ -136,6 +136,10 @@ minimal-agent --profile codex --permission plan --interactive "Analyze this proj
 
 交互模式默认压缩工具过程输出：终端只显示工具名、目标路径或命令摘要、状态和输出大小，不直接倾倒完整文件内容。完整 observation 仍会保留在 agent context 里给模型使用。
 
+交互输入提示会带样式，并显示当前 provider/model 和 permission mode。在输入提示处按 `Ctrl-C` 只会清空当前输入并保持 REPL；在运行中的 turn 按 `Ctrl-C` 会中断当前 turn 并回到输入提示。每个 turn 结束后会显示完整耗时。
+
+如果多步骤 turn 正在运行，你输入一行并按 Enter，这行会被暂存为补充用户输入，并在同一 turn 的下一次模型调用前加入完整对话上下文。
+
 如果希望 loop 能直接修改项目文件，使用 `--permission autoEdit`，这样文件写入类工具不会每次询问。`plan` 仍然是只读模式：可以读文件，但会跳过 shell 命令和文件写入。
 
 如果某轮在 `plan` 模式下走到了必须写文件的步骤，REPL 会询问是否切到 `autoEdit` 并自动重试同一条用户输入，不需要重新输入任务。

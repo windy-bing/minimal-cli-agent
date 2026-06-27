@@ -4,11 +4,11 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from minimal_cli_agent.agent import Agent
-from minimal_cli_agent.cli import detect_explicit_options, run_interactive, run_turn
+from minimal_cli_agent.cli import detect_explicit_options, format_duration, render_prompt, run_interactive, run_turn
 from minimal_cli_agent.exceptions import ModelRequestError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact
-from minimal_cli_agent.types import AgentConfig, ChatContext, Message
+from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message
 
 
 class CountingModel:
@@ -76,6 +76,19 @@ class CapturingModel:
         return self.output
 
 
+class MultiStepCaptureModel:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.messages_by_call: list[list[Message]] = []
+
+    def complete(self, messages: list[Message]) -> str:
+        self.calls += 1
+        self.messages_by_call.append(list(messages))
+        if self.calls == 1:
+            return "```bash-action\nprintf first\n```"
+        return "done\n```bash-action\nexit\n```"
+
+
 class CliTest(unittest.TestCase):
     def test_run_turn_updates_context_messages(self) -> None:
         model = CountingModel()
@@ -116,6 +129,19 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
+
+    def test_run_interactive_ctrl_c_at_prompt_clears_input_without_exit(self) -> None:
+        model = CountingModel()
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+
+        with patch("builtins.input", side_effect=[KeyboardInterrupt, "/quit"]), patch("builtins.print") as print_mock:
+            exit_code = run_interactive(agent, ChatContext())
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(model.calls, 0)
+        self.assertIn("Input cleared", printed)
 
     def test_run_interactive_shows_help_without_model_call(self) -> None:
         model = CountingModel()
@@ -161,6 +187,43 @@ class CliTest(unittest.TestCase):
         config = AgentConfig(model_timeout=7)
 
         self.assertEqual(config.model_timeout, 7)
+
+    def test_render_prompt_includes_model_and_permission(self) -> None:
+        config = AgentConfig(provider="anthropic", model="claude-sonnet-4-5", permission_mode="plan")
+
+        prompt = render_prompt(config)
+
+        self.assertIn("minimal-agent", prompt)
+        self.assertIn("model: anthropic/claude-sonnet-4-5", prompt)
+        self.assertIn("permission: plan", prompt)
+
+    def test_format_duration_uses_human_units(self) -> None:
+        self.assertEqual(format_duration(0.25), "250ms")
+        self.assertEqual(format_duration(1.5), "1.50s")
+        self.assertEqual(format_duration(65), "1m5.0s")
+
+    def test_run_turn_includes_supplemental_input_before_next_model_call(self) -> None:
+        model = MultiStepCaptureModel()
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+        context = ChatContext()
+        inputs = ["please also inspect tests"]
+
+        def read_input() -> str | None:
+            return inputs.pop(0) if inputs else None
+
+        with patch("builtins.print"):
+            exit_code = run_turn(
+                agent,
+                "first task",
+                context,
+                options=LoopOptions(allow_final_text=True, interrupt_input_reader=read_input),
+            )
+
+        second_call_messages = "\n".join(message.content for message in model.messages_by_call[1])
+        self.assertEqual(exit_code, 0)
+        self.assertIn("User supplemental input during this task", second_call_messages)
+        self.assertIn("please also inspect tests", second_call_messages)
 
     def test_run_interactive_accepts_plain_text_reply(self) -> None:
         model = SequenceModel(["你好，我可以帮你看代码、改文件或排查问题。"])
