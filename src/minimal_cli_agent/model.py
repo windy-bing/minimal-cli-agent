@@ -79,12 +79,13 @@ class ChatModel:
 
         headers = {"anthropic-version": "2023-06-01"}
         if self.config.api_key:
-            headers["x-api-key"] = self.config.api_key
-            headers["Authorization"] = f"Bearer {self.config.api_key}"
+            headers.update(anthropic_auth_headers(self.config.api_key))
 
         data = post_json(url, payload, headers=headers, timeout=self.config.model_timeout)
-        blocks = data.get("content", [])
-        return "".join(str(block.get("text", "")) for block in blocks if block.get("type") == "text")
+        output = extract_anthropic_text(data)
+        if not output.strip():
+            raise ModelRequestError(describe_empty_anthropic_response(data))
+        return output
 
     def _complete_gemini(self, messages: list[Message]) -> str:
         if not self.config.api_key:
@@ -163,6 +164,58 @@ def split_system_messages(messages: list[Message]) -> tuple[str, list[Message]]:
     system_parts = [message.content for message in messages if message.role == "system"]
     chat_messages = [message for message in messages if message.role != "system"]
     return "\n\n".join(system_parts), chat_messages
+
+
+def anthropic_auth_headers(api_key: str) -> dict[str, str]:
+    if api_key.startswith("sk-ant-"):
+        return {"x-api-key": api_key}
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+def extract_anthropic_text(data: dict) -> str:
+    content = data.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+        return "".join(parts)
+
+    choices = data.get("choices")
+    if isinstance(choices, list) and choices:
+        first = choices[0]
+        if isinstance(first, dict):
+            message = first.get("message")
+            if isinstance(message, dict) and isinstance(message.get("content"), str):
+                return message["content"]
+            if isinstance(first.get("text"), str):
+                return first["text"]
+
+    completion = data.get("completion")
+    if isinstance(completion, str):
+        return completion
+    return ""
+
+
+def describe_empty_anthropic_response(data: dict) -> str:
+    content = data.get("content")
+    content_types: list[str] = []
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict):
+                content_types.append(str(block.get("type", "<unknown>")))
+            else:
+                content_types.append(type(block).__name__)
+    return (
+        "Anthropic response contained no text content "
+        f"(stop_reason={data.get('stop_reason', '<none>')}, "
+        f"content_types={content_types or '<none>'}, "
+        f"response_keys={sorted(str(key) for key in data.keys())})."
+    )
 
 
 def render_messages_for_codex(messages: list[Message]) -> str:

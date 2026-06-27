@@ -42,6 +42,17 @@ class FailingThenCountingModel:
         return "recovered\n```bash-action\nexit\n```"
 
 
+class InterruptThenCountingModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, messages: list[Message]) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            raise KeyboardInterrupt
+        return "recovered\n```bash-action\nexit\n```"
+
+
 class WriteBlockedThenRetryModel:
     def __init__(self) -> None:
         self.calls = 0
@@ -236,6 +247,22 @@ class CliTest(unittest.TestCase):
         self.assertEqual(model.calls, 2)
         self.assertIn("temporary model failure", printed)
         self.assertIn("Turn failed", printed)
+        self.assertIn("recovered", context.messages[-1].content)
+
+    def test_run_interactive_continues_after_turn_interrupt(self) -> None:
+        model = InterruptThenCountingModel()
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+        context = ChatContext()
+
+        with patch("builtins.input", side_effect=["retry", "/quit"]), patch("builtins.print") as print_mock:
+            exit_code = run_interactive(agent, context, first_message="first")
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(model.calls, 2)
+        self.assertIn("Turn interrupted", printed)
+        self.assertNotIn("Turn failed", printed)
         self.assertIn("recovered", context.messages[-1].content)
 
     def test_run_interactive_can_switch_permission_with_slash_command(self) -> None:

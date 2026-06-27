@@ -186,6 +186,9 @@ def run_turn_with_summary(
         while True:
             try:
                 event = next(stream)
+            except KeyboardInterrupt:
+                print("\nTurn interrupted.")
+                return TurnExecutionSummary(exit_code=130, plan_blocked=plan_blocked)
             except AgentError as exc:
                 print(f"error: {exc}")
                 return TurnExecutionSummary(exit_code=1, plan_blocked=plan_blocked)
@@ -314,6 +317,9 @@ def run_interactive(
             )
             if should_retry_with_auto_edit(session, pending, summary):
                 pending = retry_in_auto_edit(session, pending)
+                continue
+            if summary.exit_code == 130:
+                pending = None
                 continue
             if summary.exit_code != 0:
                 print("Turn failed. You can retry, adjust options, or type /exit.")
