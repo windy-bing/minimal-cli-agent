@@ -89,6 +89,7 @@ class AgentConfig:
     cwd: Path = field(default_factory=Path.cwd)
     max_steps: int = 20
     command_timeout: int = 30
+    shell_kind: str = "system"
     model_timeout: int = int(Defaults.MODEL_TIMEOUT)
     permission_mode: PermissionMode = PermissionModes.DEFAULT
     allow_network: bool = False
@@ -183,6 +184,7 @@ class CommandResult:
     exit_code: int
     output: str
     skipped: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def as_observation(self) -> str:
         command = redact_text(self.command)
@@ -196,8 +198,19 @@ class CommandResult:
             f"{header}\n"
             f"status: {status}\n"
             f"exit_code: {self.exit_code}\n"
+            f"{format_metadata(self.metadata)}"
             "command:\n"
             f"```text\n{command}\n```\n"
             "output:\n"
             f"```text\n{output}\n```"
         )
+
+
+def format_metadata(metadata: dict[str, Any]) -> str:
+    if not metadata:
+        return ""
+    lines = ["metadata:"]
+    for key in sorted(metadata):
+        value = redact_text(str(metadata[key]))
+        lines.append(f"- {key}: {value}")
+    return "\n".join(lines) + "\n"

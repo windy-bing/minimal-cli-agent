@@ -109,47 +109,147 @@ def validate_payload_schema(
 
 
 def validate_object_schema(data: Any, schema: dict[str, Any]) -> list[str]:
-    if schema.get("type") != "object":
+    return validate_schema_value("payload", data, schema, root=True)
+
+
+def validate_schema_value(path: str, value: Any, schema: dict[str, Any], root: bool = False) -> list[str]:
+    errors: list[str] = []
+
+    enum_values = schema.get("enum")
+    if isinstance(enum_values, list) and value not in enum_values:
+        allowed = ", ".join(json.dumps(item) for item in enum_values)
+        return [f"{path}: expected one of {allowed}"]
+
+    one_of = schema.get("oneOf")
+    if isinstance(one_of, list):
+        matches = [candidate for candidate in one_of if isinstance(candidate, dict) and not validate_schema_value(path, value, candidate, root)]
+        if len(matches) != 1:
+            return [f"{path}: expected exactly one oneOf schema to match"]
         return []
-    if not isinstance(data, dict):
-        return ["payload must be a JSON object"]
 
-    errors: list[str] = []
-    required = schema.get("required", [])
-    if isinstance(required, list):
-        for field_name in required:
-            if field_name not in data or data[field_name] is None:
-                errors.append(f"{field_name}: missing required field")
+    any_of = schema.get("anyOf")
+    if isinstance(any_of, list):
+        if not any(isinstance(candidate, dict) and not validate_schema_value(path, value, candidate, root) for candidate in any_of):
+            return [f"{path}: expected at least one anyOf schema to match"]
+        return []
 
-    properties = schema.get("properties", {})
-    if isinstance(properties, dict):
-        for field_name, rules in properties.items():
-            if field_name not in data or not isinstance(rules, dict):
-                continue
-            errors.extend(validate_field(field_name, data[field_name], rules))
-    return errors
+    expected_type = schema.get("type")
+    if isinstance(expected_type, list):
+        expected_types = [item for item in expected_type if isinstance(item, str)]
+        if not any(matches_json_type(value, item) for item in expected_types):
+            return [f"{path}: expected {' or '.join(expected_types)}"]
+        return []
 
+    if expected_type == "object":
+        if not isinstance(value, dict):
+            return ["payload must be a JSON object"] if root else [f"{path}: expected object"]
 
-def validate_field(field_name: str, value: Any, rules: dict[str, Any]) -> list[str]:
-    expected_type = rules.get("type")
-    errors: list[str] = []
-    if expected_type == "string" and not isinstance(value, str):
-        errors.append(f"{field_name}: expected string")
-    elif expected_type == "integer":
-        if not isinstance(value, int) or isinstance(value, bool):
-            errors.append(f"{field_name}: expected integer")
-        else:
-            minimum = rules.get("minimum")
-            maximum = rules.get("maximum")
-            if isinstance(minimum, int) and value < minimum:
-                errors.append(f"{field_name}: must be >= {minimum}")
-            if isinstance(maximum, int) and value > maximum:
-                errors.append(f"{field_name}: must be <= {maximum}")
-    elif expected_type == "array":
+        properties = schema.get("properties", {})
+        required = schema.get("required", [])
+        if isinstance(required, list):
+            for field_name in required:
+                if field_name not in value or value[field_name] is None:
+                    errors.append(f"{join_schema_path(path, str(field_name), root)}: missing required field")
+
+        if isinstance(properties, dict):
+            for field_name, rules in properties.items():
+                if field_name not in value or not isinstance(rules, dict):
+                    continue
+                errors.extend(validate_schema_value(join_schema_path(path, field_name, root), value[field_name], rules))
+
+        additional = schema.get("additionalProperties", True)
+        if additional is False and isinstance(properties, dict):
+            for field_name in value:
+                if field_name not in properties:
+                    errors.append(f"{join_schema_path(path, str(field_name), root)}: unexpected field")
+        elif isinstance(additional, dict):
+            known = set(properties.keys()) if isinstance(properties, dict) else set()
+            for field_name, field_value in value.items():
+                if field_name not in known:
+                    errors.extend(validate_schema_value(join_schema_path(path, str(field_name), root), field_value, additional))
+        return errors
+
+    if expected_type == "array":
         if not isinstance(value, list):
-            errors.append(f"{field_name}: expected array")
-        else:
-            item_type = rules.get("items", {}).get("type") if isinstance(rules.get("items"), dict) else None
-            if item_type == "string" and not all(isinstance(item, str) for item in value):
-                errors.append(f"{field_name}: expected array of strings")
+            return [f"{path}: expected array"]
+        min_items = schema.get("minItems")
+        max_items = schema.get("maxItems")
+        if isinstance(min_items, int) and len(value) < min_items:
+            errors.append(f"{path}: must contain >= {min_items} items")
+        if isinstance(max_items, int) and len(value) > max_items:
+            errors.append(f"{path}: must contain <= {max_items} items")
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            item_type = item_schema.get("type")
+            if item_type == "string" and any(not isinstance(item, str) for item in value):
+                errors.append(f"{path}: expected array of strings")
+            else:
+                for index, item in enumerate(value):
+                    errors.extend(validate_schema_value(f"{path}[{index}]", item, item_schema))
+        return errors
+
+    if expected_type == "string":
+        if not isinstance(value, str):
+            return [f"{path}: expected string"]
+        min_length = schema.get("minLength")
+        max_length = schema.get("maxLength")
+        if isinstance(min_length, int) and len(value) < min_length:
+            errors.append(f"{path}: length must be >= {min_length}")
+        if isinstance(max_length, int) and len(value) > max_length:
+            errors.append(f"{path}: length must be <= {max_length}")
+        return errors
+
+    if expected_type == "integer":
+        if not isinstance(value, int) or isinstance(value, bool):
+            return [f"{path}: expected integer"]
+        errors.extend(validate_number_bounds(path, value, schema))
+        return errors
+
+    if expected_type == "number":
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return [f"{path}: expected number"]
+        errors.extend(validate_number_bounds(path, float(value), schema))
+        return errors
+
+    if expected_type == "boolean" and not isinstance(value, bool):
+        return [f"{path}: expected boolean"]
+
+    if expected_type == "null" and value is not None:
+        return [f"{path}: expected null"]
+
     return errors
+
+
+def validate_number_bounds(path: str, value: int | float, schema: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    minimum = schema.get("minimum")
+    maximum = schema.get("maximum")
+    if isinstance(minimum, (int, float)) and value < minimum:
+        errors.append(f"{path}: must be >= {minimum}")
+    if isinstance(maximum, (int, float)) and value > maximum:
+        errors.append(f"{path}: must be <= {maximum}")
+    return errors
+
+
+def matches_json_type(value: Any, expected_type: str) -> bool:
+    if expected_type == "object":
+        return isinstance(value, dict)
+    if expected_type == "array":
+        return isinstance(value, list)
+    if expected_type == "string":
+        return isinstance(value, str)
+    if expected_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected_type == "boolean":
+        return isinstance(value, bool)
+    if expected_type == "null":
+        return value is None
+    return True
+
+
+def join_schema_path(parent: str, field_name: str, root: bool) -> str:
+    if root:
+        return field_name
+    return f"{parent}.{field_name}"

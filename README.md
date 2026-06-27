@@ -264,6 +264,7 @@ Explicit CLI options such as `--model`, `--base-url`, and `--api-key` take prece
 --cwd            working directory for commands
 --max-steps      maximum agent loop iterations
 --timeout        command timeout in seconds
+--shell          shell adapter: system, bash, zsh, sh, powershell, cmd, git-bash, or a shell command
 --model-timeout  model request timeout in seconds
 --model-fallback JSON fallback route; may be repeated
 --model-max-retries retry count per model route
@@ -330,7 +331,7 @@ src/minimal_cli_agent/
   model_gateway.py model routing, fallback, retries, circuit breaker, quotas, and usage ledger
   model.py        Ollama, OpenAI-compatible, Anthropic, Gemini HTTP clients, and Codex CLI adapter
   parser.py       bash-action and tool-action parser
-  environment.py  local shell execution
+  environment.py  shell adapter and local command execution
   memory.py       JSON session store and basic context compaction
   prompts.py      system prompt and format reminder
 ```
@@ -359,7 +360,9 @@ Implemented:
 - Built-in `read_file`, `read_tail`, `read_forward`, `search`, `write_file`, and `edit_file` tools for bounded workspace file access.
 - `search` respects built-in ignore dirs, explicit `ignore_dirs`, and workspace `.gitignore` / `.agentignore` patterns.
 - Structured write validation for JSON, TOML, XML, and optional PyYAML-backed YAML.
-- `ToolSpec` supports lightweight parameter schemas with field-level validation errors.
+- `ToolSpec` supports a focused JSON Schema subset with nested objects, arrays, enum, oneOf/anyOf, bounds, and field-level validation errors.
+- Active plans are injected into execute turns; when a plan names concrete paths, writer tools are constrained to those planned paths.
+- `ShellAdapter` supports system shell, bash, zsh, sh, PowerShell, cmd, and Git Bash style command execution, with shell metadata in observations.
 - `ResolveDecision` supports decision hooks that can override policy decisions before confirmation.
 - Permission decision type with `allow`, `ask`, `deny`, and `skip`.
 - Product permission modes: `default`, `autoEdit`, `plan`, `yolo`.

@@ -300,6 +300,7 @@ class ModelGateway:
             cwd=self.config.cwd,
             max_steps=self.config.max_steps,
             command_timeout=self.config.command_timeout,
+            shell_kind=self.config.shell_kind,
             model_timeout=route.timeout or self.config.model_timeout,
             permission_mode=self.config.permission_mode,
             allow_network=self.config.allow_network,

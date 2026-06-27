@@ -7,7 +7,7 @@ from minimal_cli_agent.agent import Agent
 from minimal_cli_agent.cli import detect_explicit_options, run_interactive, run_turn
 from minimal_cli_agent.exceptions import ModelRequestError
 from minimal_cli_agent.harness import AgentHarness
-from minimal_cli_agent.plan import PLAN_METADATA_KEY
+from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact
 from minimal_cli_agent.types import AgentConfig, ChatContext, Message
 
 
@@ -53,6 +53,16 @@ class WriteBlockedThenRetryModel:
         if self.calls == 2:
             return "Plan mode blocked the edit."
         return "Done.\n```bash-action\nexit\n```"
+
+
+class CapturingModel:
+    def __init__(self, output: str) -> None:
+        self.output = output
+        self.messages: list[Message] = []
+
+    def complete(self, messages: list[Message]) -> str:
+        self.messages = list(messages)
+        return self.output
 
 
 class CliTest(unittest.TestCase):
@@ -315,6 +325,57 @@ class CliTest(unittest.TestCase):
         self.assertNotIn(PLAN_METADATA_KEY, context.metadata)
         self.assertIn("plan cleared", printed)
         self.assertIn("no active plan", printed)
+
+    def test_run_turn_injects_active_plan_into_system_prompt(self) -> None:
+        model = CapturingModel("Done.\n```bash-action\nexit\n```")
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+        context = ChatContext(
+            metadata={
+                PLAN_METADATA_KEY: PlanArtifact(
+                    goal="update docs",
+                    summary="Update README only.",
+                    steps=["Edit README.md"],
+                    evidence=["README.md"],
+                )
+            }
+        )
+
+        with patch("builtins.print"):
+            exit_code = run_turn(agent, "execute plan", context)
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Active execution plan:", model.messages[0].content)
+        self.assertIn("README.md", model.messages[0].content)
+
+    def test_active_plan_restricts_writer_paths_when_paths_are_known(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            model = SequenceModel([
+                '```tool-action\n{"tool":"write_file","path":"other.txt","content":"bad"}\n```',
+                "Done.\n```bash-action\nexit\n```",
+            ])
+            config = AgentConfig(cwd=root, permission_mode="autoEdit")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+            context = ChatContext(
+                metadata={
+                    PLAN_METADATA_KEY: PlanArtifact(
+                        goal="write planned file",
+                        summary="Only planned.txt should be edited.",
+                        steps=["Update planned.txt"],
+                        evidence=["planned.txt"],
+                    )
+                }
+            )
+
+            with patch("builtins.print"):
+                exit_code = run_turn(agent, "execute plan", context)
+
+            blocked_observations = [message.content for message in context.messages if "Active plan restricts" in message.content]
+
+        self.assertEqual(exit_code, 0)
+        self.assertFalse((root / "other.txt").exists())
+        self.assertTrue(blocked_observations)
 
 
 if __name__ == "__main__":

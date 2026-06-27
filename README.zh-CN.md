@@ -264,6 +264,7 @@ Profile 行为：
 --cwd            命令执行目录
 --max-steps      Agent loop 最大迭代次数
 --timeout        命令超时时间，单位秒
+--shell          shell adapter：system、bash、zsh、sh、powershell、cmd、git-bash 或 shell command
 --model-timeout  模型请求超时时间，单位秒
 --model-fallback JSON fallback 路由，可重复传入
 --model-max-retries 每个模型路由的重试次数
@@ -330,7 +331,7 @@ src/minimal_cli_agent/
   model_gateway.py 模型路由、fallback、重试、熔断、限额和用量账本
   model.py         Ollama、OpenAI-compatible、Anthropic、Gemini HTTP client 和 Codex CLI adapter
   parser.py        bash-action 和 tool-action 解析器
-  environment.py   本地 shell 执行
+  environment.py   shell adapter 和本地命令执行
   memory.py        JSON session store 和基础上下文压缩
   prompts.py       system prompt 和格式提醒
 ```
@@ -359,7 +360,9 @@ src/minimal_cli_agent/
 - 内置 `read_file`、`read_tail`、`read_forward`、`search`、`write_file` 和 `edit_file`，支持有边界地访问和修改工作区文件。
 - `search` 会同时遵守内置忽略目录、显式 `ignore_dirs`、工作区 `.gitignore` / `.agentignore`。
 - 对 JSON、TOML、XML 和可选 PyYAML 支持的 YAML 做结构化写入校验。
-- `ToolSpec` 支持轻量参数 schema，并返回字段级校验错误。
+- `ToolSpec` 支持聚焦的 JSON Schema 子集，包括 nested object、array、enum、oneOf/anyOf、边界约束和字段级校验错误。
+- active plan 会注入执行 turn；当计划里出现明确路径时，写入类工具只能修改计划路径。
+- `ShellAdapter` 支持 system shell、bash、zsh、sh、PowerShell、cmd 和 Git Bash 风格命令执行，并在 observation 中暴露 shell metadata。
 - `ResolveDecision` 支持 decision hooks，可以在确认前覆盖 policy 决策。
 - `ToolDecision`：`allow`、`ask`、`deny`、`skip`。
 - 产品权限模式：`default`、`autoEdit`、`plan`、`yolo`。

@@ -97,3 +97,30 @@ def format_plan_artifact(plan: PlanArtifact) -> str:
         lines.append("evidence:")
         lines.extend(f"- {item}" for item in plan.evidence)
     return "\n".join(lines)
+
+
+def format_plan_execution_context(plan: PlanArtifact) -> str:
+    return (
+        "Active execution plan:\n"
+        f"{format_plan_artifact(plan)}\n\n"
+        "Follow the active plan when selecting actions. If the plan is stale or incomplete, explain the mismatch before acting."
+    )
+
+
+def extract_plan_paths(plan: PlanArtifact) -> tuple[str, ...]:
+    candidates: list[str] = []
+    for value in [plan.goal, plan.summary, *plan.steps, *plan.evidence]:
+        candidates.extend(extract_path_like_tokens(value))
+    seen: set[str] = set()
+    paths: list[str] = []
+    for candidate in candidates:
+        normalized = candidate.strip().strip("`'\".,:;)")
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            paths.append(normalized)
+    return tuple(paths)
+
+
+def extract_path_like_tokens(value: str) -> list[str]:
+    tokens = re.findall(r"(?:[\w.-]+/)+[\w.-]+|[\w.-]+\.(?:py|md|txt|json|toml|yaml|yml|xml|ini|cfg)", value)
+    return [token for token in tokens if not token.startswith(("http://", "https://"))]

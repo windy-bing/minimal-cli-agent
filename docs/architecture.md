@@ -14,7 +14,7 @@ The first implementation follows the minimal-agent.com loop:
 - `Agent`: owns only the stateless reasoning/action/observation loop.
 - `AgentHarness`: owns runtime wiring for model, context manager, session store, policy, tool registry, and environment.
 - `ChatModel`: calls Ollama, OpenAI-compatible, Anthropic, Gemini chat endpoints, or the Codex CLI adapter.
-- `LocalEnvironment`: executes shell commands with timeout and non-interactive env vars.
+- `LocalEnvironment`: executes shell commands through a `ShellAdapter` with timeout, non-interactive env vars, decoding, and shell metadata.
 - `ShellPermissionPolicy`: approves, skips, or rejects shell and workspace file tools.
 - `ToolRegistry`: registers executable tools behind one invocation boundary.
 - `ToolExecutionPipeline`: runs Discovery, Validation, Permission, PreHook, ResolveDecision, Confirmation, Execution, PostHook, AutoVerify, and Formatting.
@@ -89,13 +89,15 @@ Implemented:
 - Structured write validation for JSON, TOML, XML, and YAML when PyYAML is available.
 - Tool aliases plus recoverable discovery and validation observations.
 - Safe close-match suggestions for unknown tool names, without automatic fuzzy execution.
-- Lightweight `ToolSpec.parameters_schema` validation with field-level repair observations.
+- Focused `ToolSpec.parameters_schema` JSON Schema validation with nested objects, arrays, enum, oneOf/anyOf, bounds, and field-level repair observations.
 - `ResolveDecision` decision hooks can override policy decisions before confirmation.
 - Consistent tool observation formatting with `status`, `exit_code`, `command`, and `output`.
 - Secret redaction for command output and observations.
 - Network command hard gate with explicit `--allow-network` opt-in.
 - Configurable additional shell deny rules through `--policy-file`.
 - Typed plan artifact stored in `ChatContext.metadata` and persisted in JSON sessions.
+- Execute turns read the active plan, inject it into the system prompt, and constrain writer tools to planned paths when paths are known.
+- ShellAdapter support for system shell, bash, zsh, sh, PowerShell, cmd, and Git Bash style execution with shell/cwd/encoding/path metadata in observations.
 - Injectable permission confirmation handler; CLI input is the default adapter.
 - Pyright `basic` type-checking configuration for `src` and `tests`.
 - `ToolExecutionPipeline` with the full stage shape:
@@ -113,7 +115,7 @@ Reserved:
 - `ResolveDecision` has a decision hook baseline. Richer priority rules, conflict reporting, and session-scoped approval memory remain reserved.
 - `Confirmation` uses an injectable handler. CLI `input()` is the default adapter, and UI clients can provide their own handler.
 - `autoEdit` automatically approves file writer tools; shell commands still ask for confirmation.
-- Tool schema validation is intentionally minimal. It currently supports per-tool expected format and validator callbacks, not full JSON Schema.
+- Tool schema validation is a focused JSON Schema subset, not a complete Draft implementation.
 - The event log is JSON-backed. It is durable, but not yet indexed or queryable like SQLite.
 - MCP concrete tool discovery is opt-in at startup. Generic list/call tools remain available without touching the network.
 - Skills are manually selected by CLI option or slash command; automatic discovery is reserved.

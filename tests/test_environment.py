@@ -1,6 +1,8 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-from minimal_cli_agent.environment import LocalEnvironment
+from minimal_cli_agent.environment import LocalEnvironment, resolve_shell_adapter
 from minimal_cli_agent.types import AgentConfig
 
 
@@ -13,6 +15,22 @@ class EnvironmentTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertNotIn("sk-abcdefghijklmnopqrstuvwxyz123456", result.output)
         self.assertIn("OPENAI_API_KEY=<redacted>", result.output)
+
+    def test_shell_adapter_records_metadata(self) -> None:
+        with TemporaryDirectory() as tmp:
+            environment = LocalEnvironment(AgentConfig(cwd=Path(tmp), permission_mode="yolo", shell_kind="sh"))
+
+            result = environment.execute("printf hello")
+
+        self.assertEqual(result.output, "hello")
+        self.assertEqual(result.metadata["shell"], "sh")
+        self.assertEqual(result.metadata["encoding"], "utf-8")
+        self.assertIn("cwd", result.metadata)
+
+    def test_resolve_shell_adapter_supports_named_shells(self) -> None:
+        self.assertEqual(resolve_shell_adapter("bash").argv("echo hi"), ["bash", "-lc", "echo hi"])
+        self.assertEqual(resolve_shell_adapter("powershell").argv("Write-Output hi")[:3], ["pwsh", "-NoProfile", "-NonInteractive"])
+        self.assertEqual(resolve_shell_adapter("cmd").path_separator, "\\")
 
 
 if __name__ == "__main__":

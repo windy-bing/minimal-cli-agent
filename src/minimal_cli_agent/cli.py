@@ -10,17 +10,17 @@ import sys
 from pathlib import Path
 
 from minimal_cli_agent.agent import Agent, print_event
-from minimal_cli_agent.constants import Defaults, InteractiveCommands, LoopEventData, LoopEventTypes, PermissionModes, Profiles, Providers, Tools
+from minimal_cli_agent.constants import Defaults, InteractiveCommands, LoopEventData, LoopEventTypes, PermissionModes, Profiles, Providers, ToolDecisionKinds, ToolPayloadFields, Tools
 from minimal_cli_agent.context import total_message_chars
 from minimal_cli_agent.exceptions import AgentError, ConfigurationError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import compact_messages
 from minimal_cli_agent.memory import JsonSessionStore
-from minimal_cli_agent.plan import PLAN_METADATA_KEY, build_plan_prompt, create_plan_artifact, format_plan_artifact
+from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact, build_plan_prompt, create_plan_artifact, extract_plan_paths, format_plan_artifact, format_plan_execution_context
 from minimal_cli_agent.prompts import INTERACTIVE_SYSTEM_PROMPT, SYSTEM_PROMPT
 from minimal_cli_agent.profiles import resolve_profile
 from minimal_cli_agent.skills import build_system_prompt, resolve_skill_path, resolve_skill_paths
-from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, Message, ModelRoute
+from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, Message, ModelRoute, ToolCall, ToolDecision
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cwd", type=Path, default=Path(os.getenv("AGENT_CWD", ".")))
     parser.add_argument("--max-steps", type=int, default=int(os.getenv("AGENT_MAX_STEPS", Defaults.MAX_STEPS)))
     parser.add_argument("--timeout", type=int, default=int(os.getenv("AGENT_COMMAND_TIMEOUT", Defaults.COMMAND_TIMEOUT)))
+    parser.add_argument("--shell", default=os.getenv("AGENT_SHELL", "system"), help="Shell adapter: system, bash, zsh, sh, powershell, cmd, git-bash, or a shell command.")
     parser.add_argument("--model-timeout", type=int, default=int(os.getenv("AGENT_MODEL_TIMEOUT", Defaults.MODEL_TIMEOUT)))
     parser.add_argument("--model-fallback", action="append", default=parse_model_fallback_env(), help="JSON fallback route. Example: '{\"provider\":\"ollama\",\"model\":\"qwen3:1.7b\",\"base_url\":\"http://localhost:11434\"}'")
     parser.add_argument("--model-max-retries", type=int, default=int(os.getenv("AGENT_MODEL_MAX_RETRIES", "0")))
@@ -86,6 +87,7 @@ def main(argv: list[str] | None = None) -> int:
             cwd=args.cwd.resolve(),
             max_steps=args.max_steps,
             command_timeout=args.timeout,
+            shell_kind=args.shell,
             model_timeout=args.model_timeout,
             model_fallbacks=parse_model_routes(args.model_fallback),
             model_max_retries=args.model_max_retries,
@@ -123,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"api_key_present: {bool(config.api_key)}")
             print(f"api_key_length: {len(config.api_key or '')}")
             print(f"fallback_routes: {len(config.model_fallbacks)}")
+            print(f"shell: {config.shell_kind}")
             print(f"model_price_input_per_1m: {config.model_price_input_per_1m}")
             print(f"model_price_output_per_1m: {config.model_price_output_per_1m}")
             print(f"usage_ledger: {config.usage_ledger_path or '<none>'}")
@@ -172,27 +175,95 @@ def run_turn_with_summary(
     compact_output: bool = False,
 ) -> TurnExecutionSummary:
     options = with_configured_skills(agent.config, options)
+    options = with_active_plan_context(context, options)
     upsert_system_prompt(context, options.system_prompt)
     stream = agent.chat_stream(message, context, options)
     plan_blocked = False
-    while True:
-        try:
-            event = next(stream)
-        except AgentError as exc:
-            print(f"error: {exc}")
-            return TurnExecutionSummary(exit_code=1, plan_blocked=plan_blocked)
-        except StopIteration as exc:
-            result = exc.value
-            context.messages = result.final_messages
-            if session_store:
-                session_store.save(context.messages)
-            return TurnExecutionSummary(exit_code=0 if result.success else 1, plan_blocked=plan_blocked)
-        if compact_output:
-            print_compact_event(event)
-        else:
-            print_event(event)
-        if event.type == LoopEventTypes.TOOL_CALL_RESULT and is_plan_mode_write_block(event.data.get(LoopEventData.OBSERVATION, "")):
-            plan_blocked = True
+    plan_hook = build_plan_decision_hook(context)
+    if plan_hook is not None:
+        agent.harness.tool_pipeline.hooks.decision_hooks.append(plan_hook)
+    try:
+        while True:
+            try:
+                event = next(stream)
+            except AgentError as exc:
+                print(f"error: {exc}")
+                return TurnExecutionSummary(exit_code=1, plan_blocked=plan_blocked)
+            except StopIteration as exc:
+                result = exc.value
+                context.messages = result.final_messages
+                if session_store:
+                    session_store.save(context.messages)
+                return TurnExecutionSummary(exit_code=0 if result.success else 1, plan_blocked=plan_blocked)
+            if compact_output:
+                print_compact_event(event)
+            else:
+                print_event(event)
+            if event.type == LoopEventTypes.TOOL_CALL_RESULT and is_plan_mode_write_block(event.data.get(LoopEventData.OBSERVATION, "")):
+                plan_blocked = True
+    finally:
+        if plan_hook is not None and plan_hook in agent.harness.tool_pipeline.hooks.decision_hooks:
+            agent.harness.tool_pipeline.hooks.decision_hooks.remove(plan_hook)
+
+
+def with_active_plan_context(context: ChatContext, options: LoopOptions) -> LoopOptions:
+    plan = active_plan_from_context(context)
+    if plan is None:
+        return options
+    prompt = options.system_prompt or SYSTEM_PROMPT
+    prompt = f"{prompt}\n\n{format_plan_execution_context(plan)}"
+    return LoopOptions(allow_final_text=options.allow_final_text, system_prompt=prompt)
+
+
+def active_plan_from_context(context: ChatContext) -> PlanArtifact | None:
+    raw = context.metadata.get(PLAN_METADATA_KEY)
+    if isinstance(raw, PlanArtifact):
+        return raw
+    if isinstance(raw, dict):
+        return PlanArtifact.from_dict(raw)
+    return None
+
+
+def build_plan_decision_hook(context: ChatContext):
+    plan = active_plan_from_context(context)
+    if plan is None:
+        return None
+    allowed_paths = extract_plan_paths(plan)
+    if not allowed_paths:
+        return None
+
+    def hook(call: ToolCall, decision: ToolDecision) -> ToolDecision | None:
+        if call.name not in Tools.WRITERS:
+            return None
+        path = payload_path(call.payload)
+        if path and is_path_allowed_by_plan(path, allowed_paths):
+            return None
+        allowed = ", ".join(allowed_paths)
+        return ToolDecision(
+            kind=ToolDecisionKinds.DENY,
+            reason=f"Active plan restricts file edits to planned paths: {allowed}",
+        )
+
+    return hook
+
+
+def payload_path(payload: str) -> str:
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get(ToolPayloadFields.PATH, ""))
+
+
+def is_path_allowed_by_plan(path: str, allowed_paths: tuple[str, ...]) -> bool:
+    normalized = Path(path).as_posix().lstrip("./")
+    for allowed in allowed_paths:
+        allowed_normalized = Path(allowed).as_posix().lstrip("./")
+        if normalized == allowed_normalized or normalized.startswith(f"{allowed_normalized}/"):
+            return True
+    return False
 
 
 def run_interactive(
@@ -655,6 +726,7 @@ def print_config(config: AgentConfig) -> None:
     print(f"model: {config.model}")
     print(f"base_url: {config.base_url}")
     print(f"permission: {config.permission_mode}")
+    print(f"shell: {config.shell_kind}")
     print(f"allow_network: {config.allow_network}")
     print(f"summarize_context: {config.summarize_context}")
     print(f"fallback_routes: {len(config.model_fallbacks)}")

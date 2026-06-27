@@ -91,6 +91,66 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertTrue(result.skipped)
         self.assertIn("include_extensions: expected array of strings", result.output)
 
+    def test_schema_validation_reports_nested_object_errors(self) -> None:
+        from minimal_cli_agent.tool_registry import validate_object_schema
+
+        schema = {
+            "type": "object",
+            "required": ["config"],
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "required": ["mode"],
+                    "properties": {
+                        "mode": {"type": "string", "enum": ["fast", "safe"]},
+                        "retry": {"type": "integer", "minimum": 0},
+                    },
+                    "additionalProperties": False,
+                }
+            },
+        }
+
+        errors = validate_object_schema({"config": {"mode": "other", "retry": -1, "extra": True}}, schema)
+
+        self.assertIn('config.mode: expected one of "fast", "safe"', errors)
+        self.assertIn("config.retry: must be >= 0", errors)
+        self.assertIn("config.extra: unexpected field", errors)
+
+    def test_schema_validation_reports_array_item_paths(self) -> None:
+        from minimal_cli_agent.tool_registry import validate_object_schema
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {"type": "object", "properties": {"name": {"type": "string"}}},
+                }
+            },
+        }
+
+        errors = validate_object_schema({"items": [{"name": "ok"}, {"name": 3}]}, schema)
+
+        self.assertIn("items[1].name: expected string", errors)
+
+    def test_schema_validation_supports_one_of(self) -> None:
+        from minimal_cli_agent.tool_registry import validate_object_schema
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "oneOf": [
+                        {"type": "integer"},
+                        {"type": "string", "minLength": 3},
+                    ]
+                }
+            },
+        }
+
+        self.assertEqual(validate_object_schema({"value": "abc"}, schema), [])
+        self.assertIn("value: expected exactly one oneOf schema to match", validate_object_schema({"value": "x"}, schema))
+
     def test_tool_alias_resolves_to_registered_tool(self) -> None:
         harness = AgentHarness(AgentConfig(permission_mode="plan"))
 

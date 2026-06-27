@@ -26,13 +26,13 @@
 
 | 主题 | 风险 | 建议 |
 | --- | --- | --- |
-| 完整 JSON Schema | 已有轻量 `ToolSpec.parameters_schema` 和字段级 repair observation；还不是完整 JSON Schema | 继续补 nested object、enum、oneOf、默认值和 schema 文档生成 |
+| 完整 JSON Schema | 已有聚焦 JSON Schema 子集，支持 nested object、array、enum、oneOf/anyOf、边界约束和字段级 repair observation | 后续补默认值、schema 文档生成和更完整 Draft 兼容 |
 | 工具模糊识别 | 已在 Discovery 阶段返回安全的相近工具名建议，但不会自动执行猜测 | 后续可加入风险等级过滤和更细的提示文案 |
 | 文件读取工具性能 | 已实现 `read_tail` / `read_forward` 基线，但还没有更细的编码、二进制和分页状态治理 | 继续补 byte/line 双模式、二进制检测和分页游标 |
 | grep/search top-k | 已实现 `search(pattern,path,top_k,max_files,timeout_ms)`，支持额外 ignore dirs、extension filter 和项目 ignore 文件解析 | 继续补渐进输出和 richer ranking |
 | 结构化文本编辑校验 | `write_file`/`edit_file` 已有 JSON/TOML/XML 写入前校验，YAML 在 PyYAML 可用时校验；还没有 schema 级校验和自动格式化 | 下一步补 JSON Schema、YAML schema、格式化建议和字段级 repair observation |
-| Plan Mode 上下文隔离 | `/plan` 已使用独立 context 和 `plan` 权限生成 typed plan artifact，不合并计划 transcript | 下一步让 execute 阶段显式读取 active plan，并按计划约束 tool allowlist |
-| OS shell adapter | 只假设 bash 会伤害 Windows/Powershell/cmd/Git Bash 场景 | 增加 `ShellAdapter`：bash/zsh/powershell/cmd/git-bash；显式暴露 shell、encoding、path rules 给模型 |
+| Plan Mode 上下文隔离 | `/plan` 已使用独立 context；execute 阶段会读取 active plan，并在计划包含路径时约束 writer 工具路径 | 后续补 typed workflow state 和更细 tool allowlist |
+| OS shell adapter | 已有 `ShellAdapter`，支持 system/bash/zsh/sh/powershell/cmd/git-bash，并在 observation 暴露 shell/cwd/encoding/path separator | 后续补真实 Windows 环境集成测试和更细 path rules |
 | 环境变量刷新 | 长会话里环境变化不能被 runtime 感知 | Environment 每次执行前重建 env snapshot，并记录差异或允许 hook 更新 |
 | 编码和换行 | Windows/codepage/二进制输出可能破坏 observation | 统一 stdout/stderr decoding 策略，保留 raw bytes 截断摘要 |
 | 提示词预算治理 | 工具说明堆进 system prompt 会挤占上下文并制造 lost-in-the-middle | Prompt 应该按角色和可用工具动态生成，工具文档短描述默认注入，长说明按需召回 |
@@ -56,11 +56,11 @@
 
 | 能力 | 为什么优先 |
 | --- | --- |
-| 完整 schema validation + repair observation | 已有字段级 schema validation 基线，下一步补完整 JSON Schema 子集和 schema 文档生成 |
-| Plan/Execute 双上下文 | 已有 `/plan` 隔离 context 和 typed plan artifact；execute 阶段还未强制消费 active plan |
+| 完整 schema validation + repair observation | 已有聚焦 JSON Schema 子集和字段级 repair observation；后续补 schema 文档生成 |
+| Plan/Execute 双上下文 | 已有 `/plan` 隔离 context 和 typed plan artifact；execute 阶段会消费 active plan 并约束已知写入路径 |
 | 文件工具流式读取和搜索 top-k | 已有 timeout、显式 ignore/filter 和项目 ignore 文件解析基线，下一步应补分页游标和更强 ranking |
 | 结构化编辑校验 | 已有写入前 parse validation 基线，下一步做 schema/format/repair 增强 |
-| ShellAdapter 跨平台设计 | CLI agent 不能长期只假设 bash，尤其不能把 Git Bash 当成 Windows 原生 shell |
+| ShellAdapter 跨平台设计 | 已有 ShellAdapter 基线；仍需补真实 Windows/Git Bash 行为验证 |
 | Prompt budget policy | harness 不只管工具和权限，也要管提示词预算、角色差异和规则注入 |
 | EventStore + memory retrieval | 压缩后无法召回会让长期任务丢状态；需要原始日志和可检索 memory 双轨 |
 
@@ -70,8 +70,8 @@
 
 目标是让工具错误可恢复、可审计、可验证。
 
-- `ToolSpec` 已支持轻量参数 schema；下一步补风险等级、输出 schema 和完整 JSON Schema 子集。
-- `Validation` 阶段已返回可恢复 observation 和字段级错误；下一步补 schema 文档生成和默认值提示。
+- `ToolSpec` 已支持聚焦 JSON Schema 子集；下一步补风险等级、输出 schema、默认值提示和 schema 文档生成。
+- `Validation` 阶段已返回可恢复 observation 和字段级错误。
 - `Formatting` 阶段已有统一 observation 基线，包含 `status`、`exit_code`、`command` 和 `output`；下一步补输出 schema 和机器可解析事件。
 - `ToolExecutionPipeline` 已增加 decision hook 仲裁和测试覆盖；下一步补 hook 优先级、冲突报告和审计事件。
 
@@ -91,16 +91,17 @@
 - `/plan` 阶段只使用 `plan` 权限和只读工具，产出 typed plan artifact。
 - `/plan` 已使用独立 context 和 `plan` 权限生成 typed plan artifact。
 - plan transcript 不直接并入 execute context，只保留计划摘要、步骤和必要证据。
-- 下一步让 `execute` 阶段读取 typed plan artifact，并使用不同 tool allowlist。
+- execute 阶段会读取 active plan 并注入 system prompt；当计划包含明确路径时，writer 工具只能写这些计划路径。
+- 下一步补 typed workflow state 和更细粒度 tool allowlist。
 
 ### Phase 4: Cross-platform Environment
 
 目标是让 shell 执行不再假设 bash。
 
-- 增加 `ShellAdapter` 接口。
-- 支持 bash/zsh/powershell/cmd/git-bash。
+- 已增加 `ShellAdapter` 接口。
+- 支持 system/bash/zsh/sh/powershell/cmd/git-bash。
 - observation 中明确 shell kind、cwd、encoding、path separator。
-- 每次执行前刷新 env snapshot，并做输出编码处理。
+- 每次执行前刷新 env snapshot，并做 bytes 输出解码处理。
 
 ### Phase 5: Prompt and Memory Governance
 
