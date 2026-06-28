@@ -6,7 +6,7 @@ from pathlib import Path
 import shlex
 import subprocess
 
-from minimal_cli_agent.constants import PermissionModes
+from minimal_cli_agent.constants import PermissionModes, SandboxKinds
 from minimal_cli_agent.exceptions import CommandTimeout
 from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.types import AgentConfig, CommandResult
@@ -71,9 +71,19 @@ class LocalEnvironment:
     def execute(self, command: str) -> CommandResult:
         if self.config.permission_mode == PermissionModes.PLAN:
             return CommandResult(command=command, exit_code=0, output="plan mode: command not executed.", skipped=True)
+        if self.config.sandbox_kind == SandboxKinds.DOCKER:
+            return self._execute_docker(command)
+        if self.config.sandbox_kind == SandboxKinds.HOST:
+            return self._execute_host(command)
+        return CommandResult(
+            command=command,
+            exit_code=2,
+            output=f"Unknown command sandbox: {self.config.sandbox_kind}. Expected one of: {', '.join(SandboxKinds.ALL)}.",
+        )
 
+    def _execute_host(self, command: str) -> CommandResult:
         env = os.environ.copy() | NON_INTERACTIVE_ENV
-        metadata = self.shell.metadata(str(self.config.cwd))
+        metadata = self.shell.metadata(str(self.config.cwd)) | {"sandbox": SandboxKinds.HOST}
         try:
             result = subprocess.run(
                 self.shell.argv(command),
@@ -93,6 +103,57 @@ class LocalEnvironment:
         output = redact_text(decode_output(result.stdout, self.shell.encoding))[-self.config.max_output_chars :]
         return CommandResult(command=command, exit_code=result.returncode, output=output, metadata=metadata)
 
+    def _execute_docker(self, command: str) -> CommandResult:
+        shell = container_shell_adapter(self.config.shell_kind)
+        mount_mode = "ro" if self.config.sandbox_read_only else "rw"
+        workspace_mount = f"{self.config.cwd}:/workspace:{mount_mode}"
+        metadata = shell.metadata("/workspace") | {
+            "sandbox": SandboxKinds.DOCKER,
+            "sandbox_image": self.config.sandbox_image,
+            "sandbox_network": self.config.sandbox_network,
+            "sandbox_read_only": str(self.config.sandbox_read_only),
+            "workspace_mount": workspace_mount,
+        }
+        env_args = [item for key, value in NON_INTERACTIVE_ENV.items() for item in ("-e", f"{key}={value}")]
+        argv = [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            self.config.sandbox_network,
+            "-v",
+            workspace_mount,
+            "-w",
+            "/workspace",
+            *env_args,
+            self.config.sandbox_image,
+            *shell.argv(command),
+        ]
+        try:
+            result = subprocess.run(
+                argv,
+                shell=False,
+                cwd=self.config.cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=self.config.command_timeout,
+            )
+        except FileNotFoundError:
+            return CommandResult(
+                command=command,
+                exit_code=127,
+                output="docker executable not found; install Docker or switch to --sandbox host.",
+                metadata=metadata,
+            )
+        except subprocess.TimeoutExpired as exc:
+            output = redact_text(decode_output(exc.stdout, shell.encoding))[-self.config.max_output_chars :]
+            raise CommandTimeout(
+                f"Command timed out after {self.config.command_timeout}s in Docker sandbox.\nPartial output:\n{output}"
+            ) from exc
+
+        output = redact_text(decode_output(result.stdout, shell.encoding))[-self.config.max_output_chars :]
+        return CommandResult(command=command, exit_code=result.returncode, output=output, metadata=metadata)
+
 
 def decode_output(value: bytes | str | None, encoding: str) -> str:
     if value is None:
@@ -103,3 +164,13 @@ def decode_output(value: bytes | str | None, encoding: str) -> str:
         return value.decode(encoding, errors="replace")
     except LookupError:
         return value.decode("utf-8", errors="replace")
+
+
+def container_shell_adapter(kind: str) -> ShellAdapter:
+    normalized = kind.strip().lower() or "system"
+    if normalized == "system":
+        return resolve_shell_adapter("sh")
+    adapter = resolve_shell_adapter(normalized)
+    if adapter.executable.startswith("/") and Path(adapter.executable).name in {"bash", "zsh", "sh"}:
+        return ShellAdapter(adapter.kind, Path(adapter.executable).name, adapter.args_prefix, adapter.encoding, adapter.path_separator)
+    return adapter

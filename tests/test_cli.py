@@ -189,7 +189,7 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
-        self.assertIn("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /doctor, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit", printed)
+        self.assertIn("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /doctor, /debug, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit", printed)
 
     def test_detect_explicit_options_supports_space_and_equals_forms(self) -> None:
         explicit = detect_explicit_options([
@@ -201,6 +201,8 @@ class CliTest(unittest.TestCase):
             "--no-session",
             "--plugin-discovery",
             "--no-summarize-context",
+            "--sandbox=docker",
+            "--sandbox-read-only",
         ])
 
         self.assertIn("profile", explicit)
@@ -209,6 +211,8 @@ class CliTest(unittest.TestCase):
         self.assertIn("no_session", explicit)
         self.assertIn("plugin_discovery", explicit)
         self.assertIn("summarize_context", explicit)
+        self.assertIn("sandbox", explicit)
+        self.assertIn("sandbox_read_only", explicit)
 
     def test_parse_events_query_key_value_order_is_stable(self) -> None:
         self.assertEqual(
@@ -546,6 +550,20 @@ class CliTest(unittest.TestCase):
         self.assertIn("write_allow_paths: src/**", printed)
         self.assertIn('"approved_actions": [\n    "shell"\n  ]', printed)
 
+    def test_run_interactive_policy_explain_reports_decision(self) -> None:
+        model = CountingModel()
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+
+        with patch("builtins.input", side_effect=["/policy explain shell npm install", "/quit"]), patch("builtins.print") as print_mock:
+            exit_code = run_interactive(agent, ChatContext())
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"action": "shell"', printed)
+        self.assertIn('"decision": "skip"', printed)
+        self.assertIn('"permission_mode": "plan"', printed)
+
     def test_run_interactive_doctor_reports_local_health(self) -> None:
         model = CountingModel()
         with TemporaryDirectory() as tmp:
@@ -578,6 +596,35 @@ class CliTest(unittest.TestCase):
         self.assertIn('"overall": "warn"', printed)
         self.assertNotIn("super-secret-token", printed)
         self.assertIn("api_key=<redacted>", printed)
+
+    def test_run_interactive_debug_bundle_writes_redacted_diagnostics(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / "bundle.json"
+            store = JsonSessionStore(root / "session.json")
+            store.append_event(EventRecord(kind="test", data={"token": "Bearer abcdefghijklmnopqrstuvwxyz"}))
+            config = AgentConfig(
+                cwd=root,
+                provider="openai-compatible",
+                base_url="https://api.example.test/v1?api_key=secret-value",
+                api_key="sk-abcdefghijklmnopqrstuvwxyz123456",
+                permission_mode="plan",
+            )
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=store))
+
+            with patch("builtins.input", side_effect=[f"/debug bundle {output}", "/quit"]), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, ChatContext(), session_store=store)
+            data = json.loads(output.read_text(encoding="utf-8"))
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        encoded = json.dumps(data, ensure_ascii=False)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("debug_bundle:", printed)
+        self.assertTrue(data["config"]["api_key_present"])
+        self.assertNotIn("sk-abcdefghijklmnopqrstuvwxyz123456", encoded)
+        self.assertNotIn("secret-value", encoded)
+        self.assertIn("<redacted>", encoded)
 
     def test_run_interactive_memory_search_uses_sqlite_store(self) -> None:
         model = CountingModel()

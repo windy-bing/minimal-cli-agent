@@ -139,6 +139,27 @@ class ShellPermissionPolicy:
 
         return ToolDecision(kind=ToolDecisionKinds.ASK, reason="confirmation required")
 
+    def explain(self, action: str, payload: str) -> dict[str, object]:
+        decision = self.decide(action, payload)
+        return {
+            "action": action,
+            "payload": redact_text(payload),
+            "decision": decision.kind,
+            "reason": redact_text(decision.reason),
+            "permission_mode": self.config.permission_mode,
+            "allow_network": self.config.allow_network,
+            "approved_action": action in self.approved_actions,
+            "approved_tool_call": (action, payload) in self.approved_tool_calls,
+            "rules": {
+                "dangerous_tokens": len(self.rules.dangerous_tokens),
+                "sensitive_path_tokens": len(self.rules.sensitive_path_tokens),
+                "network_command_tokens": len(self.rules.network_command_tokens),
+                "allow_command_prefixes": list(self.rules.allow_command_prefixes),
+                "write_allow_paths": list(self.rules.write_allow_paths),
+                "write_deny_paths": list(self.rules.write_deny_paths),
+            },
+        }
+
     def _decide_mcp(self, action: str, payload: str) -> ToolDecision:
         if action.endswith("_list_tools"):
             return ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="MCP tool discovery")

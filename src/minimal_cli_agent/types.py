@@ -91,6 +91,10 @@ class AgentConfig:
     max_steps: int = int(Defaults.MAX_STEPS)
     command_timeout: int = 30
     shell_kind: str = "system"
+    sandbox_kind: str = Defaults.SANDBOX_KIND
+    sandbox_image: str = Defaults.SANDBOX_IMAGE
+    sandbox_network: str = Defaults.SANDBOX_NETWORK
+    sandbox_read_only: bool = False
     model_timeout: int = int(Defaults.MODEL_TIMEOUT)
     permission_mode: PermissionMode = PermissionModes.DEFAULT
     allow_network: bool = False

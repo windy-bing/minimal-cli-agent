@@ -193,6 +193,15 @@ class Defaults:
     USER_CONFIG_DIR: Final = ".minimal-agent"
     USER_CONFIG_FILE: Final = "config.json"
     PROJECT_RULES_MAX_CHARS: Final = "8000"
+    SANDBOX_KIND: Final = "host"
+    SANDBOX_IMAGE: Final = "python:3.11-slim"
+    SANDBOX_NETWORK: Final = "none"
+
+
+class SandboxKinds:
+    HOST: Final = "host"
+    DOCKER: Final = "docker"
+    ALL: Final = (HOST, DOCKER)
 
 
 class FileToolDefaults:
@@ -281,6 +290,7 @@ class InteractiveCommands:
     SUMMARIZE: Final = "/summarize"
     CONTEXT: Final = "/context"
     DOCTOR: Final = "/doctor"
+    DEBUG: Final = "/debug"
     HISTORY: Final = "/history"
     EVENTS: Final = "/events"
     PLAN: Final = "/plan"
@@ -306,11 +316,12 @@ class InteractiveCommands:
         MODEL: "Switch model. Usage: /model <model-name>",
         BASE_URL: "Switch provider base URL. Usage: /base-url <url>",
         PERMISSION: "Switch permission mode. Usage: /permission default|autoEdit|plan|yolo",
-        POLICY: "Show active permission policy and session approvals. Usage: /policy [json]",
+        POLICY: "Show active permission policy and session approvals. Usage: /policy [json]|explain <tool> <payload>",
         NETWORK: "Toggle network shell commands. Usage: /network on|off",
         SUMMARIZE: "Toggle model context summaries. Usage: /summarize on|off",
         CONTEXT: "Manage context. Usage: /context status|compact|clear",
         DOCTOR: "Run local health checks for config, workspace, session, policy, MCP, and plugins. Usage: /doctor [json]",
+        DEBUG: "Export a redacted diagnostic bundle. Usage: /debug bundle [path]",
         HISTORY: "Show or replay user prompt history. Usage: /history [number]",
         EVENTS: "Show persisted session events. Usage: /events [kind] [limit] [offset] [format=json]",
         PLAN: "Create, show, or clear an isolated plan. Usage: /plan <goal>|show|clear",
@@ -341,6 +352,7 @@ class InteractiveCommands:
         SUMMARIZE,
         CONTEXT,
         DOCTOR,
+        DEBUG,
         HISTORY,
         EVENTS,
         PLAN,

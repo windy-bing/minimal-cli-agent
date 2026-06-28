@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from minimal_cli_agent.constants import Defaults, PermissionModes, Profiles, Providers
+from minimal_cli_agent.constants import Defaults, PermissionModes, Profiles, Providers, SandboxKinds
 from minimal_cli_agent.exceptions import ConfigurationError
 from minimal_cli_agent.logging_utils import get_logger
 from minimal_cli_agent.memory import JsonSessionStore, SQLiteSessionStore
@@ -29,6 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-steps", type=int, default=int(os.getenv("AGENT_MAX_STEPS", Defaults.MAX_STEPS)))
     parser.add_argument("--timeout", type=int, default=int(os.getenv("AGENT_COMMAND_TIMEOUT", Defaults.COMMAND_TIMEOUT)))
     parser.add_argument("--shell", default=os.getenv("AGENT_SHELL", "system"), help="Shell adapter: system, bash, zsh, sh, powershell, cmd, git-bash, or a shell command.")
+    parser.add_argument("--sandbox", choices=SandboxKinds.ALL, default=os.getenv("AGENT_SANDBOX", Defaults.SANDBOX_KIND), help="Command execution backend: host or docker.")
+    parser.add_argument("--sandbox-image", default=os.getenv("AGENT_SANDBOX_IMAGE", Defaults.SANDBOX_IMAGE), help="Docker image used when --sandbox docker is enabled.")
+    parser.add_argument("--sandbox-network", default=os.getenv("AGENT_SANDBOX_NETWORK", Defaults.SANDBOX_NETWORK), help="Docker network mode used by the command sandbox.")
+    parser.add_argument("--sandbox-read-only", action="store_true", help="Mount the workspace read-only in the Docker command sandbox.")
     parser.add_argument("--model-timeout", type=int, default=int(os.getenv("AGENT_MODEL_TIMEOUT", Defaults.MODEL_TIMEOUT)))
     parser.add_argument("--model-fallback", action="append", default=parse_model_fallback_env(), help="JSON fallback route. Example: '{\"provider\":\"ollama\",\"model\":\"qwen3:1.7b\",\"base_url\":\"http://localhost:11434\"}'")
     parser.add_argument("--model-max-retries", type=int, default=int(os.getenv("AGENT_MODEL_MAX_RETRIES", "0")))
@@ -253,6 +257,9 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
         "--max-steps": "max_steps",
         "--timeout": "timeout",
         "--shell": "shell",
+        "--sandbox": "sandbox",
+        "--sandbox-image": "sandbox_image",
+        "--sandbox-network": "sandbox_network",
         "--model-timeout": "model_timeout",
         "--model-max-retries": "model_max_retries",
         "--model-max-concurrency": "model_max_concurrency",
@@ -285,6 +292,7 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
     flag_map = {
         "--bill-failed-requests": "bill_failed_requests",
         "--allow-network": "allow_network",
+        "--sandbox-read-only": "sandbox_read_only",
         "--verbose": "verbose",
         "--quiet": "quiet",
         "--summarize-context": "summarize_context",

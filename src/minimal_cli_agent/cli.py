@@ -137,6 +137,10 @@ def main(argv: list[str] | None = None) -> int:
             max_steps=int(choose_config_value("max_steps", args.max_steps, local_defaults, explicit_options, ("AGENT_MAX_STEPS",))),
             command_timeout=int(choose_config_value("timeout", args.timeout, local_defaults, explicit_options, ("AGENT_COMMAND_TIMEOUT",))),
             shell_kind=str(choose_config_value("shell", args.shell, local_defaults, explicit_options, ("AGENT_SHELL",))),
+            sandbox_kind=str(choose_config_value("sandbox", args.sandbox, local_defaults, explicit_options, ("AGENT_SANDBOX",))),
+            sandbox_image=str(choose_config_value("sandbox_image", args.sandbox_image, local_defaults, explicit_options, ("AGENT_SANDBOX_IMAGE",))),
+            sandbox_network=str(choose_config_value("sandbox_network", args.sandbox_network, local_defaults, explicit_options, ("AGENT_SANDBOX_NETWORK",))),
+            sandbox_read_only=bool_config_value(choose_config_value("sandbox_read_only", args.sandbox_read_only, local_defaults, explicit_options, ("AGENT_SANDBOX_READ_ONLY",)), default=False),
             model_timeout=int(choose_config_value("model_timeout", args.model_timeout, local_defaults, explicit_options, ("AGENT_MODEL_TIMEOUT",))),
             model_fallbacks=parse_model_routes(normalize_model_fallbacks(fallback_values)),
             model_max_retries=int(choose_config_value("model_max_retries", args.model_max_retries, local_defaults, explicit_options, ("AGENT_MODEL_MAX_RETRIES",))),
@@ -178,6 +182,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"api_key_length: {len(config.api_key or '')}")
             print(f"fallback_routes: {len(config.model_fallbacks)}")
             print(f"shell: {config.shell_kind}")
+            print(f"sandbox: {config.sandbox_kind}")
+            print(f"sandbox_image: {config.sandbox_image}")
+            print(f"sandbox_network: {config.sandbox_network}")
+            print(f"sandbox_read_only: {config.sandbox_read_only}")
             print(f"model_price_input_per_1m: {config.model_price_input_per_1m}")
             print(f"model_price_output_per_1m: {config.model_price_output_per_1m}")
             print(f"usage_ledger: {config.usage_ledger_path or '<none>'}")
@@ -506,7 +514,7 @@ def is_user_prompt_history_entry(content: str) -> bool:
 
 
 def print_quick_command_hint() -> None:
-    print("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /doctor, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit")
+    print("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /doctor, /debug, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit")
 
 
 def print_interactive_help() -> None:
@@ -573,6 +581,9 @@ def handle_interactive_command(raw: str, session: InteractiveSession) -> Interac
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.DOCTOR:
         handle_doctor_command(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.DEBUG:
+        handle_debug_command(session, argument)
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.HISTORY:
         replay = handle_history_command(session, argument)
@@ -811,8 +822,11 @@ def update_permission(session: InteractiveSession, mode: str) -> None:
 
 
 def handle_policy_command(session: InteractiveSession, argument: str) -> None:
+    if argument.startswith("explain "):
+        handle_policy_explain_command(session, argument.removeprefix("explain ").strip())
+        return
     if argument and argument != "json":
-        print(f"Usage: {InteractiveCommands.POLICY} [json]")
+        print(f"Usage: {InteractiveCommands.POLICY} [json]|explain <tool> <payload>")
         return
     report = build_policy_report(session)
     if argument == "json":
@@ -829,6 +843,17 @@ def handle_policy_command(session: InteractiveSession, argument: str) -> None:
     print(f"write_deny_paths: {format_policy_list(report['write_deny_paths'])}")
     print(f"approved_actions: {format_policy_list(report['approved_actions'])}")
     print(f"approved_tool_calls: {report['approved_tool_calls_count']}")
+
+
+def handle_policy_explain_command(session: InteractiveSession, argument: str) -> None:
+    if not argument:
+        print(f"Usage: {InteractiveCommands.POLICY} explain <tool> <payload>")
+        return
+    parts = argument.split(maxsplit=1)
+    action = parts[0]
+    payload = parts[1] if len(parts) > 1 else ""
+    report = session.agent.harness.policy.explain(action, payload)
+    print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 def build_policy_report(session: InteractiveSession) -> dict[str, Any]:
@@ -882,6 +907,62 @@ def handle_doctor_command(session: InteractiveSession, argument: str) -> None:
     for check in report["checks"]:
         detail = f" - {check['detail']}" if check["detail"] else ""
         print(f"{check['status']}: {check['name']}{detail}")
+
+
+def handle_debug_command(session: InteractiveSession, argument: str) -> None:
+    parts = argument.split(maxsplit=1)
+    if not parts or parts[0] != "bundle":
+        print(f"Usage: {InteractiveCommands.DEBUG} bundle [path]")
+        return
+    default_path = session.agent.config.cwd / ".agent" / "debug-bundle.json"
+    output_path = resolve_path_option(parts[1], session.agent.config.cwd) if len(parts) > 1 else default_path
+    bundle = build_debug_bundle(session)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"debug_bundle: {output_path}")
+
+
+def build_debug_bundle(session: InteractiveSession) -> dict[str, Any]:
+    config = session.agent.config
+    events = session.session_store.query_events(limit=50) if session.session_store else []
+    bundle = {
+        "runtime": {
+            "python": sys.version.split()[0],
+            "platform": sys.platform,
+            "cwd": str(config.cwd),
+        },
+        "config": {
+            "provider": config.provider,
+            "model": config.model,
+            "base_url": redact_text(config.base_url),
+            "api_key_present": bool(config.api_key),
+            "permission": config.permission_mode,
+            "allow_network": config.allow_network,
+            "shell": config.shell_kind,
+            "sandbox": config.sandbox_kind,
+            "sandbox_image": config.sandbox_image,
+            "sandbox_network": config.sandbox_network,
+            "sandbox_read_only": config.sandbox_read_only,
+            "mcp_config": str(config.mcp_config) if config.mcp_config else None,
+            "plugins": [str(path) for path in config.plugin_paths],
+            "skills": [str(path) for path in config.skill_paths],
+            "session_store": str(session.session_store.path) if session.session_store else None,
+        },
+        "doctor": build_doctor_report(session),
+        "policy": build_policy_report(session),
+        "events": [redact_debug_value(event.to_dict()) for event in events],
+    }
+    return redact_debug_value(bundle)
+
+
+def redact_debug_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return redact_text(value)
+    if isinstance(value, list):
+        return [redact_debug_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): redact_debug_value(item) for key, item in value.items()}
+    return value
 
 
 def build_doctor_report(session: InteractiveSession) -> dict[str, Any]:
@@ -1299,6 +1380,10 @@ def print_config(config: AgentConfig) -> None:
     print(f"base_url: {redact_text(config.base_url)}")
     print(f"permission: {config.permission_mode}")
     print(f"shell: {config.shell_kind}")
+    print(f"sandbox: {config.sandbox_kind}")
+    print(f"sandbox_image: {config.sandbox_image}")
+    print(f"sandbox_network: {config.sandbox_network}")
+    print(f"sandbox_read_only: {config.sandbox_read_only}")
     print(f"allow_network: {config.allow_network}")
     print(f"summarize_context: {config.summarize_context}")
     print(f"fallback_routes: {len(config.model_fallbacks)}")
@@ -1324,6 +1409,10 @@ def save_cli_config(path: Path, session: InteractiveSession) -> None:
         "base_url": config.base_url,
         "permission": config.permission_mode,
         "shell": config.shell_kind,
+        "sandbox": config.sandbox_kind,
+        "sandbox_image": config.sandbox_image,
+        "sandbox_network": config.sandbox_network,
+        "sandbox_read_only": config.sandbox_read_only,
         "allow_network": config.allow_network,
         "summarize_context": config.summarize_context,
         "max_steps": config.max_steps,

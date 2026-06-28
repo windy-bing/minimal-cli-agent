@@ -23,6 +23,8 @@ jobs:
           python -m pip install -e .
       - name: Run tests
         run: python -m unittest discover tests
+      - name: Check installed dependencies
+        run: python -m pip check
 
   typecheck:
     name: Pyright
@@ -38,3 +40,22 @@ jobs:
           python -m pip install -e . pyright
       - name: Run pyright
         run: pyright
+
+  package:
+    name: Package validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build distribution
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+          python -m build
+          python -m twine check dist/*
+      - name: Install wheel and smoke test
+        run: |
+          python -m pip install dist/*.whl
+          minimal-agent --show-config --permission plan --no-session
