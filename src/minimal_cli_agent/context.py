@@ -33,7 +33,11 @@ class CompactingContextManager:
         summary = self.summary_cache.get(cache_key)
         if summary is None:
             initial_goal = first_user_content(messages)
-            summary = Message(role="user", content=build_summary_message(self.summarizer.complete(build_summary_prompt(older)), initial_goal))
+            try:
+                summary_text = self.summarizer.complete(build_summary_prompt(older))
+            except Exception:
+                return compact_messages(messages, self.config.max_context_chars)
+            summary = Message(role="user", content=build_summary_message(summary_text, initial_goal))
             self.summary_cache[cache_key] = summary
             self.summary_cache.move_to_end(cache_key)
             while len(self.summary_cache) > self.SUMMARY_CACHE_MAX_ENTRIES:

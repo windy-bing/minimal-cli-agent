@@ -125,8 +125,10 @@ def read_supplemental_input(options: LoopOptions) -> str:
 def iter_steps(max_steps: int) -> Iterator[int]:
     if max_steps < 0:
         max_steps = 1
+    elif max_steps == 0:
+        max_steps = 10**9
     step = 1
-    while max_steps <= 0 or step <= max_steps:
+    while step <= max_steps:
         yield step
         step += 1
 
@@ -156,7 +158,7 @@ def print_event(event: LoopEvent) -> None:
 
 def append_observation(observations: list[str], observation: str, max_chars: int) -> None:
     current_size = sum(len(item) for item in observations)
-    remaining = max(0, max_chars - current_size)
+    remaining = max_chars - current_size
     if remaining <= 0:
         if not observations or observations[-1] != "Observation output truncated because the per-step budget was reached.":
             observations.append("Observation output truncated because the per-step budget was reached.")
@@ -165,3 +167,5 @@ def append_observation(observations: list[str], observation: str, max_chars: int
         observations.append(observation)
     elif remaining > 3:
         observations.append(observation[: remaining - 3] + "...")
+    elif remaining > 0:
+        observations.append(observation[:remaining])

@@ -17,8 +17,8 @@ ANTHROPIC_KEY_RE = re.compile(r"\bsk-ant-[A-Za-z0-9_-]{16,}\b")
 GOOGLE_API_KEY_RE = re.compile(r"\bAIza[A-Za-z0-9_-]{20,}\b")
 JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b")
 URL_SECRET_PARAM_RE = re.compile(
-    r"(?P<prefix>[?&](?:key|api_key|token|access_token|auth|authorization|password|secret)=)"
-    r"(?P<value>[^&\s]+)",
+    r"(?P<prefix>[?#&](?:key|api_key|token|access_token|auth|authorization|password|secret)=)"
+    r"(?P<value>[^&\s#]+)",
     re.IGNORECASE,
 )
 

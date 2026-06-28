@@ -259,6 +259,12 @@ def path_matches_policy(path: str, pattern: str) -> bool:
         return False
     if fnmatch.fnmatch(normalized_path, normalized_pattern):
         return True
+    if "**" in normalized_pattern:
+        prefix, suffix = normalized_pattern.split("**", 1)
+        prefix = prefix.rstrip("/")
+        suffix = suffix.lstrip("/")
+        if normalized_path.startswith(prefix) and (not suffix or normalized_path.endswith(suffix)):
+            return True
     if normalized_pattern.endswith("/**"):
         prefix = normalized_pattern[:-3].rstrip("/")
         return normalized_path == prefix or normalized_path.startswith(f"{prefix}/")
@@ -279,7 +285,7 @@ def normalize_confirmation_result(value: bool | str) -> ConfirmationResult:
 
 
 def input_confirmation_handler(action: str, payload: str) -> ConfirmationResult:
-    options = (
+    options: tuple[tuple[str, ConfirmationResult], ...] = (
         ("Allow once", "allow_once"),
         (f"Allow all {action} this session", "allow_session_action"),
         ("Deny", "deny"),
@@ -338,7 +344,15 @@ def read_key() -> str:
         tty.setraw(fd)
         first = sys.stdin.read(1)
         if first == "\x1b":
-            rest = sys.stdin.read(2)
+            rest = sys.stdin.read(1)
+            if rest == "[":
+                rest += sys.stdin.read(1)
+                third = sys.stdin.read(1)
+                rest += third
+                if third in ("1", "2", "3", "4", "5", "6"):
+                    rest += sys.stdin.read(1) if third != "6" else ""
+            elif rest == "O":
+                rest += sys.stdin.read(1)
             return first + rest
         return first
     finally:

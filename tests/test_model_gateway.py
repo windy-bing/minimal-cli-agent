@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from minimal_cli_agent.exceptions import ModelRequestError
+from minimal_cli_agent.interfaces import Model
 from minimal_cli_agent.model_gateway import ModelGateway, UsageLedger, estimate_tokens
 from minimal_cli_agent.types import AgentConfig, Message, ModelRoute
 
@@ -62,7 +63,7 @@ class ModelGatewayTest(unittest.TestCase):
         factory_calls: list[str] = []
         remaining_failures = {"primary": 1}
 
-        def factory(config: AgentConfig) -> FactoryModel:
+        def factory(config: AgentConfig) -> Model:
             factory_calls.append(config.model)
             return RecoveringModel(calls, config.model, remaining_failures)
 

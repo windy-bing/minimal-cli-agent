@@ -167,23 +167,23 @@ def format_project_rule_block(document: ProjectRuleDocument) -> str:
 
 
 def detect_project_rule_conflicts(documents: list[ProjectRuleDocument]) -> list[ProjectRuleConflict]:
-    positives: dict[str, tuple[str, str]] = {}
-    negatives: dict[str, tuple[str, str]] = {}
+    positives: dict[str, list[tuple[str, str]]] = {}
+    negatives: dict[str, list[tuple[str, str]]] = {}
     conflicts: list[ProjectRuleConflict] = []
     for document in documents:
         source = f"{document.relative_path} ({document.layer})"
         for line in meaningful_rule_lines(document.content):
             polarity, subject = classify_rule_directive(line)
             if polarity == "positive":
-                positives.setdefault(subject, (source, line))
+                positives.setdefault(subject, []).append((source, line))
                 if subject in negatives:
-                    negative_source, negative_line = negatives[subject]
-                    conflicts.append(ProjectRuleConflict(subject, source, line, negative_source, negative_line))
+                    for negative_source, negative_line in negatives[subject]:
+                        conflicts.append(ProjectRuleConflict(subject, source, line, negative_source, negative_line))
             elif polarity == "negative":
-                negatives.setdefault(subject, (source, line))
+                negatives.setdefault(subject, []).append((source, line))
                 if subject in positives:
-                    positive_source, positive_line = positives[subject]
-                    conflicts.append(ProjectRuleConflict(subject, positive_source, positive_line, source, line))
+                    for positive_source, positive_line in positives[subject]:
+                        conflicts.append(ProjectRuleConflict(subject, positive_source, positive_line, source, line))
     return deduplicate_rule_conflicts(conflicts)
 
 

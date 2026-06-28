@@ -45,6 +45,8 @@ from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.logging_utils import configure_logging
 from minimal_cli_agent.memory import compact_messages
 from minimal_cli_agent.memory import JsonSessionStore, SQLiteSessionStore
+
+SessionStoreType = JsonSessionStore | SQLiteSessionStore | None
 from minimal_cli_agent.mcp_tools import load_mcp_config
 from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact, build_plan_prompt, create_plan_artifact, extract_plan_paths, format_plan_artifact, format_plan_execution_context
 from minimal_cli_agent.plugins import (
@@ -212,7 +214,7 @@ def run_turn(
     agent: Agent,
     message: str,
     context: ChatContext,
-    session_store: JsonSessionStore | None = None,
+    session_store: SessionStoreType = None,
     options: LoopOptions | None = None,
 ) -> int:
     return run_turn_with_summary(agent, message, context, session_store, options, compact_output=False).exit_code
@@ -229,7 +231,7 @@ def run_turn_with_summary(
     agent: Agent,
     message: str,
     context: ChatContext,
-    session_store: JsonSessionStore | None = None,
+    session_store: SessionStoreType = None,
     options: LoopOptions | None = None,
     compact_output: bool = False,
 ) -> TurnExecutionSummary:
@@ -340,7 +342,7 @@ def is_path_allowed_by_plan(path: str, allowed_paths: tuple[str, ...]) -> bool:
 def run_interactive(
     agent: Agent,
     context: ChatContext,
-    session_store: JsonSessionStore | None = None,
+    session_store: SessionStoreType = None,
     first_message: str | None = None,
 ) -> int:
     session = InteractiveSession(
@@ -516,7 +518,7 @@ def print_interactive_help() -> None:
 class InteractiveSession:
     agent: Agent
     context: ChatContext
-    session_store: JsonSessionStore | None = None
+    session_store: SessionStoreType = None
     user_history: list[str] = field(default_factory=list)
 
 
@@ -1287,7 +1289,7 @@ def save_workflow(session: InteractiveSession, workflow: WorkflowArtifact) -> No
 
 def rebuild_agent(session: InteractiveSession, config: AgentConfig | None = None) -> None:
     config = replace(config or session.agent.config)
-    session.agent = Agent(config=config, harness=AgentHarness(config=config, session_store=session.session_store))
+    session.agent = Agent(config=config, harness=AgentHarness(config=config, model=session.agent.harness.model, session_store=session.session_store))
 
 
 def print_config(config: AgentConfig) -> None:
@@ -1402,4 +1404,5 @@ def persist_session_messages(session: InteractiveSession) -> None:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    import sys
+    sys.exit(main())

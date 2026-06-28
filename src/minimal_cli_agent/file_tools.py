@@ -615,9 +615,10 @@ def read_file_sample(path: Path, sample_size: int = 4096) -> bytes:
 def split_replacement_lines(content: str) -> list[str]:
     if not content:
         return []
+    lines = content.splitlines(keepends=True)
     if content.endswith("\n"):
-        return content.splitlines(keepends=True)
-    return content.splitlines(keepends=True) + ["\n"]
+        return lines
+    return lines + ["\n"]
 
 
 class SearchResult:

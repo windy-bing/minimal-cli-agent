@@ -157,9 +157,10 @@ class ToolExecutionPipeline:
 
     def _auto_verify(self, call: ToolCall, result: CommandResult) -> None:
         spec = self.registry.require(call.name)
-        if result.output is None:
-            raise ValueError(f"Tool {call.name} returned an invalid result.")
-        output_errors = spec.validate_output(result) if result.exit_code == 0 and not result.skipped else []
+        if result.exit_code == 0 and not result.skipped:
+            output_errors = spec.validate_output(result)
+        else:
+            output_errors = []
         if output_errors:
             result.exit_code = 2
             result.skipped = True

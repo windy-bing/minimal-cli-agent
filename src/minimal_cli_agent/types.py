@@ -98,7 +98,7 @@ class AgentConfig:
     mcp_config: Path | None = None
     plugin_paths: tuple[Path, ...] = field(default_factory=tuple)
     skill_paths: tuple[Path, ...] = field(default_factory=tuple)
-    summarize_context: bool = False
+    summarize_context: bool = True
     context_tail_messages: int = int(Defaults.CONTEXT_TAIL_MESSAGES)
     max_output_chars: int = 12000
     max_context_chars: int = 60000

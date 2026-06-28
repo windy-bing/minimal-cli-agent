@@ -93,7 +93,7 @@ class MemoryTest(unittest.TestCase):
             cleared = store.load_plan()
 
         self.assertEqual(messages, [Message(role="user", content="hello")])
-        self.assertIsNotNone(plan)
+        assert plan is not None
         self.assertEqual(plan.goal, "ship feature")
         self.assertEqual(plan.steps, ["code", "test"])
         self.assertIsNone(cleared)
@@ -133,7 +133,7 @@ class MemoryTest(unittest.TestCase):
             cleared = store.load_workflow()
 
         self.assertEqual(messages, [Message(role="user", content="hello")])
-        self.assertIsNotNone(workflow)
+        assert workflow is not None
         self.assertEqual(workflow.goal, "ship")
         self.assertEqual(workflow.steps[0].title, "test")
         self.assertEqual(workflow.delegations[0].summary, "ok")
@@ -181,9 +181,9 @@ class MemoryTest(unittest.TestCase):
         self.assertEqual(paged[0].data["command"], "alpha check")
         self.assertTrue(any(match.kind.startswith("message:") for match in matches))
         self.assertTrue(any(match.kind.startswith("event:") for match in matches))
-        self.assertIsNotNone(plan)
+        assert plan is not None
         self.assertEqual(plan.goal, "ship")
-        self.assertIsNotNone(workflow)
+        assert workflow is not None
         self.assertEqual(workflow.goal, "workflow")
 
 

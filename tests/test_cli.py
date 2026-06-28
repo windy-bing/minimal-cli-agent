@@ -206,7 +206,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("profile", explicit)
         self.assertIn("model", explicit)
         self.assertIn("base_url", explicit)
-        self.assertIn("session", explicit)
+        self.assertIn("no_session", explicit)
         self.assertIn("plugin_discovery", explicit)
         self.assertIn("summarize_context", explicit)
 
@@ -694,7 +694,7 @@ class CliTest(unittest.TestCase):
 
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
-        self.assertIsNotNone(workflow)
+        assert workflow is not None
         self.assertEqual(workflow.steps[0].status, "verified")
         self.assertTrue(any(step.title == "Merge delegation: inspect docs" for step in workflow.steps))
         self.assertIn("workflow step scheduled: 1", printed)
@@ -717,7 +717,7 @@ class CliTest(unittest.TestCase):
 
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
-        self.assertIsNotNone(persisted)
+        assert persisted is not None
         self.assertEqual(persisted.delegations[0].task, "inspect README")
         self.assertIn("delegation success", printed)
         self.assertIn("Summary: inspected README", printed)

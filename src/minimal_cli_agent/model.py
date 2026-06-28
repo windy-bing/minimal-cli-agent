@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -95,7 +96,7 @@ class ChatModel:
 
         url = self.config.base_url.rstrip("/") + f"/models/{self.config.model}:generateContent"
         system, chat_messages = split_system_messages(messages)
-        payload = {
+        payload: dict[str, Any] = {
             "contents": [
                 {
                     "role": "model" if message.role == "assistant" else "user",
@@ -253,19 +254,29 @@ def find_codex_command() -> list[str]:
     return candidates[0]
 
 
+def _make_http_client(timeout: int) -> httpx.Client:
+    return httpx.Client(timeout=timeout, trust_env=True)
+
+
+_http_clients: dict[int, httpx.Client] = {}
+
+
 def post_json(url: str, payload: dict, headers: dict[str, str] | None = None, timeout: int = 120) -> dict:
+    client = _http_clients.get(timeout)
+    if client is None:
+        client = _make_http_client(timeout)
+        _http_clients[timeout] = client
     try:
-        with httpx.Client(timeout=timeout, trust_env=True) as client:
-            response = client.post(
-                url,
-                json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    **(headers or {}),
-                },
-            )
-            response.raise_for_status()
-            return response.json()
+        response = client.post(
+            url,
+            json=payload,
+            headers={
+                "Content-Type": "application/json",
+                **(headers or {}),
+            },
+        )
+        response.raise_for_status()
+        return response.json()
     except httpx.HTTPStatusError as exc:
         raise ModelRequestError(f"Model request failed: HTTP {exc.response.status_code}: {exc.response.text}") from exc
     except (httpx.HTTPError, json.JSONDecodeError) as exc:

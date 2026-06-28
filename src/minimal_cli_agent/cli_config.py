@@ -38,7 +38,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-circuit-cooldown", type=float, default=float(os.getenv("AGENT_MODEL_CIRCUIT_COOLDOWN", "60")))
     parser.add_argument("--model-price-input-per-1m", type=float, default=float(os.getenv("AGENT_MODEL_PRICE_INPUT_PER_1M", "0")))
     parser.add_argument("--model-price-output-per-1m", type=float, default=float(os.getenv("AGENT_MODEL_PRICE_OUTPUT_PER_1M", "0")))
-    parser.add_argument("--usage-ledger", type=Path, default=Path(os.getenv("AGENT_USAGE_LEDGER")) if os.getenv("AGENT_USAGE_LEDGER") else None)
+    _usage_ledger_env = os.getenv("AGENT_USAGE_LEDGER")
+    parser.add_argument("--usage-ledger", type=Path, default=Path(_usage_ledger_env) if _usage_ledger_env else None)
     parser.add_argument("--usage-subject", default=os.getenv("AGENT_USAGE_SUBJECT", "default"))
     parser.add_argument("--usage-tenant", default=os.getenv("AGENT_USAGE_TENANT", "default"))
     parser.add_argument("--max-input-tokens", type=int, default=parse_optional_int_env("AGENT_MAX_INPUT_TOKENS"))
@@ -290,7 +291,9 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
         "--no-summarize-context": "summarize_context",
         "--plugin-discovery": "plugin_discovery",
         "--no-plugin-discovery": "plugin_discovery",
-        "--no-session": "session",
+        "--no-session": "no_session",
+        "--show-config": "show_config",
+        "--interactive": "interactive",
     }
     explicit = set()
     for item in argv:

@@ -137,6 +137,10 @@ class JsonSessionStore:
                 yield
             finally:
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        try:
+            lock_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 class SQLiteSessionStore:
@@ -267,6 +271,8 @@ class SQLiteSessionStore:
             )
             db.execute("create table if not exists state(key text primary key, value text not null)")
             db.execute("create index if not exists idx_events_kind on events(kind)")
+            db.execute("create index if not exists idx_messages_content on messages(content)")
+            db.execute("create index if not exists idx_events_data on events(data)")
 
 
 def parse_messages(raw) -> list[Message]:
