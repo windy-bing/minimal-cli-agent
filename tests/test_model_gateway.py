@@ -122,6 +122,21 @@ class ModelGatewayTest(unittest.TestCase):
 
         self.assertEqual(calls, ["primary", "fallback", "fallback"])
 
+    def test_gateway_queue_timeout_does_not_open_circuit(self) -> None:
+        calls: list[str] = []
+        config = AgentConfig(model_max_concurrency=1, model_queue_timeout=0.01, model_circuit_failure_threshold=1)
+        gateway = ModelGateway(config, ledger=UsageLedger(), model_factory=lambda route_config: FactoryModel("ok", calls, route_config.model))
+        semaphore = gateway._semaphore(gateway._routes()[0])
+        self.assertTrue(semaphore.acquire(timeout=0))
+        try:
+            with self.assertRaisesRegex(ModelRequestError, "concurrency limit"):
+                gateway.complete([Message(role="user", content="hello")])
+        finally:
+            semaphore.release()
+
+        self.assertEqual(gateway.complete([Message(role="user", content="hello")]), "ok")
+        self.assertEqual(calls, [config.model])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -237,7 +237,18 @@ class ModelGateway:
                 acquired = semaphore.acquire(timeout=self.config.model_queue_timeout)
                 if not acquired:
                     last_error = ModelRequestError(f"Model route concurrency limit reached: {route.provider}/{route.model}")
-                    self.circuit_breaker.record_failure(route)
+                    self._record(
+                        request_id=request_id,
+                        route=route,
+                        input_tokens=input_tokens,
+                        output="",
+                        latency_ms=int(self.config.model_queue_timeout * 1000),
+                        status="queue_timeout",
+                        error=str(last_error),
+                        fallback_index=fallback_index,
+                        attempt=attempt,
+                        billable=False,
+                    )
                     continue
                 started = time.monotonic()
                 output = ""

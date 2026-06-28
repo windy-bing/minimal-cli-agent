@@ -234,8 +234,10 @@ def validate_schema_value(
             return errors
 
     not_schema = schema.get("not")
-    if isinstance(not_schema, dict) and not validate_schema_value(path, value, not_schema, root, root_schema):
-        return [f"{path}: must not match forbidden schema"]
+    if isinstance(not_schema, dict):
+        forbidden_errors = validate_schema_value(path, value, not_schema, root, root_schema)
+        if not forbidden_errors:
+            return [f"{path}: must not match forbidden schema"]
 
     one_of = schema.get("oneOf")
     if isinstance(one_of, list):

@@ -9,6 +9,8 @@ from minimal_cli_agent.parser import parse_actions
 from minimal_cli_agent.prompts import SYSTEM_PROMPT
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, LoopResult, Message
 
+OBSERVATION_TRUNCATED_MESSAGE = "Observation output truncated because the per-step budget was reached."
+
 
 class Agent:
     def __init__(self, config: AgentConfig, harness: AgentHarness) -> None:
@@ -160,8 +162,8 @@ def append_observation(observations: list[str], observation: str, max_chars: int
     current_size = sum(len(item) for item in observations)
     remaining = max_chars - current_size
     if remaining <= 0:
-        if not observations or observations[-1] != "Observation output truncated because the per-step budget was reached.":
-            observations.append("Observation output truncated because the per-step budget was reached.")
+        if not observations or observations[-1] != OBSERVATION_TRUNCATED_MESSAGE:
+            observations.append(OBSERVATION_TRUNCATED_MESSAGE)
         return
     if len(observation) <= remaining:
         observations.append(observation)
