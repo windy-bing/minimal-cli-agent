@@ -2,25 +2,123 @@
 
 Language: English | [中文](README.zh-CN.md)
 
-A small CLI agent inspired by the [Minimal AI agent tutorial](https://minimal-agent.com/). It implements the core loop from the article: ask a model for one or more actions, parse the actions, execute them in a terminal environment, append observations, and repeat.
-
-The project starts intentionally small, but the code is split into replaceable modules so it can grow toward sub-agents, group sessions, memory, permissions, skills, MCP, plugins, and workflow delegation.
+A terminal-first AI coding agent with persistent sessions, structured tools, permissions, local skills, MCP/plugin loading, workflow state, and model routing. It keeps the core loop small: ask the model for explicit actions, execute those actions through a harness, append observations, and continue until the model exits or the user interrupts.
 
 ![minimal-cli-agent Codex profile demo](docs/assets/codex-profile.png)
 
-## What It Does Now
+## Quick Start
 
-- Runs as a terminal CLI.
-- Starts a persistent multi-turn interactive session by default when run without a task.
-- Supports slash commands for runtime profile/model/permission/policy/context/doctor/history/events/plan/review control.
-- Reads startup defaults from `~/.minimal-agent/config.json` and project `.minimal-agent.json`; `/config save` persists runtime choices.
-- Injects layered project rules from `AGENTS.md`, `.agents/rules.md`, `.agents/rules.d/*.md`, and `.minimal-agent-instructions.md` with source labels, duplicate removal, budgets, and conflict reports.
-- Supports MCP HTTP servers through `--mcp-config`, with MCP tools registered into the same `ToolRegistry`.
-- Supports local instruction skills through `--skill`, including the bundled Luckin Coffee `my-coffee` skill.
-- Supports local Ollama chat models by default.
-- Supports Ollama, Codex CLI login, Claude/Anthropic, and Gemini profiles.
-- Supports OpenAI-compatible `/chat/completions` endpoints directly.
-- Parses one or more actions per model turn, formatted as shell or file tool actions:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+minimal-agent
+```
+
+The default run starts an interactive session, loads local config, persists transcript state in `.agent/session.json`, and uses unlimited loop steps until exit.
+
+With Ollama:
+
+```bash
+ollama pull qwen3:4b
+ollama serve
+minimal-agent
+```
+
+Read-only inspection:
+
+```bash
+minimal-agent --permission plan "Inspect this repository and summarize risks"
+```
+
+OpenAI-compatible endpoint:
+
+```bash
+AGENT_PROVIDER=openai-compatible \
+AGENT_BASE_URL=https://api.openai.com/v1 \
+AGENT_API_KEY=... \
+AGENT_MODEL=gpt-4.1-mini \
+minimal-agent "Check the tests and summarize failures"
+```
+
+## Daily Commands
+
+Run without arguments to enter the REPL:
+
+```bash
+minimal-agent
+```
+
+Useful slash commands:
+
+```text
+/help
+/model qwen3:4b
+/provider ollama
+/base-url http://localhost:11434
+/permission autoEdit
+/config
+/config save
+/context status
+/context compact
+/history 20
+/events
+/doctor
+/policy
+/skills
+/skills load all
+/mcp examples/mcp/my-coffee.json
+/plugin my-plugin
+/plan improve test coverage
+/workflow create improve test coverage
+/delegate inspect README risks
+/review src/minimal_cli_agent
+```
+
+Session files are enabled by default. Use `--session path/to/session.json` to choose a file or `--no-session` to run without persistence.
+
+## Configuration
+
+Startup defaults are read in this order:
+
+1. Built-in defaults.
+2. User config: `~/.minimal-agent/config.json`.
+3. Project config: `.minimal-agent.json`.
+4. Environment variables.
+5. CLI flags.
+6. REPL changes saved with `/config save`.
+
+Common options:
+
+```text
+--profile        ollama, codex, claude, or gemini
+--provider       ollama, openai-compatible, anthropic, gemini, or codex
+--model          model name
+--base-url       provider base URL
+--api-key        API key for OpenAI-compatible endpoints
+--permission     default, autoEdit, plan, or yolo
+--cwd            workspace directory
+--max-steps      maximum loop iterations; 0 means unlimited
+--timeout        command timeout in seconds
+--model-timeout  model request timeout in seconds
+--session        JSON or SQLite session path
+--no-session     disable persistence
+--policy-file    shell and write-scope policy JSON
+--mcp-config     MCP server config JSON
+--plugin         plugin manifest name or path
+--skill          local SKILL.md name or path
+```
+
+Profiles:
+
+- `ollama`: local Ollama defaults from `OLLAMA_MODEL` and `OLLAMA_BASE_URL`.
+- `codex`: reads `~/.codex/config.toml` and can use Codex CLI login as a model adapter.
+- `claude`: reads Claude local settings plus Anthropic environment variables.
+- `gemini`: reads Gemini model, base URL, and API key environment variables.
+
+## Action Format
+
+The model must request tools explicitly:
 
 ````text
 ```bash-action
@@ -32,425 +130,94 @@ ls -la
 ```
 
 ```tool-action
-{"tool":"read_tail","path":"README.md","lines":80}
-```
-
-```tool-action
-{"tool":"read_forward","path":"README.md","offset":0,"limit":8192}
-```
-
-```tool-action
-{"tool":"file_info","path":"README.md"}
-```
-
-```tool-action
-{"tool":"search","pattern":"permission","path":".","top_k":20,"timeout_ms":2000,"ignore_dirs":["dist"],"include_extensions":[".py"]}
-```
-
-```tool-action
-{"tool":"write_file","path":"notes/todo.txt","content":"hello"}
-```
-
-```tool-action
-{"tool":"edit_file","path":"notes/todo.txt","start_line":2,"end_line":3,"content":"replacement"}
+{"tool":"edit_file","path":"notes.txt","start_line":2,"end_line":3,"content":"replacement"}
 ```
 ````
 
-- Executes commands with timeout and non-interactive environment variables.
-- Reads, pages, tails, summarizes, searches, and writes workspace files through structured tools instead of forcing file operations through shell commands.
-- Supports `edit_file` for incremental 1-based line range replacement without rewriting an entire file in the model output.
-- Serializes same-file writes inside the file tool environment.
-- Search supports `top_k`, `max_files`, `timeout_ms`, extra `ignore_dirs`, and `include_extensions`.
-- Search reads workspace `.gitignore` and `.agentignore` files for common directory and glob ignore patterns.
-- Validates JSON, TOML, and XML before `write_file` or `edit_file` writes them; YAML is validated when PyYAML is available. JSON files can also be validated against sibling `*.schema.json` sidecar schemas.
-- Redacts common API keys, bearer tokens, and secret-looking values from command observations.
-- Blocks obvious network shell commands unless `--allow-network` is passed.
-- Supports shell policy allow prefixes, additional deny rules, and workspace write scopes through `--policy-file`.
-- Supports product permission modes: `default`, `autoEdit`, `plan`, and `yolo`.
-- Persists recent session messages, active plan, typed workflow state, and permission audit events to `.agent/session.json` by default, using a lock file and atomic replace.
-- Applies context compaction only when the transcript approaches the configured context budget.
-- Uses model-generated context summaries by default when compacting old context; use `--no-summarize-context` to disable it.
-- Preserves the initial user goal when context is compacted.
-- Supports interactive prompt history through arrow keys when readline is available and `/history [number]`.
-- Supports `/events` for persisted session event inspection.
-- Supports `/skills` workspace skill discovery and `/skills load <name>|all`.
-- Supports `/workflow` typed workflow state for create/show/step/done/clear.
-- Exposes a stateless `Agent.chat_stream(message, context)` API that yields loop events.
-- Returns recoverable tool discovery and validation observations instead of surfacing raw exceptions.
-- Unknown tools return safe close-match suggestions without automatically executing guesses.
-- Tool parameter validation returns field-level repair observations for structured payloads.
-- Tool pipeline decision hooks can arbitrate `allow` / `ask` / `deny` / `skip` decisions before confirmation.
-- Tool observations use a consistent `status`, `exit_code`, `command`, and `output` format.
-- Keeps the agent loop behind an `AgentHarness` boundary so tools, memory, policy, context, and environments can evolve independently.
-- Uses unlimited agent loop steps by default (`max_steps=0`) until the model exits or the user interrupts.
+Built-in structured tools include `read_file`, `read_tail`, `read_forward`, `file_info`, `search`, `write_file`, and `edit_file`. Read tools can run in parallel when safe; write tools remain ordered behind write barriers.
 
-## Why Start This Way
+## Safety Model
 
-The article's key point is that a useful CLI agent does not need a large framework at first. The minimal loop is enough to create real behavior:
+Permission modes:
 
-1. Keep messages.
-2. Query the language model.
-3. Parse the requested action.
-4. Execute the action.
-5. Return command output as the next observation.
+- `plan`: read-only. Shell and file writes are skipped as observations.
+- `default`: asks before shell commands and writes.
+- `autoEdit`: allows file writer tools, while shell commands still pass policy checks.
+- `yolo`: executes approved tool classes without interactive confirmation.
 
-This repository keeps that loop visible in `src/minimal_cli_agent/agent.py`, while separating the model, parser, environment, and memory layers so each part can be replaced later.
+Policy files can add command allow prefixes, deny tokens, workspace write allow/deny globs, sensitive path tokens, and network command tokens. Built-in hard gates remain active.
 
-## Install
+## MCP, Skills, And Plugins
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
-
-`httpx[socks]` is included so model requests can use SOCKS proxies from `http_proxy`, `https_proxy`, or `all_proxy`.
-
-## Run With Ollama
-
-```bash
-ollama pull qwen3:4b
-ollama serve
-minimal-agent
-```
-
-Equivalent module form:
-
-```bash
-python -m minimal_cli_agent.cli
-```
-
-## Run Without Executing Commands
-
-```bash
-minimal-agent --permission plan "Inspect this repository structure"
-```
-
-## Interactive Session
-
-Start a persistent multi-turn CLI session:
-
-```bash
-minimal-agent
-```
-
-You can also pass the first message and then continue chatting:
-
-```bash
-minimal-agent "Analyze this project"
-```
-
-Type `/help` to list interactive commands. Type `/`, `/exit`, `/quit`, `exit`, or `quit` for quick command handling. By default, messages are saved after each turn to `.agent/session.json` and loaded again on the next run. Use `--session path/to/session.json` to choose another file, or `--no-session` to disable persistence.
-
-Startup defaults are read from `~/.minimal-agent/config.json` and then from project-local `.minimal-agent.json`; project config wins over user config. CLI flags and environment variables still take precedence. Inside the REPL, use `/model`, `/provider`, `/base-url`, `/permission`, `/policy`, `/mcp`, `/plugin`, and `/skill` to inspect or change runtime settings, then `/config save` to write `.minimal-agent.json` or `/config save user` to update the user config.
-
-In interactive mode, normal conversation can be answered directly. The model only needs an action block when it wants to inspect files, edit files, or run a command.
-
-Interactive tool output is compact by default: the terminal shows the tool name, target path or command summary, status, and output size instead of dumping full file contents. The full observation is still kept in the agent context for the model.
-
-Interactive prompts are styled and include the active provider/model and permission mode. `Ctrl-C` at the input prompt clears the current input and keeps the REPL alive; `Ctrl-C` during a running turn interrupts that turn and returns to the prompt. Each turn prints total elapsed time when it finishes.
-
-If you type and press Enter while a multi-step turn is running, the line is queued as supplemental user input. The agent adds it to the full conversation context before the next model call in that same turn.
-
-Permission prompts use a selectable menu with `Allow once`, `Allow all <action> this session`, and `Deny`. Session action approval avoids repeated prompts for the same action type, while hard gates for dangerous commands, sensitive paths, and network access still apply.
-
-Use `--permission autoEdit` when you want the loop to modify project files through file writer tools without asking every time. `plan` remains read-only: it can read files but skips shell commands and file writes.
-
-If a turn in `plan` mode reaches a required file edit, the REPL asks whether to switch to `autoEdit` and retry the same user request instead of making you type it again.
-
-Most startup options can also be changed inside the REPL:
-
-```text
-/config
-/config save
-/profile codex
-/provider ollama
-/model qwen3:4b
-/base-url http://localhost:11434
-/permission autoEdit
-/network on
-/summarize on
-/mcp examples/mcp/my-coffee.json
-/skill my-coffee
-/skills
-/skills load all
-/context status
-/context compact
-/context clear
-/history
-/history 1
-/events
-/plan improve test coverage
-/plan show
-/plan clear
-/workflow create improve test coverage
-/workflow step inspect failing tests
-/workflow done 1
-/workflow show
-/delegate inspect README risks
-/review src/minimal_cli_agent
-```
-
-`/plan <goal>` runs an isolated planning turn with `plan` permissions, saves a typed plan artifact, and does not merge the planning transcript into the active chat context. With the default session store, the active plan is persisted alongside messages and audit events.
-
-`/workflow create <goal>` starts a typed workflow artifact that can be updated with `/workflow step <text>` and `/workflow done <number>`. With the default session store, workflow state is persisted alongside messages, plans, and events.
-
-`/delegate <task>` runs a read-only sub-agent in an isolated context and records the result in the active workflow. If no workflow exists, a delegated-work workflow is created automatically.
-
-`/events [kind|number]` shows recent persisted session events from the active JSON session store.
-
-`/review [path]` runs a review turn through the same agent loop, so it can inspect files with `read_file` and use the current permission mode.
-
-## MCP And Skills
-
-MCP servers are loaded from a JSON config file. The CLI accepts the common `mcpServers` shape used by Codex, Claude, and other MCP clients:
+MCP config uses the common `mcpServers` JSON shape:
 
 ```json
 {
   "mcpServers": {
     "my-coffee": {
       "type": "streamablehttp",
-      "url": "https://gwmcp.lkcoffee.com/order/user/mcp",
+      "url": "https://example.com/mcp",
       "headers": {
-        "Authorization": "Bearer ${LUCKIN_MCP_TOKEN}"
+        "Authorization": "Bearer ${TOKEN}"
       }
     }
   }
 }
 ```
 
-The bundled Luckin config lives at `examples/mcp/my-coffee.json`. The downloaded skill lives at `skills/my-coffee/SKILL.md`.
-
-Run it like this:
+Load it at startup or in the REPL:
 
 ```bash
-export LUCKIN_MCP_TOKEN="<login token>"
-minimal-agent \
-  --profile codex \
-  --permission default \
-  --mcp-config examples/mcp/my-coffee.json \
-  --skill my-coffee \
-  --interactive
+minimal-agent --mcp-config examples/mcp/my-coffee.json --skill my-coffee
 ```
-
-Inside the REPL you can load or switch them without restarting:
 
 ```text
 /mcp examples/mcp/my-coffee.json
 /skill my-coffee
+/plugin my-plugin
 ```
 
-For each configured MCP server, the harness always registers generic tools:
+Skills are local `SKILL.md` instruction bundles. Plugins can contribute skills and MCP server configs through manifests.
 
-```tool-action
-{"tool":"mcp_my_coffee_list_tools"}
-```
+## Architecture
 
-```tool-action
-{"tool":"mcp_my_coffee_call_tool","name":"queryShopList","arguments":{}}
-```
-
-If `tools/list` succeeds during startup, the harness also registers concrete shortcuts such as `mcp_my_coffee_queryshoplist`.
-Startup discovery is disabled by default to keep CLI startup fast. Add `"discoverTools": true` to a server config when you want best-effort concrete shortcut registration during startup.
-
-To reuse this flow for another MCP provider:
-
-1. Put the provider config in `examples/mcp/<name>.json` or any local path.
-2. Put the instruction skill under `skills/<name>/SKILL.md`, or pass a direct path with `--skill`.
-3. Start the CLI with `--mcp-config <path> --skill <name>`.
-4. Use `/mcp` and `/skill` in interactive mode to switch configs while keeping the same session.
-
-## OpenAI-Compatible Endpoint
-
-```bash
-AGENT_PROVIDER=openai-compatible \
-AGENT_BASE_URL=https://api.openai.com/v1 \
-AGENT_API_KEY=... \
-AGENT_MODEL=gpt-4.1-mini \
-minimal-agent --permission default "Check the tests and summarize failures"
-```
-
-## Profiles
-
-Use `--profile` to read default local configuration for common CLI model setups:
-
-```bash
-minimal-agent --profile ollama "List files, then exit"
-minimal-agent --profile codex "List files, then exit"
-minimal-agent --profile claude "List files, then exit"
-minimal-agent --profile gemini "List files, then exit"
-```
-
-Profile behavior:
-
-- `ollama`: reads `OLLAMA_MODEL` and `OLLAMA_BASE_URL`, defaults to local Ollama.
-- `codex`: reads `~/.codex/config.toml` for the model. If `OPENAI_API_KEY` or `OPENAI_BASE_URL` is explicitly set, it uses the OpenAI-compatible provider. Otherwise, when `~/.codex/auth.json` contains a Codex login `tokens.access_token`, it uses the local Codex CLI as the request adapter instead of sending that token to `api.openai.com`.
-- `claude`: reads `~/.claude/settings.json` for model and Anthropic proxy env, plus `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`.
-- `gemini`: reads `GEMINI_MODEL`, `GEMINI_BASE_URL`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`.
-
-Explicit CLI options such as `--model`, `--base-url`, and `--api-key` take precedence over profile-specific environment variables or config files.
-
-## CLI Options
+Core modules:
 
 ```text
---provider       ollama, openai-compatible, anthropic, gemini, or codex
---profile        ollama, codex, claude, or gemini
---model          model name
---base-url       provider base URL
---api-key        API key for OpenAI-compatible endpoints
---cwd            working directory for commands
---max-steps      maximum agent loop iterations; 0 means unlimited
---timeout        command timeout in seconds
---shell          shell adapter: system, bash, zsh, sh, powershell, cmd, git-bash, or a shell command
---model-timeout  model request timeout in seconds
---model-fallback JSON fallback route; may be repeated
---model-max-retries retry count per model route
---model-max-concurrency per-route concurrent model calls
---usage-ledger   JSONL model usage ledger path
---usage-subject  user/account key for quota accounting
---usage-tenant   tenant key for quota accounting
---max-input-tokens / --max-output-tokens / --max-request-tokens
---daily-token-limit / --monthly-token-limit
---max-request-cost / --daily-cost-limit / --monthly-cost-limit
---model-price-input-per-1m / --model-price-output-per-1m
---allow-network  allow shell commands with obvious network access
---policy-file    JSON file with shell policy allow/deny and write-scope rules
---mcp-config     JSON file with MCP servers
---plugin         plugin manifest name under plugins/<name> or a direct plugin.json path
---no-plugin-discovery disable automatic plugin discovery
---skill          skill name under skills/<name> or a direct SKILL.md path
---no-summarize-context disable default model summaries during compaction
---model-context-tokens approximate model context window for compaction
---context-compression-ratio context budget ratio that triggers compaction
---interactive    start a multi-turn interactive CLI session
---permission     default, autoEdit, plan, or yolo
---session        JSON file for persisted messages; defaults to .agent/session.json
---no-session     disable default session persistence
---config-file    JSON file to read startup defaults from
+agent.py          loop and event stream
+harness.py        model, tools, memory, context, and policy boundary
+cli.py            REPL and command orchestration
+cli_config.py     argument and config resolution
+cli_format.py     compact terminal formatting
+parser.py         action block parsing and sequence validation
+tool_registry.py  tool specs and schemas
+tool_pipeline.py  validation, policy, retries, and execution events
+file_tools.py     structured workspace file tools
+memory.py         JSON and SQLite transcript/event stores
+model_gateway.py  model routing, fallback, quotas, and usage ledger
+mcp_tools.py      streamable HTTP MCP adapter
+plugins.py        manifest loading and discovery
+workflow.py       typed workflow state
+subagent.py       scoped sub-agent execution
 ```
 
-Fallback routes are JSON objects so URLs and model names do not need custom escaping:
+More detail:
+
+- [Architecture](docs/architecture.md)
+- [Harness gap analysis and roadmap](docs/harness-gap-analysis.zh-CN.md)
+
+## Development
+
+Run tests:
 
 ```bash
-minimal-agent "summarize this repo" \
-  --provider openai-compatible \
-  --model primary-model \
-  --base-url https://api.example.com/v1 \
-  --model-price-input-per-1m 2.00 \
-  --model-price-output-per-1m 8.00 \
-  --model-fallback '{"provider":"ollama","model":"qwen3:4b","base_url":"http://localhost:11434","timeout":30}' \
-  --usage-ledger .agent/usage.jsonl \
-  --daily-cost-limit 5.00
+python -m unittest discover tests
 ```
 
-The model gateway records estimated token usage, estimated cost, latency, status, prompt version, subject, tenant, provider, and model. Limits are checked before a request is sent; failed attempts are recorded but are not billable unless `--bill-failed-requests` is set.
+Run type checks:
 
-## Project Layout
-
-Policy files add allow/deny rules without weakening the built-in hard gates:
-
-```json
-{
-  "allow_command_prefixes": ["printf "],
-  "deny_command_tokens": ["custom-danger"],
-  "write_allow_paths": ["src/**", "tests/**"],
-  "write_deny_paths": ["src/**/secrets*.py"],
-  "sensitive_path_tokens": ["secrets.local"],
-  "network_command_tokens": ["my-net-tool "]
-}
+```bash
+pyright
 ```
 
-When using `--profile codex`, the Codex CLI is used only as a model adapter. It is prompted to return the next assistant message, including `bash-action` or `tool-action` blocks when workspace work is needed. The minimal-agent loop remains responsible for executing commands and editing files. Increase `--model-timeout` if the adapter needs more time.
-
-```text
-src/minimal_cli_agent/
-  agent.py        control loop
-  harness.py      runtime boundary for model, tools, memory, context, and policy
-  interfaces.py   protocol contracts for extension points
-  tool_registry.py tool registration and execution boundary
-  tool_pipeline.py staged tool execution pipeline
-  policy.py       shell permission policy
-  context.py      context preparation boundary
-  file_tools.py   workspace read_file, read_tail, read_forward, search, write_file, and edit_file tools
-  mcp_tools.py    streamable HTTP MCP config loading and tool adapter
-  skills.py       local SKILL.md resolver and prompt injection
-  model_gateway.py model routing, fallback, retries, circuit breaker, quotas, and usage ledger
-  model.py        Ollama, OpenAI-compatible, Anthropic, Gemini HTTP clients, and Codex CLI adapter
-  parser.py       bash-action and tool-action parser
-  environment.py  shell adapter and local command execution
-  memory.py       JSON session store and basic context compaction
-  prompts.py      system prompt and format reminder
-```
-
-## Planned Extensions
-
-See [docs/architecture.md](docs/architecture.md) for the larger design.
-See [docs/harness-gap-analysis.zh-CN.md](docs/harness-gap-analysis.zh-CN.md) for a detailed harness gap analysis and roadmap.
-
-- Context compression with model-generated summaries.
-- SubAgent execution for explorer, worker, and verifier roles.
-- GroupSession coordination for multi-agent work.
-- Layered memory management.
-- Safety and permission policies with audit records.
-- Skill, MCP, and plugin registration.
-- Workflow delegation primitives such as `plan`, `delegate`, `wait`, `merge`, and `verify`.
-
-## Boundary Status
-
-Implemented:
-
-- Stateless `Agent.chat_stream(message, context)` entry point.
-- `LoopEvent` / `LoopResult` for event-oriented loop output.
-- `--max-steps 0` runs until the model exits or the user interrupts the turn.
-- Multiple action blocks per model turn are executed sequentially in output order.
-- `ToolRegistry` and staged `ToolExecutionPipeline`.
-- Built-in `read_file`, `read_tail`, `read_forward`, `file_info`, `search`, `write_file`, and `edit_file` tools for bounded workspace file access.
-- File writes use same-process and cross-process lock files under `.agent/locks`.
-- File readers detect likely binary files and include metadata such as file size, chars read, paging offsets, and EOF state; `file_info` provides binary-safe size/hash/preview summaries.
-- `read_forward` supports byte paging and line paging through `mode:"lines"`, `line_offset`, and `line_limit`.
-- `search` respects built-in ignore dirs, explicit `ignore_dirs`, workspace `.gitignore` / `.agentignore` patterns, and ranked top-k output.
-- Structured write validation for JSON, TOML, XML, optional PyYAML-backed YAML, and JSON sidecar schemas.
-- `ToolSpec` supports risk levels, output schemas, bounded retry counts, and a focused JSON Schema subset with nested objects, arrays, enum, const, oneOf/anyOf/allOf/not, patterns, uniqueness, bounds, and field-level validation errors.
-- Tool execution events record action, status, risk, attempts, metadata, and whether an output schema was enforced.
-- Active plans are injected into execute turns; when a plan names concrete paths, writer tools are constrained to those planned paths.
-- `ShellAdapter` supports system shell, bash, zsh, sh, PowerShell, cmd, and Git Bash style command execution, with shell metadata in observations.
-- `ResolveDecision` supports decision hooks that can override policy decisions before confirmation.
-- Permission decision type with `allow`, `ask`, `deny`, and `skip`.
-- Product permission modes: `default`, `autoEdit`, `plan`, `yolo`.
-- Manual MCP config loading with streamable HTTP JSON-RPC tools.
-- Local instruction skill loading into the system prompt.
-- Workspace skill discovery and bulk loading through `/skills`.
-- JSON session event log for permission approval audit records.
-- Queryable recent session events through `/events`.
-- JSON session writes are lock-protected, atomically replaced, and capped to recent messages.
-- Permission confirmation is injectable through a confirmation handler; the CLI supports selectable once/session/deny approval.
-- `pyproject.toml` includes a Pyright `basic` type-checking configuration for `src` and `tests`.
-- `/plan` creates an isolated typed plan artifact that can be shown, cleared, and persisted in the session file.
-- `/workflow` creates and updates typed workflow state that can be shown, cleared, and persisted in the session file.
-- `/delegate` runs a scoped read-only SubAgent and records the result in workflow state.
-- Context compaction is triggered near the configured model context budget, and compacted summaries preserve the initial user goal.
-- Model-generated context summaries are enabled by default; `--no-summarize-context` disables them.
-- Interactive prompt history is available through readline arrow keys and `/history [number]`.
-
-Reserved but intentionally minimal:
-
-- Context compression can fall back to local truncation when model summaries are disabled.
-- `autoEdit` automatically approves file writer tools; shell commands still ask until explicitly approved once or for the session.
-- Session persistence supports JSON or SQLite transcript/event storage with `/memory` retrieval.
-- MCP tool discovery is best-effort at startup; generic list/call tools remain available when discovery cannot run.
-- MCP registration and discovery outcomes are recorded in session events and queryable through `/events`.
-- Plugin manifests are discovered from workspace/user plugin directories and can load skills plus MCP server configs.
-- Structured file writes validate JSON/YAML with sidecar schemas and return formatter suggestions on repairable failures.
-- `/doctor` runs local health checks for workspace, session backend, model config, policy, MCP, and plugins without touching the network.
-
-Current requested implementation checklist is complete.
-
-## Notes From The Reference Article
-
-The reference tutorial emphasizes a few practical details this project keeps:
-
-- Use an explicit action format instead of guessing intent.
-- Feed command output back to the model as observations.
-- Treat timeouts, format errors, and permission denials as recoverable observations.
-- Set non-interactive environment variables such as `PAGER=cat` and `PIP_PROGRESS_BAR=off`.
-- Keep model and environment as separate modules so either can be swapped.
+CI runs both unit tests and Pyright through GitHub Actions.

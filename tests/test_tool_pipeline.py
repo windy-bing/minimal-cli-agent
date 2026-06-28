@@ -154,6 +154,26 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertEqual(result.output, "ok")
         self.assertEqual(result.metadata["attempts"], 2)
 
+    def test_tool_pipeline_retry_count_zero_runs_once(self) -> None:
+        registry = ToolRegistry()
+        calls = {"count": 0}
+
+        def fails(payload: str) -> CommandResult:
+            calls["count"] += 1
+            return CommandResult("fails", 1, "nope")
+
+        registry.register(ToolSpec(name="fails", description="Fails.", handler=fails, retry_count=0))
+        harness = AgentHarness(AgentConfig(permission_mode="yolo"), tool_registry=registry)
+        harness.tool_pipeline.hooks.decision_hooks.append(
+            lambda call, decision: ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="test tool")
+        )
+
+        result = harness.tool_pipeline.execute(ToolCall(name="fails", payload="x"))
+
+        self.assertEqual(calls["count"], 1)
+        self.assertEqual(result.exit_code, 1)
+        self.assertEqual(result.metadata["attempts"], 1)
+
     def test_output_schema_validation_turns_bad_output_into_repair_observation(self) -> None:
         registry = ToolRegistry()
         registry.register(

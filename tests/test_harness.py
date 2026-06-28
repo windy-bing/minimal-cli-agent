@@ -1,11 +1,33 @@
 import unittest
 import json
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from minimal_cli_agent.constants import Tools
-from minimal_cli_agent.harness import AgentHarness, bucket_tool_calls
-from minimal_cli_agent.types import AgentConfig, ToolCall
+from minimal_cli_agent.harness import AgentHarness, Observation, bucket_tool_calls
+from minimal_cli_agent.types import AgentConfig, CommandResult, ToolCall
+
+
+class SlowReadHarness(AgentHarness):
+    def execute_tool(self, call: ToolCall) -> Observation:
+        time.sleep(0.15)
+        return Observation(
+            action=call.name,
+            payload=call.payload,
+            result=CommandResult(call.name, 0, f"done:{call.payload}"),
+        )
+
+
+class FailingReadHarness(AgentHarness):
+    def execute_tool(self, call: ToolCall) -> Observation:
+        if call.payload == "boom":
+            raise RuntimeError("boom")
+        return Observation(
+            action=call.name,
+            payload=call.payload,
+            result=CommandResult(call.name, 0, "ok"),
+        )
 
 
 class HarnessTest(unittest.TestCase):
@@ -105,6 +127,32 @@ class HarnessTest(unittest.TestCase):
 
         self.assertEqual([observation.action for observation in observations], ["read", "read_file"])
         self.assertEqual([observation.result.output for observation in observations], ["alpha", "beta"])
+
+    def test_execute_tools_runs_parallel_safe_reads_concurrently(self) -> None:
+        harness = SlowReadHarness(AgentConfig(permission_mode="plan"))
+
+        started = time.monotonic()
+        observations = harness.execute_tools(
+            [
+                ToolCall(name=Tools.READ_FILE, payload="a"),
+                ToolCall(name=Tools.READ_TAIL, payload="b"),
+            ]
+        )
+        elapsed = time.monotonic() - started
+
+        self.assertLess(elapsed, 0.27)
+        self.assertEqual([observation.action for observation in observations], [Tools.READ_FILE, Tools.READ_TAIL])
+
+    def test_execute_tools_preserves_original_parallel_exception(self) -> None:
+        harness = FailingReadHarness(AgentConfig(permission_mode="plan"))
+
+        with self.assertRaisesRegex(RuntimeError, "boom"):
+            harness.execute_tools(
+                [
+                    ToolCall(name=Tools.READ_FILE, payload="ok"),
+                    ToolCall(name=Tools.READ_TAIL, payload="boom"),
+                ]
+            )
 
     def test_read_forward_line_mode_returns_paging_metadata(self) -> None:
         with TemporaryDirectory() as tmp:

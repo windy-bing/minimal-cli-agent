@@ -212,7 +212,7 @@ class AgentHarness:
             try:
                 for future in futures:
                     observations.append(future.result())
-            except BaseException:
+            except Exception:
                 for future in futures:
                     future.cancel()
                 raise

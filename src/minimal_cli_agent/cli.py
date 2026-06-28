@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import argparse
 import copy
 from dataclasses import dataclass, field
 import json
 import os
-import re
 import select
 import sys
 import time
@@ -18,6 +16,26 @@ except ImportError:  # pragma: no cover - readline is platform-dependent.
     readline = None
 
 from minimal_cli_agent.agent import Agent, print_event
+from minimal_cli_agent.cli_config import (
+    bool_config_value,
+    build_parser,
+    build_session_store,
+    choose_config_value,
+    default_user_config_path,
+    detect_explicit_options,
+    load_cli_defaults,
+    merge_paths,
+    normalize_model_fallbacks,
+    normalize_string_list,
+    optional_float,
+    optional_int,
+    optional_str,
+    parse_model_routes,
+    resolve_default_session_path,
+    resolve_optional_path,
+    resolve_path_option,
+)
+from minimal_cli_agent.cli_format import format_duration, is_plan_mode_write_block, print_compact_event, render_prompt
 from minimal_cli_agent.constants import Defaults, InteractiveCommands, LoopEventData, LoopEventTypes, PermissionModes, Profiles, Providers, ToolDecisionKinds, ToolPayloadFields, Tools
 from minimal_cli_agent.context import estimate_context_tokens, total_message_chars
 from minimal_cli_agent.exceptions import AgentError, ConfigurationError
@@ -38,7 +56,7 @@ from minimal_cli_agent.profiles import resolve_profile
 from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.skills import build_system_prompt, discover_skill_paths, resolve_skill_path, resolve_skill_paths
 from minimal_cli_agent.subagent import SUBAGENT_ROLES, SubAgentRunner
-from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, Message, ModelRoute, ToolCall, ToolDecision
+from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, Message, ToolCall, ToolDecision
 from minimal_cli_agent.workflow import (
     WORKFLOW_METADATA_KEY,
     WorkflowArtifact,
@@ -52,228 +70,6 @@ from minimal_cli_agent.workflow import (
     verify_workflow_step,
     workflow_status_counts,
 )
-
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="minimal-agent", description="Run a minimal terminal AI agent.")
-    parser.add_argument("task", nargs="*", help="Task for the agent.")
-    parser.add_argument("-i", "--interactive", action="store_true", help="Start a multi-turn interactive CLI session.")
-    parser.add_argument("--config-file", type=Path, help="Read defaults from this JSON config file.")
-    parser.add_argument("--profile", choices=Profiles.ALL, default=os.getenv("AGENT_PROFILE"))
-    parser.add_argument("--provider", choices=Providers.ALL, default=os.getenv("AGENT_PROVIDER", Providers.OLLAMA))
-    parser.add_argument("--model", default=os.getenv("AGENT_MODEL", Defaults.MODEL))
-    parser.add_argument("--base-url", default=os.getenv("AGENT_BASE_URL", Defaults.BASE_URL))
-    parser.add_argument("--api-key", default=os.getenv("AGENT_API_KEY"))
-    parser.add_argument("--cwd", type=Path, default=Path(os.getenv("AGENT_CWD", ".")))
-    parser.add_argument("--max-steps", type=int, default=int(os.getenv("AGENT_MAX_STEPS", Defaults.MAX_STEPS)))
-    parser.add_argument("--timeout", type=int, default=int(os.getenv("AGENT_COMMAND_TIMEOUT", Defaults.COMMAND_TIMEOUT)))
-    parser.add_argument("--shell", default=os.getenv("AGENT_SHELL", "system"), help="Shell adapter: system, bash, zsh, sh, powershell, cmd, git-bash, or a shell command.")
-    parser.add_argument("--model-timeout", type=int, default=int(os.getenv("AGENT_MODEL_TIMEOUT", Defaults.MODEL_TIMEOUT)))
-    parser.add_argument("--model-fallback", action="append", default=parse_model_fallback_env(), help="JSON fallback route. Example: '{\"provider\":\"ollama\",\"model\":\"qwen3:1.7b\",\"base_url\":\"http://localhost:11434\"}'")
-    parser.add_argument("--model-max-retries", type=int, default=int(os.getenv("AGENT_MODEL_MAX_RETRIES", "0")))
-    parser.add_argument("--model-max-concurrency", type=int, default=int(os.getenv("AGENT_MODEL_MAX_CONCURRENCY", "4")))
-    parser.add_argument("--model-queue-timeout", type=float, default=float(os.getenv("AGENT_MODEL_QUEUE_TIMEOUT", "5")))
-    parser.add_argument("--model-circuit-failure-threshold", type=int, default=int(os.getenv("AGENT_MODEL_CIRCUIT_FAILURE_THRESHOLD", "3")))
-    parser.add_argument("--model-circuit-cooldown", type=float, default=float(os.getenv("AGENT_MODEL_CIRCUIT_COOLDOWN", "60")))
-    parser.add_argument("--model-price-input-per-1m", type=float, default=float(os.getenv("AGENT_MODEL_PRICE_INPUT_PER_1M", "0")))
-    parser.add_argument("--model-price-output-per-1m", type=float, default=float(os.getenv("AGENT_MODEL_PRICE_OUTPUT_PER_1M", "0")))
-    parser.add_argument("--usage-ledger", type=Path, default=Path(os.getenv("AGENT_USAGE_LEDGER")) if os.getenv("AGENT_USAGE_LEDGER") else None)
-    parser.add_argument("--usage-subject", default=os.getenv("AGENT_USAGE_SUBJECT", "default"))
-    parser.add_argument("--usage-tenant", default=os.getenv("AGENT_USAGE_TENANT", "default"))
-    parser.add_argument("--max-input-tokens", type=int, default=parse_optional_int_env("AGENT_MAX_INPUT_TOKENS"))
-    parser.add_argument("--max-output-tokens", type=int, default=parse_optional_int_env("AGENT_MAX_OUTPUT_TOKENS"))
-    parser.add_argument("--max-request-tokens", type=int, default=parse_optional_int_env("AGENT_MAX_REQUEST_TOKENS"))
-    parser.add_argument("--daily-token-limit", type=int, default=parse_optional_int_env("AGENT_DAILY_TOKEN_LIMIT"))
-    parser.add_argument("--monthly-token-limit", type=int, default=parse_optional_int_env("AGENT_MONTHLY_TOKEN_LIMIT"))
-    parser.add_argument("--max-request-cost", type=float, default=parse_optional_float_env("AGENT_MAX_REQUEST_COST"))
-    parser.add_argument("--daily-cost-limit", type=float, default=parse_optional_float_env("AGENT_DAILY_COST_LIMIT"))
-    parser.add_argument("--monthly-cost-limit", type=float, default=parse_optional_float_env("AGENT_MONTHLY_COST_LIMIT"))
-    parser.add_argument("--prompt-version", default=os.getenv("AGENT_PROMPT_VERSION", "default"))
-    parser.add_argument("--bill-failed-requests", action="store_true", help="Count failed model attempts against usage budgets.")
-    parser.add_argument("--allow-network", action="store_true", help="Allow shell commands with obvious network access.")
-    parser.add_argument("--policy-file", type=Path, help="JSON file with additional shell policy deny tokens.")
-    parser.add_argument("--mcp-config", type=Path, help="JSON config file with MCP servers.")
-    parser.add_argument("--plugin", action="append", default=[], help="Load a plugin manifest by path or by name under plugins/<name>.")
-    parser.add_argument("--no-plugin-discovery", action="store_true", help="Disable automatic plugin discovery.")
-    parser.add_argument("--skill", action="append", default=[], help="Load a skill by path or by name under skills/<name>.")
-    parser.add_argument("--summarize-context", action="store_true", default=None, help="Use the model to summarize old context when compacting.")
-    parser.add_argument("--no-summarize-context", action="store_false", dest="summarize_context", help="Disable model context summaries.")
-    parser.add_argument("--model-context-tokens", type=int, default=parse_optional_int_env("AGENT_MODEL_CONTEXT_TOKENS"), help="Approximate model context window. Context is compacted near this budget.")
-    parser.add_argument("--context-compression-ratio", type=float, default=float(os.getenv("AGENT_CONTEXT_COMPRESSION_RATIO", Defaults.CONTEXT_COMPRESSION_RATIO)), help="Fraction of model context tokens that triggers compaction.")
-    parser.add_argument("--show-config", action="store_true", help="Print resolved provider/model/base URL without secrets.")
-    parser.add_argument(
-        "--permission",
-        choices=PermissionModes.ALL,
-        default=os.getenv("AGENT_PERMISSION", PermissionModes.DEFAULT),
-    )
-    parser.add_argument("--session", type=Path, help="Persist messages to this JSON session file.")
-    parser.add_argument("--session-db", type=Path, help="Persist full transcript and events to this SQLite database.")
-    parser.add_argument("--no-session", action="store_true", help="Disable the default persistent session.")
-    return parser
-
-
-def load_cli_defaults(cwd: Path, explicit_config_file: Path | None = None) -> dict[str, Any]:
-    paths = [default_user_config_path(), cwd / Defaults.LOCAL_CONFIG_FILE]
-    if explicit_config_file is not None:
-        paths = [explicit_config_file]
-    merged: dict[str, Any] = {}
-    for path in paths:
-        if not path.exists():
-            continue
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except OSError as exc:
-            raise ConfigurationError(f"Unable to read config file {path}: {exc}") from exc
-        except json.JSONDecodeError as exc:
-            raise ConfigurationError(f"Config file must be valid JSON: {path}") from exc
-        if not isinstance(data, dict):
-            raise ConfigurationError(f"Config file must contain a JSON object: {path}")
-        merged.update(data)
-    return merged
-
-
-def default_user_config_path() -> Path:
-    return Path.home() / Defaults.USER_CONFIG_DIR / Defaults.USER_CONFIG_FILE
-
-
-def default_project_session_path(cwd: Path) -> Path:
-    return cwd / Defaults.SESSION_PATH
-
-
-def resolve_default_session_path(
-    args: argparse.Namespace,
-    explicit_options: set[str],
-    local_defaults: dict[str, Any],
-    cwd: Path,
-) -> Path | None:
-    if args.no_session:
-        return None
-    raw_session = choose_config_value("session", args.session, local_defaults, explicit_options, ("AGENT_SESSION",))
-    if raw_session is None:
-        return default_project_session_path(cwd).resolve()
-    return resolve_path_option(raw_session, cwd).resolve()
-
-
-def build_session_store(session_path: Path | None, session_db_path: Path | None):
-    if session_db_path is not None:
-        return SQLiteSessionStore(session_db_path)
-    if session_path is not None:
-        return JsonSessionStore(session_path)
-    return None
-
-
-def choose_config_value(
-    key: str,
-    current: Any,
-    local_defaults: dict[str, Any],
-    explicit_options: set[str],
-    env_names: tuple[str, ...] = (),
-) -> Any:
-    if key in explicit_options:
-        return current
-    for env_name in env_names:
-        env_value = os.getenv(env_name)
-        if env_value is not None:
-            return env_value
-    if key in local_defaults:
-        return local_defaults[key]
-    return current
-
-
-def resolve_path_option(value: Any, base: Path) -> Path:
-    path = value if isinstance(value, Path) else Path(str(value))
-    path = path.expanduser()
-    if not path.is_absolute():
-        path = base / path
-    return path
-
-
-def resolve_optional_path(value: Any, base: Path) -> Path | None:
-    if value is None or value == "":
-        return None
-    return resolve_path_option(value, base).resolve()
-
-
-def optional_str(value: Any) -> str | None:
-    if value is None or value == "":
-        return None
-    return str(value)
-
-
-def optional_int(value: Any) -> int | None:
-    if value is None or value == "":
-        return None
-    return int(value)
-
-
-def optional_float(value: Any) -> float | None:
-    if value is None or value == "":
-        return None
-    return float(value)
-
-
-def bool_config_value(value: Any, default: bool) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        lowered = value.strip().lower()
-        if lowered in {"1", "true", "yes", "y", "on"}:
-            return True
-        if lowered in {"0", "false", "no", "n", "off"}:
-            return False
-    return bool(value)
-
-
-def normalize_string_list(value: Any) -> list[str]:
-    if value is None or value == "":
-        return []
-    if isinstance(value, list):
-        return [str(item) for item in value if str(item).strip()]
-    if isinstance(value, tuple):
-        return [str(item) for item in value if str(item).strip()]
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return [item.strip() for item in value.split(",") if item.strip()]
-        if isinstance(parsed, list):
-            return [str(item) for item in parsed if str(item).strip()]
-    return [str(value)]
-
-
-def normalize_model_fallbacks(value: Any) -> list[str]:
-    if value is None or value == "":
-        return []
-    if isinstance(value, list):
-        return [json.dumps(item) if isinstance(item, dict) else str(item) for item in value]
-    if isinstance(value, dict):
-        return [json.dumps(value)]
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return [value]
-        if isinstance(parsed, list):
-            return [json.dumps(item) if isinstance(item, dict) else str(item) for item in parsed]
-        if isinstance(parsed, dict):
-            return [json.dumps(parsed)]
-        return [value]
-    return [str(value)]
-
-
-def merge_paths(*groups: tuple[Path, ...]) -> tuple[Path, ...]:
-    seen: set[Path] = set()
-    merged: list[Path] = []
-    for group in groups:
-        for path in group:
-            resolved = path.resolve()
-            if resolved in seen:
-                continue
-            seen.add(resolved)
-            merged.append(resolved)
-    return tuple(merged)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -613,140 +409,6 @@ def run_interactive(
         pending = None
 
 
-ACTION_BLOCK_PATTERN = re.compile(r"```(?:bash-action|tool-action)\n.*?```", re.DOTALL)
-
-
-def print_compact_event(event: LoopEvent) -> None:
-    if event.type == LoopEventTypes.STEP_START:
-        print(f"\n--- step {event.data[LoopEventData.STEP]}/{event.data[LoopEventData.MAX_STEPS]} ---")
-    elif event.type == LoopEventTypes.MODEL_OUTPUT:
-        print_compact_model_output(str(event.data[LoopEventData.CONTENT]))
-    elif event.type == LoopEventTypes.TOOL_CALL_START:
-        print(f"[action] {summarize_tool_call(str(event.data[LoopEventData.TOOL]), str(event.data[LoopEventData.PAYLOAD]))}")
-    elif event.type == LoopEventTypes.TOOL_CALL_RESULT:
-        summary = summarize_observation(str(event.data[LoopEventData.OBSERVATION]))
-        if summary:
-            print(f"[observation] {summary}")
-    elif event.type == LoopEventTypes.DONE:
-        print(f"[done] {event.data[LoopEventData.REASON]}")
-    elif event.type == LoopEventTypes.MAX_STEPS:
-        print(f"[max_steps] {event.data[LoopEventData.MAX_STEPS]}")
-
-
-def print_compact_model_output(content: str) -> None:
-    stripped = ACTION_BLOCK_PATTERN.sub("", content).strip()
-    action_count = len(ACTION_BLOCK_PATTERN.findall(content))
-    if stripped:
-        print(stripped)
-    elif action_count:
-        print(f"model requested {action_count} action(s)")
-
-
-def summarize_tool_call(tool: str, payload: str) -> str:
-    if tool == Tools.SHELL:
-        return f"shell: {first_line(payload)}"
-    try:
-        data = json.loads(payload)
-    except json.JSONDecodeError:
-        return f"{tool}: {first_line(payload)}"
-    if not isinstance(data, dict):
-        return f"{tool}: {first_line(payload)}"
-
-    if tool in {Tools.READ_FILE, Tools.READ_TAIL, Tools.READ_FORWARD, Tools.FILE_INFO}:
-        return f"{tool}: {compact_path(str(data.get('path', '<missing>')))}"
-    if tool == Tools.SEARCH:
-        pattern = str(data.get("pattern", ""))
-        path = compact_path(str(data.get("path", ".")))
-        return f"search: {path} for {pattern!r}"
-    if tool == Tools.WRITE_FILE:
-        content = str(data.get("content", ""))
-        return f"write_file: {compact_path(str(data.get('path', '<missing>')))} ({len(content)} chars)"
-    if tool == Tools.EDIT_FILE:
-        return (
-            f"edit_file: {compact_path(str(data.get('path', '<missing>')))} "
-            f"lines {data.get('start_line', '?')}-{data.get('end_line', '?')}"
-        )
-    return f"{tool}: {first_line(payload)}"
-
-
-def summarize_observation(observation: str) -> str:
-    if is_plan_mode_block(observation):
-        reason = extract_output_block(observation).strip() or "plan mode blocked execution"
-        return f"skipped: {reason}"
-
-    status = extract_field(observation, "status")
-    exit_code = extract_field(observation, "exit_code")
-    command = extract_command_block(observation)
-    output = extract_output_block(observation)
-    prefix = summarize_command(command)
-    metrics = summarize_output(output)
-    pieces = [piece for piece in (prefix, f"status={status}" if status else "", f"exit={exit_code}" if exit_code else "", metrics) if piece]
-    return ", ".join(pieces) if pieces else first_line(observation)
-
-
-def summarize_command(command: str) -> str:
-    if not command:
-        return ""
-    parts = command.split(maxsplit=1)
-    tool = parts[0]
-    target = compact_path(parts[1]) if len(parts) > 1 else ""
-    if tool in {Tools.READ_FILE, Tools.READ_TAIL, Tools.READ_FORWARD, Tools.FILE_INFO, Tools.SEARCH, Tools.WRITE_FILE, Tools.EDIT_FILE}:
-        return f"{tool} {target}".strip()
-    return first_line(command)
-
-
-def summarize_output(output: str) -> str:
-    if not output:
-        return "output=0 chars"
-    lines = output.splitlines()
-    if output.strip() == "no matches":
-        return "no matches"
-    if output.startswith("search timed out") or "search timed out" in output:
-        return f"{len(lines)} lines, timed out"
-    return f"{len(lines)} lines, {len(output)} chars"
-
-
-def extract_field(text: str, field: str) -> str:
-    match = re.search(rf"^{re.escape(field)}:\s*(.+)$", text, flags=re.MULTILINE)
-    return match.group(1).strip() if match else ""
-
-
-def extract_command_block(text: str) -> str:
-    return extract_named_block(text, "command")
-
-
-def extract_output_block(text: str) -> str:
-    return extract_named_block(text, "output")
-
-
-def extract_named_block(text: str, name: str) -> str:
-    match = re.search(rf"{re.escape(name)}:\n```text\n(.*?)\n```", text, flags=re.DOTALL)
-    return match.group(1) if match else ""
-
-
-def first_line(text: str, limit: int = 160) -> str:
-    line = text.strip().splitlines()[0] if text.strip() else ""
-    return line if len(line) <= limit else line[: limit - 3] + "..."
-
-
-def compact_path(path_text: str) -> str:
-    path = Path(path_text)
-    try:
-        return str(path.resolve().relative_to(Path.cwd().resolve()))
-    except (OSError, ValueError):
-        return path.name if path.is_absolute() else path_text
-
-
-def is_plan_mode_block(observation: object) -> bool:
-    text = str(observation)
-    return "plan mode does not execute" in text
-
-
-def is_plan_mode_write_block(observation: object) -> bool:
-    text = str(observation)
-    return "plan mode does not execute write_file" in text or "plan mode does not execute edit_file" in text
-
-
 def should_retry_with_auto_edit(session: InteractiveSession, message: str, summary: TurnExecutionSummary) -> bool:
     if not summary.plan_blocked:
         return False
@@ -768,19 +430,6 @@ def retry_in_auto_edit(session: InteractiveSession, message: str) -> str:
     return message
 
 
-def render_prompt(config: AgentConfig) -> str:
-    cyan = "\033[36m" if sys.stdout.isatty() else ""
-    dim = "\033[2m" if sys.stdout.isatty() else ""
-    reset = "\033[0m" if sys.stdout.isatty() else ""
-    cwd = compact_path(str(config.cwd))
-    model = f"{config.provider}/{config.model}"
-    return (
-        f"\n{cyan}╭─ minimal-agent{reset} {dim}{cwd}{reset}\n"
-        f"{dim}│ model: {model}  permission: {config.permission_mode}{reset}\n"
-        f"{cyan}╰─>{reset} "
-    )
-
-
 def read_supplemental_stdin() -> str | None:
     if not sys.stdin.isatty():
         return None
@@ -795,16 +444,6 @@ def read_supplemental_stdin() -> str | None:
     if text:
         print(f"[input] queued supplemental user input ({len(text)} chars)")
     return text or None
-
-
-def format_duration(seconds: float) -> str:
-    if seconds < 1:
-        return f"{seconds * 1000:.0f}ms"
-    if seconds < 60:
-        return f"{seconds:.2f}s"
-    minutes = int(seconds // 60)
-    remainder = seconds - minutes * 60
-    return f"{minutes}m{remainder:.1f}s"
 
 
 def configure_readline_history(history: list[str]) -> None:
@@ -1794,113 +1433,6 @@ def upsert_system_prompt(context: ChatContext, system_prompt: str | None) -> Non
         context.messages[0] = Message(role="system", content=system_prompt)
         return
     context.messages.insert(0, Message(role="system", content=system_prompt))
-
-
-def detect_explicit_options(argv: list[str]) -> set[str]:
-    option_map = {
-        "--provider": "provider",
-        "--profile": "profile",
-        "--model": "model",
-        "--base-url": "base_url",
-        "--api-key": "api_key",
-        "--cwd": "cwd",
-        "--max-steps": "max_steps",
-        "--timeout": "timeout",
-        "--shell": "shell",
-        "--model-timeout": "model_timeout",
-        "--model-max-retries": "model_max_retries",
-        "--model-max-concurrency": "model_max_concurrency",
-        "--model-queue-timeout": "model_queue_timeout",
-        "--model-circuit-failure-threshold": "model_circuit_failure_threshold",
-        "--model-circuit-cooldown": "model_circuit_cooldown",
-        "--model-price-input-per-1m": "model_price_input_per_1m",
-        "--model-price-output-per-1m": "model_price_output_per_1m",
-        "--usage-ledger": "usage_ledger",
-        "--usage-subject": "usage_subject",
-        "--usage-tenant": "usage_tenant",
-        "--max-input-tokens": "max_input_tokens",
-        "--max-output-tokens": "max_output_tokens",
-        "--max-request-tokens": "max_request_tokens",
-        "--daily-token-limit": "daily_token_limit",
-        "--monthly-token-limit": "monthly_token_limit",
-        "--max-request-cost": "max_request_cost",
-        "--daily-cost-limit": "daily_cost_limit",
-        "--monthly-cost-limit": "monthly_cost_limit",
-        "--prompt-version": "prompt_version",
-        "--permission": "permission",
-        "--policy-file": "policy_file",
-        "--mcp-config": "mcp_config",
-        "--skill": "skill",
-        "--session": "session",
-        "--session-db": "session_db",
-        "--config-file": "config_file",
-    }
-    flag_map = {
-        "--bill-failed-requests": "bill_failed_requests",
-        "--allow-network": "allow_network",
-        "--summarize-context": "summarize_context",
-        "--no-summarize-context": "summarize_context",
-        "--no-session": "session",
-    }
-    explicit = set()
-    for item in argv:
-        for option, name in option_map.items():
-            if item == option or item.startswith(f"{option}="):
-                explicit.add(name)
-        if item in flag_map:
-            explicit.add(flag_map[item])
-    return explicit
-
-
-def parse_optional_int_env(name: str) -> int | None:
-    value = os.getenv(name)
-    return int(value) if value else None
-
-
-def parse_optional_float_env(name: str) -> float | None:
-    value = os.getenv(name)
-    return float(value) if value else None
-
-
-def parse_model_fallback_env() -> list[str]:
-    raw = os.getenv("AGENT_MODEL_FALLBACKS")
-    if not raw:
-        return []
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return [raw]
-    if isinstance(data, list):
-        return [json.dumps(item) if isinstance(item, dict) else str(item) for item in data]
-    return [raw]
-
-
-def parse_model_routes(raw_routes: list[str]) -> tuple[ModelRoute, ...]:
-    routes: list[ModelRoute] = []
-    for raw in raw_routes:
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ConfigurationError(f"Invalid --model-fallback JSON: {exc}") from exc
-        if not isinstance(data, dict):
-            raise ConfigurationError("--model-fallback must be a JSON object")
-        try:
-            routes.append(
-                ModelRoute(
-                    provider=data["provider"],
-                    model=data["model"],
-                    base_url=data["base_url"],
-                    api_key=data.get("api_key"),
-                    timeout=data.get("timeout"),
-                    max_retries=int(data.get("max_retries", 0)),
-                    price_input_per_1m=float(data.get("price_input_per_1m", 0.0)),
-                    price_output_per_1m=float(data.get("price_output_per_1m", 0.0)),
-                    weight=int(data.get("weight", 1)),
-                )
-            )
-        except KeyError as exc:
-            raise ConfigurationError(f"--model-fallback missing required field: {exc}") from exc
-    return tuple(routes)
 
 
 if __name__ == "__main__":

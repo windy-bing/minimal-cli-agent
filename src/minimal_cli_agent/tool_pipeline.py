@@ -138,15 +138,15 @@ class ToolExecutionPipeline:
 
     def _execution(self, call: ToolCall) -> CommandResult:
         spec = self.registry.require(call.name)
-        attempts = 0
+        total_attempts = max(0, spec.retry_count) + 1
         result: CommandResult | None = None
-        for attempts in range(1, max(0, spec.retry_count) + 2):
+        for attempt in range(1, total_attempts + 1):
             result = self.registry.execute(call.name, call.payload)
-            result.metadata.setdefault("attempts", attempts)
+            result.metadata.setdefault("attempts", attempt)
             if result.exit_code == 0 or result.skipped:
                 return result
         assert result is not None
-        result.metadata.setdefault("attempts", attempts)
+        result.metadata.setdefault("attempts", total_attempts)
         return result
 
     def _post_hook(self, call: ToolCall, result: CommandResult) -> None:

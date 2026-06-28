@@ -3,7 +3,7 @@ import json
 
 from minimal_cli_agent.constants import Tools
 from minimal_cli_agent.exceptions import AgentFinished, FormatError
-from minimal_cli_agent.parser import parse_action, parse_actions
+from minimal_cli_agent.parser import parse_action, parse_actions, parse_bash_action, validate_action_sequence
 
 
 class ParserTest(unittest.TestCase):
@@ -48,6 +48,14 @@ class ParserTest(unittest.TestCase):
     def test_parse_actions_rejects_exit_mixed_with_other_actions(self) -> None:
         with self.assertRaisesRegex(FormatError, "exit must be the only action"):
             parse_actions("```bash-action\nexit\n```\n```bash-action\nls\n```")
+
+    def test_parse_bash_action_keeps_exit_parse_separate_from_sequence_validation(self) -> None:
+        call = parse_bash_action("exit")
+
+        self.assertEqual(call.name, Tools.SHELL)
+        self.assertEqual(call.payload, "exit")
+        with self.assertRaises(AgentFinished):
+            validate_action_sequence([call])
 
     def test_parse_action_exit(self) -> None:
         with self.assertRaises(AgentFinished):

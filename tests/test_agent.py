@@ -67,6 +67,14 @@ class RecordingBatchHarness(AgentHarness):
 
 
 class AgentTest(unittest.TestCase):
+    def test_from_config_builds_default_harness_without_hiding_constructor_dependency(self) -> None:
+        config = AgentConfig(permission_mode="plan")
+
+        agent = Agent.from_config(config)
+
+        self.assertIs(agent.config, config)
+        self.assertIsInstance(agent.harness, AgentHarness)
+
     def test_chat_stream_is_context_driven(self) -> None:
         config = AgentConfig(permission_mode="plan")
         harness = AgentHarness(config=config, model=FakeModel())

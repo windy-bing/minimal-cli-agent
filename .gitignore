@@ -4,6 +4,7 @@ __pycache__/
 .env
 .DS_Store
 .minimal-cli-agent/
+.agent/
 
 # Byte-compiled / optimized / DLL files
 *.py[codz]

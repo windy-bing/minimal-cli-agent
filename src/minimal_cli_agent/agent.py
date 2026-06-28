@@ -11,9 +11,13 @@ from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOpt
 
 
 class Agent:
-    def __init__(self, config: AgentConfig, harness: AgentHarness | None = None) -> None:
+    def __init__(self, config: AgentConfig, harness: AgentHarness) -> None:
         self.config = config
-        self.harness = harness or AgentHarness(config)
+        self.harness = harness
+
+    @classmethod
+    def from_config(cls, config: AgentConfig) -> Agent:
+        return cls(config=config, harness=AgentHarness(config))
 
     def chat_stream(
         self,
