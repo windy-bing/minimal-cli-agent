@@ -43,6 +43,8 @@ Risks:
 """
 
 SUBAGENT_ROLES = {"explorer", "worker", "verifier"}
+SNAPSHOT_MAX_FILES = 5000
+SNAPSHOT_MAX_FILE_BYTES = 2 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -164,11 +166,17 @@ def snapshot_workspace(root: Path) -> dict[str, str]:
     snapshot: dict[str, str] = {}
     if not root.exists():
         return snapshot
+    scanned = 0
     for path in sorted(root.rglob("*")):
+        if scanned >= SNAPSHOT_MAX_FILES:
+            break
         if not path.is_file() or should_skip_snapshot_path(path, root):
             continue
         try:
+            if path.stat().st_size > SNAPSHOT_MAX_FILE_BYTES:
+                continue
             snapshot[path.relative_to(root).as_posix()] = hash_file(path)
+            scanned += 1
         except OSError:
             continue
     return snapshot

@@ -70,6 +70,7 @@ class AgentHarness:
                 handler=self.environment.execute,
                 expected_format=Tools.SHELL_EXPECTED_FORMAT,
                 aliases=Tools.SHELL_ALIASES,
+                risk_level="high",
             )
         )
         self.tool_registry.register(

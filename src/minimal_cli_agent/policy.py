@@ -204,7 +204,13 @@ def permission_target(action: str, payload: str) -> str:
 
 def command_prefix_allowed(command: str, prefixes: tuple[str, ...]) -> bool:
     normalized = command.strip().lower()
+    if command_has_shell_control_operator(normalized):
+        return False
     return any(normalized.startswith(prefix.strip().lower()) for prefix in prefixes)
+
+
+def command_has_shell_control_operator(command: str) -> bool:
+    return any(operator in command for operator in ("&&", "||", ";", "|", "\n"))
 
 
 def command_uses_network_tool(command: str, network_tokens: tuple[str, ...]) -> bool:
@@ -324,7 +330,10 @@ def read_key() -> str:
     if termios is None or tty is None:
         return sys.stdin.read(1)
     fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
+    try:
+        old_settings = termios.tcgetattr(fd)
+    except termios.error:
+        return sys.stdin.read(1)
     try:
         tty.setraw(fd)
         first = sys.stdin.read(1)
@@ -333,4 +342,7 @@ def read_key() -> str:
             return first + rest
         return first
     finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        try:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        except termios.error:
+            pass

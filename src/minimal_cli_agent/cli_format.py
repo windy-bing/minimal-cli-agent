@@ -66,6 +66,8 @@ def summarize_tool_call(tool: str, payload: str) -> str:
 
 
 def summarize_observation(observation: str) -> str:
+    if observation.startswith("Model request failed:"):
+        return first_line(observation)
     if is_plan_mode_block(observation):
         reason = extract_output_block(observation).strip() or "plan mode blocked execution"
         return f"skipped: {reason}"
@@ -125,10 +127,11 @@ def first_line(text: str, limit: int = 160) -> str:
     return line if len(line) <= limit else line[: limit - 3] + "..."
 
 
-def compact_path(path_text: str) -> str:
+def compact_path(path_text: str, base: Path | None = None) -> str:
     path = Path(path_text)
+    cwd = base or Path.cwd()
     try:
-        return str(path.resolve().relative_to(Path.cwd().resolve()))
+        return str(path.resolve().relative_to(cwd.resolve()))
     except (OSError, ValueError):
         return path.name if path.is_absolute() else path_text
 
@@ -147,7 +150,7 @@ def render_prompt(config: AgentConfig) -> str:
     cyan = "\033[36m" if sys.stdout.isatty() else ""
     dim = "\033[2m" if sys.stdout.isatty() else ""
     reset = "\033[0m" if sys.stdout.isatty() else ""
-    cwd = compact_path(str(config.cwd))
+    cwd = compact_path(str(config.cwd), base=config.cwd)
     model = f"{config.provider}/{config.model}"
     return (
         f"\n{cyan}╭─ minimal-agent{reset} {dim}{cwd}{reset}\n"

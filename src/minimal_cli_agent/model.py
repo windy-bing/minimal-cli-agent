@@ -15,6 +15,8 @@ from minimal_cli_agent.constants import Providers
 from minimal_cli_agent.exceptions import ConfigurationError, ModelRequestError
 from minimal_cli_agent.types import AgentConfig, Message
 
+DEFAULT_ANTHROPIC_VERSION = "2023-06-01"
+
 
 class ChatModel:
     def __init__(self, config: AgentConfig) -> None:
@@ -77,7 +79,7 @@ class ChatModel:
         if system:
             payload["system"] = system
 
-        headers = {"anthropic-version": "2023-06-01"}
+        headers = {"anthropic-version": os.getenv("ANTHROPIC_VERSION", DEFAULT_ANTHROPIC_VERSION)}
         if self.config.api_key:
             headers.update(anthropic_auth_headers(self.config.api_key))
 
@@ -245,15 +247,8 @@ def find_codex_command() -> list[str]:
     if path:
         candidates.append([path])
 
-    for fallback in (
-        "/opt/homebrew/bin/codex",
-        "/usr/local/bin/codex",
-    ):
-        if Path(fallback).exists():
-            candidates.append([fallback])
-
     if not candidates:
-        raise ConfigurationError("codex provider requires Codex CLI. Install @openai/codex or set CODEX_COMMAND.")
+        raise ConfigurationError("codex provider requires Codex CLI on PATH, an nvm @openai/codex install, or CODEX_COMMAND.")
 
     return candidates[0]
 

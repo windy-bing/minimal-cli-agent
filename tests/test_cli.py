@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from minimal_cli_agent.agent import Agent
 from minimal_cli_agent.cli import detect_explicit_options, format_duration, main, render_prompt, run_interactive, run_turn
+from minimal_cli_agent.cli_events import parse_events_query
 from minimal_cli_agent.constants import EventKinds, PermissionEventFields
 from minimal_cli_agent.exceptions import ModelRequestError
 from minimal_cli_agent.harness import AgentHarness
@@ -198,12 +199,22 @@ class CliTest(unittest.TestCase):
             "--base-url",
             "http://localhost:11434",
             "--no-session",
+            "--plugin-discovery",
+            "--no-summarize-context",
         ])
 
         self.assertIn("profile", explicit)
         self.assertIn("model", explicit)
         self.assertIn("base_url", explicit)
         self.assertIn("session", explicit)
+        self.assertIn("plugin_discovery", explicit)
+        self.assertIn("summarize_context", explicit)
+
+    def test_parse_events_query_key_value_order_is_stable(self) -> None:
+        self.assertEqual(
+            parse_events_query("format=json kind=tool_execution limit=3 offset=1"),
+            parse_events_query("kind=tool_execution offset=1 limit=3 format=json"),
+        )
 
     def test_main_reads_project_config_and_defaults_session(self) -> None:
         with TemporaryDirectory() as tmp:

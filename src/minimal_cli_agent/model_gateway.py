@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import json
 import threading
@@ -301,29 +301,13 @@ class ModelGateway:
             model = self._models.get(cache_key)
             if model is not None:
                 return model
-        route_config = AgentConfig(
+        route_config = replace(
+            self.config,
             provider=route.provider,
             model=route.model,
             base_url=route.base_url,
             api_key=api_key,
-            cwd=self.config.cwd,
-            max_steps=self.config.max_steps,
-            command_timeout=self.config.command_timeout,
-            shell_kind=self.config.shell_kind,
             model_timeout=route.timeout or self.config.model_timeout,
-            permission_mode=self.config.permission_mode,
-            allow_network=self.config.allow_network,
-            policy_file=self.config.policy_file,
-            mcp_config=self.config.mcp_config,
-            plugin_paths=self.config.plugin_paths,
-            skill_paths=self.config.skill_paths,
-            summarize_context=self.config.summarize_context,
-            context_tail_messages=self.config.context_tail_messages,
-            max_output_chars=self.config.max_output_chars,
-            max_context_chars=self.config.max_context_chars,
-            model_context_tokens=self.config.model_context_tokens,
-            context_compression_ratio=self.config.context_compression_ratio,
-            max_output_tokens=self.config.max_output_tokens,
         )
         model = self.model_factory(route_config)
         with self._model_lock:

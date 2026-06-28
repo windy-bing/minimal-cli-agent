@@ -145,6 +145,8 @@ class ToolExecutionPipeline:
             result.metadata.setdefault("attempts", attempt)
             if result.exit_code == 0 or result.skipped:
                 return result
+            if not should_retry_result(result):
+                return result
         assert result is not None
         result.metadata.setdefault("attempts", total_attempts)
         return result
@@ -198,3 +200,9 @@ def sorted_decision_hooks(hooks: list[DecisionHook | DecisionHookSpec]) -> list[
         hook_name = getattr(hook, "__name__", f"decision_hook_{index}")
         normalized.append(DecisionHookSpec(hook=hook, name=str(hook_name), priority=100))
     return sorted(normalized, key=lambda spec: (spec.priority, spec.name))
+
+
+def should_retry_result(result: CommandResult) -> bool:
+    if result.metadata.get("retryable") is False:
+        return False
+    return result.exit_code not in {2, 126, 127}

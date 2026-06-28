@@ -20,7 +20,6 @@ ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 MCP_PROTOCOL_VERSION = "2024-11-05"
 MCP_CLIENT_NAME = "minimal-cli-agent"
 MCP_CLIENT_VERSION = "0.1.0"
-LUCKIN_TOKEN_FILE = Path.home() / ".my-coffee" / "LUCKIN_MCP_TOKEN"
 logger = get_logger("mcp_tools")
 
 
@@ -379,8 +378,6 @@ def expand_env_vars(value: str) -> str:
         env_value = os.getenv(name)
         if env_value is not None:
             return env_value
-        if name == "LUCKIN_MCP_TOKEN" and LUCKIN_TOKEN_FILE.exists():
-            return LUCKIN_TOKEN_FILE.read_text(encoding="utf-8").strip()
         return match.group(0)
 
     return ENV_PATTERN.sub(replace, value)

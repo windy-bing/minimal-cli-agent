@@ -24,6 +24,7 @@ def parse_actions(model_output: str) -> list[ToolCall]:
     matches = list(ACTION_BLOCK_RE.finditer(model_output))
     if not matches:
         raise FormatError(format_error("no bash-action or tool-action code block found"))
+    validate_raw_action_sequence(matches)
 
     calls: list[ToolCall] = []
     for match in matches:
@@ -33,14 +34,13 @@ def parse_actions(model_output: str) -> list[ToolCall]:
             calls.append(parse_bash_action(body))
         else:
             calls.append(parse_tool_action(body))
-    validate_action_sequence(calls)
     return calls
 
 
 def parse_bash_action(raw_action: str) -> ToolCall:
     command = raw_action.strip()
     if command == "exit":
-        return ToolCall(name=Tools.SHELL, payload="exit")
+        raise AgentFinished("Model requested exit.")
     if not command:
         raise FormatError(format_error("bash-action block is empty"))
     return ToolCall(name=Tools.SHELL, payload=command)
@@ -62,13 +62,10 @@ def parse_tool_action(raw_action: str) -> ToolCall:
     return ToolCall(name=tool_name.strip(), payload=json.dumps(payload, ensure_ascii=False))
 
 
-def validate_action_sequence(calls: list[ToolCall]) -> None:
-    exit_calls = [call for call in calls if call.name == Tools.SHELL and call.payload.strip() == "exit"]
-    if not exit_calls:
-        return
-    if len(calls) != 1:
+def validate_raw_action_sequence(matches: list[re.Match[str]]) -> None:
+    has_bash_exit = any(match.group("kind") == "bash-action" and match.group("body").strip() == "exit" for match in matches)
+    if has_bash_exit and len(matches) != 1:
         raise FormatError(format_error("exit must be the only action block in the response"))
-    raise AgentFinished("Model requested exit.")
 
 
 def format_error(detail: str) -> str:

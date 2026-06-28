@@ -53,6 +53,20 @@ class PluginsTest(unittest.TestCase):
         self.assertEqual(discovered, (manifest_path.resolve(),))
         self.assertEqual(resolved, manifest_path.resolve())
 
+    def test_discover_plugin_paths_ignores_suffix_matched_files(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plugins = root / "plugins"
+            plugin = plugins / "demo"
+            plugin.mkdir(parents=True)
+            manifest_path = plugin / "plugin.json"
+            manifest_path.write_text('{"name":"demo"}', encoding="utf-8")
+            (plugins / "not-a-plugin.json").write_text('{"name":"bad"}', encoding="utf-8")
+
+            discovered = discover_plugin_paths(root, include_user=False)
+
+        self.assertEqual(discovered, (manifest_path.resolve(),))
+
     def test_plugin_mcp_configs_include_inline_servers(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

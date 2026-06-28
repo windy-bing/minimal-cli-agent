@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 
 from minimal_cli_agent.agent import Agent
 from minimal_cli_agent.constants import LoopEventTypes
+from minimal_cli_agent.exceptions import ModelRequestError
 from minimal_cli_agent.harness import AgentHarness, Observation
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message, ToolCall
 import minimal_cli_agent
@@ -17,6 +18,11 @@ class FakeModel:
 class PlainTextModel:
     def complete(self, messages: list[Message]) -> str:
         return "你好，我可以帮你看代码、改文件或排查问题。"
+
+
+class FailingModel:
+    def complete(self, messages: list[Message]) -> str:
+        raise ModelRequestError("timeout")
 
 
 class WriteThenExitModel:
@@ -137,6 +143,34 @@ class AgentTest(unittest.TestCase):
 
         self.assertFalse(result.success)
         self.assertEqual(model.calls, 3)
+
+    def test_chat_stream_treats_negative_max_steps_as_one_step(self) -> None:
+        model = LongRunningThenExitModel(exit_after=25)
+        config = AgentConfig(permission_mode="plan", max_steps=-1)
+        harness = AgentHarness(config=config, model=model)
+        agent = Agent(config=config, harness=harness)
+
+        result = agent.chat("long task", ChatContext())
+
+        self.assertFalse(result.success)
+        self.assertEqual(model.calls, 1)
+
+    def test_chat_stream_returns_model_errors_as_observations(self) -> None:
+        config = AgentConfig(permission_mode="plan")
+        harness = AgentHarness(config=config, model=FailingModel())
+        agent = Agent(config=config, harness=harness)
+
+        stream = agent.chat_stream("hello", ChatContext())
+        events = []
+        while True:
+            try:
+                events.append(next(stream))
+            except StopIteration as exc:
+                result = exc.value
+                break
+
+        self.assertFalse(result.success)
+        self.assertTrue(any("Model request failed: timeout" in str(event.data) for event in events))
 
     def test_interactive_chat_stream_accepts_plain_text(self) -> None:
         config = AgentConfig(permission_mode="plan")

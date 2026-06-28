@@ -33,7 +33,7 @@ def discover_plugin_paths(cwd: Path, include_user: bool = True) -> tuple[Path, .
         for manifest in sorted(root.glob(f"*/{PLUGIN_MANIFEST_FILE}")):
             if manifest.is_file():
                 paths.append(manifest.resolve())
-        for manifest in sorted(root.glob(f"*{PLUGIN_MANIFEST_FILE}")):
+        for manifest in sorted(root.glob(PLUGIN_MANIFEST_FILE)):
             if manifest.is_file():
                 paths.append(manifest.resolve())
     return tuple(deduplicate_paths(paths))

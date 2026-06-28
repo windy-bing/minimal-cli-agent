@@ -69,6 +69,10 @@ class MCPToolsTest(unittest.TestCase):
         with patch.dict(os.environ, {"TOKEN": "secret"}, clear=False):
             self.assertEqual(expand_env_vars("Bearer ${TOKEN}"), "Bearer secret")
 
+    def test_expand_env_vars_leaves_missing_placeholders_unresolved(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(expand_env_vars("Bearer ${LUCKIN_MCP_TOKEN}"), "Bearer ${LUCKIN_MCP_TOKEN}")
+
     def test_parse_sse_json(self) -> None:
         payload = 'event: message\ndata: {"jsonrpc":"2.0","result":{"ok":true},"id":1}\n\n'
 

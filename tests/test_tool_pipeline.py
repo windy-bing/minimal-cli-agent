@@ -8,7 +8,7 @@ from minimal_cli_agent.constants import EventKinds, PermissionEventFields, Permi
 from minimal_cli_agent.exceptions import ConfigurationError, PermissionDenied
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import JsonSessionStore
-from minimal_cli_agent.policy import command_uses_network_tool
+from minimal_cli_agent.policy import command_prefix_allowed, command_uses_network_tool
 from minimal_cli_agent.tool_pipeline import DecisionHookSpec
 from minimal_cli_agent.tool_registry import ToolRegistry, ToolSpec
 from minimal_cli_agent.types import AgentConfig, CommandResult, ToolCall, ToolDecision
@@ -22,6 +22,10 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertTrue(command_uses_network_tool("C:/Tools/curl.exe https://example.com", tokens))
         self.assertTrue(command_uses_network_tool("/usr/bin/wget https://example.com", tokens))
         self.assertFalse(command_uses_network_tool("echo curl", tokens))
+
+    def test_allow_prefix_does_not_allow_chained_shell_commands(self) -> None:
+        self.assertTrue(command_prefix_allowed("npm install", ("npm ",)))
+        self.assertFalse(command_prefix_allowed("npm install && curl https://example.com", ("npm ",)))
 
     def test_plan_mode_skips_shell_execution(self) -> None:
         harness = AgentHarness(AgentConfig(permission_mode="plan"))
@@ -124,6 +128,8 @@ class ToolPipelineTest(unittest.TestCase):
         descriptions = harness.tool_registry.descriptions()
 
         self.assertIn("read_tail", descriptions)
+        self.assertIn("shell", descriptions)
+        self.assertIn("Risk: high", descriptions)
         self.assertIn("Risk: low", descriptions)
         self.assertIn("default=100", descriptions)
         self.assertIn("mode(string, default=\"bytes\", enum=\"bytes\"|\"lines\")", descriptions)
@@ -181,6 +187,26 @@ class ToolPipelineTest(unittest.TestCase):
 
         self.assertEqual(calls["count"], 1)
         self.assertEqual(result.exit_code, 1)
+        self.assertEqual(result.metadata["attempts"], 1)
+
+    def test_tool_pipeline_does_not_retry_non_transient_exit_codes(self) -> None:
+        registry = ToolRegistry()
+        calls = {"count": 0}
+
+        def missing(payload: str) -> CommandResult:
+            calls["count"] += 1
+            return CommandResult("missing", 127, "command not found")
+
+        registry.register(ToolSpec(name="missing", description="Missing.", handler=missing, retry_count=3))
+        harness = AgentHarness(AgentConfig(permission_mode="yolo"), tool_registry=registry)
+        harness.tool_pipeline.hooks.decision_hooks.append(
+            lambda call, decision: ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="test tool")
+        )
+
+        result = harness.tool_pipeline.execute(ToolCall(name="missing", payload="x"))
+
+        self.assertEqual(calls["count"], 1)
+        self.assertEqual(result.exit_code, 127)
         self.assertEqual(result.metadata["attempts"], 1)
 
     def test_output_schema_validation_turns_bad_output_into_repair_observation(self) -> None:

@@ -46,16 +46,23 @@ def resolve_codex(config: AgentConfig, explicit_options: set[str] | None = None)
     codex_config = Path.home() / ".codex" / "config.toml"
     codex_auth = Path.home() / ".codex" / "auth.json"
     data = read_toml(codex_config)
-    auth = read_json(codex_auth)
 
     if "model" not in explicit_options:
         resolved.model = os.getenv("OPENAI_MODEL") or str(data.get("model") or resolved.model)
 
-    user_openai_key = os.getenv("OPENAI_API_KEY") or resolved.api_key or auth.get("OPENAI_API_KEY")
+    user_openai_key = os.getenv("OPENAI_API_KEY") or resolved.api_key
     user_openai_base_url = resolved.base_url if "base_url" in explicit_options else os.getenv("OPENAI_BASE_URL")
     if user_openai_key or user_openai_base_url:
         resolved.provider = Providers.OPENAI_COMPATIBLE
         resolved.base_url = user_openai_base_url or "https://api.openai.com/v1"
+        resolved.api_key = user_openai_key
+        return resolved
+
+    auth = read_json(codex_auth)
+    user_openai_key = auth.get("OPENAI_API_KEY")
+    if user_openai_key:
+        resolved.provider = Providers.OPENAI_COMPATIBLE
+        resolved.base_url = "https://api.openai.com/v1"
         resolved.api_key = user_openai_key
         return resolved
 

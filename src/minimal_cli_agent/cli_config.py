@@ -8,8 +8,11 @@ from typing import Any
 
 from minimal_cli_agent.constants import Defaults, PermissionModes, Profiles, Providers
 from minimal_cli_agent.exceptions import ConfigurationError
+from minimal_cli_agent.logging_utils import get_logger
 from minimal_cli_agent.memory import JsonSessionStore, SQLiteSessionStore
 from minimal_cli_agent.types import ModelRoute
+
+logger = get_logger("cli_config")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -52,10 +55,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--policy-file", type=Path, help="JSON file with additional shell policy deny tokens.")
     parser.add_argument("--mcp-config", type=Path, help="JSON config file with MCP servers.")
     parser.add_argument("--plugin", action="append", default=[], help="Load a plugin manifest by path or by name under plugins/<name>.")
-    parser.add_argument("--no-plugin-discovery", action="store_true", help="Disable automatic plugin discovery.")
+    plugin_discovery_group = parser.add_mutually_exclusive_group()
+    plugin_discovery_group.add_argument("--plugin-discovery", action="store_true", default=None, help="Enable automatic plugin discovery.")
+    plugin_discovery_group.add_argument("--no-plugin-discovery", action="store_false", dest="plugin_discovery", help="Disable automatic plugin discovery.")
     parser.add_argument("--skill", action="append", default=[], help="Load a skill by path or by name under skills/<name>.")
-    parser.add_argument("--summarize-context", action="store_true", default=None, help="Use the model to summarize old context when compacting.")
-    parser.add_argument("--no-summarize-context", action="store_false", dest="summarize_context", help="Disable model context summaries.")
+    summarize_group = parser.add_mutually_exclusive_group()
+    summarize_group.add_argument("--summarize-context", action="store_true", default=None, help="Use the model to summarize old context when compacting.")
+    summarize_group.add_argument("--no-summarize-context", action="store_false", dest="summarize_context", help="Disable model context summaries.")
     parser.add_argument("--model-context-tokens", type=int, default=parse_optional_int_env("AGENT_MODEL_CONTEXT_TOKENS"), help="Approximate model context window. Context is compacted near this budget.")
     parser.add_argument("--context-compression-ratio", type=float, default=float(os.getenv("AGENT_CONTEXT_COMPRESSION_RATIO", Defaults.CONTEXT_COMPRESSION_RATIO)), help="Fraction of model context tokens that triggers compaction.")
     parser.add_argument("--show-config", action="store_true", help="Print resolved provider/model/base URL without secrets.")
@@ -84,6 +90,9 @@ def load_cli_defaults(cwd: Path, explicit_config_file: Path | None = None) -> di
             raise ConfigurationError(f"Config file must be valid JSON: {path}") from exc
         if not isinstance(data, dict):
             raise ConfigurationError(f"Config file must contain a JSON object: {path}")
+        overwritten = sorted(set(merged).intersection(data))
+        if overwritten:
+            logger.info("Config %s overrides keys from earlier config files: %s", path, ", ".join(overwritten))
         merged.update(data)
     return merged
 
@@ -279,7 +288,8 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
         "--quiet": "quiet",
         "--summarize-context": "summarize_context",
         "--no-summarize-context": "summarize_context",
-        "--no-plugin-discovery": "no_plugin_discovery",
+        "--plugin-discovery": "plugin_discovery",
+        "--no-plugin-discovery": "plugin_discovery",
         "--no-session": "session",
     }
     explicit = set()

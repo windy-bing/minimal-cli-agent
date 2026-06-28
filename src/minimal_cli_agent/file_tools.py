@@ -708,7 +708,7 @@ def search_score(path: Path, line: str, pattern_lower: str) -> int:
         score += 15
     if pattern_lower and pattern_lower in line_text:
         score += 5
-    if path.suffix in {".py", ".md", ".toml", ".json", ".yaml", ".yml"}:
+    if path.suffix in FileToolDefaults.SEARCH_PRIORITY_EXTENSIONS:
         score += 2
     return score
 

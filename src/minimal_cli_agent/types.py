@@ -3,16 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Callable
 
 from minimal_cli_agent.constants import Defaults, PermissionModes, Providers, SessionFields
 from minimal_cli_agent.redaction import redact_text
 
-Role = Literal["system", "user", "assistant"]
-Provider = Literal["ollama", "openai-compatible", "anthropic", "gemini", "codex"]
-ProfileName = Literal["ollama", "codex", "claude", "gemini"]
-PermissionMode = Literal["default", "autoEdit", "plan", "yolo"]
-DecisionKind = Literal["allow", "ask", "deny", "skip"]
+Role = str
+Provider = str
+ProfileName = str
+PermissionMode = str
+DecisionKind = str
 
 
 @dataclass
@@ -191,22 +191,20 @@ class CommandResult:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def as_observation(self) -> str:
-        command = redact_text(self.command)
-        output = redact_text(self.output)
         status = "skipped" if self.skipped else "success" if self.exit_code == 0 else "failed"
         if self.skipped:
             header = "Command skipped:"
         else:
             header = f"Command finished with exit code {self.exit_code}:"
-        return (
+        return redact_text(
             f"{header}\n"
             f"status: {status}\n"
             f"exit_code: {self.exit_code}\n"
             f"{format_metadata(self.metadata)}"
             "command:\n"
-            f"```text\n{command}\n```\n"
+            f"```text\n{self.command}\n```\n"
             "output:\n"
-            f"```text\n{output}\n```"
+            f"```text\n{self.output}\n```"
         )
 
 
@@ -215,6 +213,6 @@ def format_metadata(metadata: dict[str, Any]) -> str:
         return ""
     lines = ["metadata:"]
     for key in sorted(metadata):
-        value = redact_text(str(metadata[key]))
+        value = str(metadata[key])
         lines.append(f"- {key}: {value}")
     return "\n".join(lines) + "\n"

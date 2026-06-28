@@ -34,35 +34,35 @@ class ToolDecisionKind(StrEnum):
 
 
 class Providers:
-    OLLAMA: Final = "ollama"
-    OPENAI_COMPATIBLE: Final = "openai-compatible"
-    ANTHROPIC: Final = "anthropic"
-    GEMINI: Final = "gemini"
-    CODEX: Final = "codex"
+    OLLAMA: Final = Provider.OLLAMA.value
+    OPENAI_COMPATIBLE: Final = Provider.OPENAI_COMPATIBLE.value
+    ANTHROPIC: Final = Provider.ANTHROPIC.value
+    GEMINI: Final = Provider.GEMINI.value
+    CODEX: Final = Provider.CODEX.value
     ALL: Final = (OLLAMA, OPENAI_COMPATIBLE, ANTHROPIC, GEMINI, CODEX)
 
 
 class Profiles:
-    OLLAMA: Final = "ollama"
-    CODEX: Final = "codex"
-    CLAUDE: Final = "claude"
-    GEMINI: Final = "gemini"
+    OLLAMA: Final = Profile.OLLAMA.value
+    CODEX: Final = Profile.CODEX.value
+    CLAUDE: Final = Profile.CLAUDE.value
+    GEMINI: Final = Profile.GEMINI.value
     ALL: Final = (OLLAMA, CODEX, CLAUDE, GEMINI)
 
 
 class PermissionModes:
-    DEFAULT: Final = "default"
-    AUTO_EDIT: Final = "autoEdit"
-    PLAN: Final = "plan"
-    YOLO: Final = "yolo"
+    DEFAULT: Final = PermissionMode.DEFAULT.value
+    AUTO_EDIT: Final = PermissionMode.AUTO_EDIT.value
+    PLAN: Final = PermissionMode.PLAN.value
+    YOLO: Final = PermissionMode.YOLO.value
     ALL: Final = (DEFAULT, AUTO_EDIT, PLAN, YOLO)
 
 
 class ToolDecisionKinds:
-    ALLOW: Final = "allow"
-    ASK: Final = "ask"
-    DENY: Final = "deny"
-    SKIP: Final = "skip"
+    ALLOW: Final = ToolDecisionKind.ALLOW.value
+    ASK: Final = ToolDecisionKind.ASK.value
+    DENY: Final = ToolDecisionKind.DENY.value
+    SKIP: Final = ToolDecisionKind.SKIP.value
     ALL: Final = (ALLOW, ASK, DENY, SKIP)
 
 
@@ -163,10 +163,6 @@ class PolicyDefaults:
         "wget ",
         "http ",
         "https ",
-        "ssh ",
-        "scp ",
-        "sftp ",
-        "rsync ",
         "nc ",
         "ncat ",
         "telnet ",
@@ -208,6 +204,7 @@ class FileToolDefaults:
     SEARCH_MAX_FILES: Final = 200
     SEARCH_MAX_TOP_K: Final = 200
     SEARCH_MAX_FILES_LIMIT: Final = 5000
+    SEARCH_PRIORITY_EXTENSIONS: Final = (".py", ".md", ".toml", ".json", ".yaml", ".yml")
     SEARCH_TIMEOUT_MS: Final = 2000
     SEARCH_MAX_TIMEOUT_MS: Final = 30000
     IGNORED_DIRS: Final = (".git", "__pycache__", ".venv", "node_modules", ".mypy_cache", ".pytest_cache")

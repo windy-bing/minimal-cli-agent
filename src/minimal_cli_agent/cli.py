@@ -36,6 +36,7 @@ from minimal_cli_agent.cli_config import (
     resolve_optional_path,
     resolve_path_option,
 )
+from minimal_cli_agent.cli_events import parse_events_query
 from minimal_cli_agent.cli_format import format_duration, is_plan_mode_write_block, print_compact_event, render_prompt
 from minimal_cli_agent.constants import Defaults, InteractiveCommands, LoopEventData, LoopEventTypes, PermissionModes, Profiles, Providers, ToolDecisionKinds, ToolPayloadFields, Tools
 from minimal_cli_agent.context import estimate_context_tokens, total_message_chars
@@ -90,15 +91,15 @@ def main(argv: list[str] | None = None) -> int:
         skill_inputs = normalize_string_list(skill_values)
         plugin_values = choose_config_value("plugin", args.plugin, local_defaults, explicit_options, ("AGENT_PLUGIN", "AGENT_PLUGINS"))
         plugin_inputs = normalize_string_list(plugin_values)
-        plugin_discovery = not bool_config_value(
+        plugin_discovery = bool_config_value(
             choose_config_value(
-                "no_plugin_discovery",
-                args.no_plugin_discovery,
+                "plugin_discovery",
+                args.plugin_discovery,
                 local_defaults,
                 explicit_options,
-                ("AGENT_NO_PLUGIN_DISCOVERY",),
+                ("AGENT_PLUGIN_DISCOVERY",),
             ),
-            default=False,
+            default=True,
         )
         discovered_plugin_paths = discover_plugin_paths(cwd.resolve()) if plugin_discovery else ()
         explicit_plugin_paths = resolve_plugin_paths(plugin_inputs, cwd.resolve())
@@ -713,6 +714,7 @@ def update_plugin(session: InteractiveSession, plugin_text: str) -> None:
             session.agent.config.skill_paths = (*session.agent.config.skill_paths, skill_path)
     prompt = build_system_prompt(INTERACTIVE_SYSTEM_PROMPT, session.agent.config.skill_paths, session.agent.config.cwd)
     upsert_system_prompt(session.context, prompt)
+    persist_session_messages(session)
     rebuild_agent(session)
     print_config(session.agent.config)
 
@@ -743,6 +745,7 @@ def handle_plugins_command(session: InteractiveSession, argument: str) -> None:
                 session.agent.config.skill_paths = (*session.agent.config.skill_paths, skill_path)
     prompt = build_system_prompt(INTERACTIVE_SYSTEM_PROMPT, session.agent.config.skill_paths, session.agent.config.cwd)
     upsert_system_prompt(session.context, prompt)
+    persist_session_messages(session)
     rebuild_agent(session)
     print(f"loaded plugins: {loaded}")
     print_config(session.agent.config)
@@ -757,6 +760,7 @@ def update_skill(session: InteractiveSession, skill_text: str) -> None:
         session.agent.config.skill_paths = (*session.agent.config.skill_paths, path)
     prompt = build_system_prompt(INTERACTIVE_SYSTEM_PROMPT, session.agent.config.skill_paths, session.agent.config.cwd)
     upsert_system_prompt(session.context, prompt)
+    persist_session_messages(session)
     rebuild_agent(session)
     print_config(session.agent.config)
 
@@ -789,6 +793,7 @@ def handle_skills_command(session: InteractiveSession, argument: str) -> None:
             session.agent.config.skill_paths = (*session.agent.config.skill_paths, path)
     prompt = build_system_prompt(INTERACTIVE_SYSTEM_PROMPT, session.agent.config.skill_paths, session.agent.config.cwd)
     upsert_system_prompt(session.context, prompt)
+    persist_session_messages(session)
     rebuild_agent(session)
     print_config(session.agent.config)
 
@@ -1053,52 +1058,6 @@ def handle_events_command(session: InteractiveSession, argument: str) -> None:
         return
     for index, event in enumerate(events, start=1):
         print(f"{index}: {event.timestamp} {event.kind} {json.dumps(event.data, ensure_ascii=False, sort_keys=True)}")
-
-
-def parse_events_query(argument: str) -> dict[str, Any]:
-    query: dict[str, Any] = {"kind": "", "limit": 20, "offset": 0, "format": "text"}
-    positional: list[str] = []
-    for token in argument.split():
-        if "=" not in token:
-            positional.append(token)
-            continue
-        key, value = token.split("=", 1)
-        key = key.strip().lower()
-        value = value.strip()
-        if key == "kind":
-            query["kind"] = value
-        elif key == "limit":
-            query["limit"] = parse_non_negative_int(value, "limit", minimum=1)
-        elif key == "offset":
-            query["offset"] = parse_non_negative_int(value, "offset")
-        elif key == "format":
-            if value not in {"text", "json"}:
-                raise ValueError(f"Usage: {InteractiveCommands.EVENTS} [kind] [limit] [offset] [format=json]")
-            query["format"] = value
-        else:
-            raise ValueError(f"Unknown events option: {key}")
-    if positional:
-        if positional[0].isdigit():
-            query["limit"] = parse_non_negative_int(positional[0], "limit", minimum=1)
-        else:
-            query["kind"] = positional[0]
-    if len(positional) >= 2:
-        query["limit"] = parse_non_negative_int(positional[1], "limit", minimum=1)
-    if len(positional) >= 3:
-        query["offset"] = parse_non_negative_int(positional[2], "offset")
-    if len(positional) > 3:
-        raise ValueError(f"Usage: {InteractiveCommands.EVENTS} [kind] [limit] [offset] [format=json]")
-    return query
-
-
-def parse_non_negative_int(value: str, field: str, minimum: int = 0) -> int:
-    try:
-        parsed = int(value)
-    except ValueError as exc:
-        raise ValueError(f"{field} must be an integer") from exc
-    if parsed < minimum:
-        raise ValueError(f"{field} must be >= {minimum}")
-    return parsed
 
 
 def handle_memory_command(session: InteractiveSession, query: str) -> None:
@@ -1435,6 +1394,11 @@ def upsert_system_prompt(context: ChatContext, system_prompt: str | None) -> Non
         context.messages[0] = Message(role="system", content=system_prompt)
         return
     context.messages.insert(0, Message(role="system", content=system_prompt))
+
+
+def persist_session_messages(session: InteractiveSession) -> None:
+    if session.session_store:
+        session.session_store.save(session.context.messages)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Generator, Iterator
 
 from minimal_cli_agent.constants import LoopEventData, LoopEventTypes
-from minimal_cli_agent.exceptions import AgentFinished, FormatError, NonTerminatingAgentError
+from minimal_cli_agent.exceptions import AgentFinished, FormatError, ModelRequestError, NonTerminatingAgentError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.parser import parse_actions
 from minimal_cli_agent.prompts import SYSTEM_PROMPT
@@ -38,7 +38,13 @@ class Agent:
                 type=LoopEventTypes.STEP_START,
                 data={LoopEventData.STEP: step, LoopEventData.MAX_STEPS: format_max_steps(self.config.max_steps)},
             )
-            output = self.harness.complete(messages)
+            try:
+                output = self.harness.complete(messages)
+            except ModelRequestError as exc:
+                observation = f"Model request failed: {exc}"
+                messages.append(Message(role="user", content=observation))
+                yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
+                return LoopResult(success=False, final_messages=messages)
             yield LoopEvent(type=LoopEventTypes.MODEL_OUTPUT, data={LoopEventData.CONTENT: output})
             messages.append(Message(role="assistant", content=output))
 
@@ -53,7 +59,7 @@ class Agent:
                     yield LoopEvent(type=LoopEventTypes.TURN_COMPLETE, data={LoopEventData.REASON: "final text"})
                     return LoopResult(success=True, final_messages=messages)
                 observation = str(exc)
-                observations.append(observation)
+                append_observation(observations, observation, self.config.max_output_chars)
                 yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
             else:
                 for call in calls:
@@ -65,12 +71,12 @@ class Agent:
                     tool_observations = self.harness.execute_tools(calls)
                 except NonTerminatingAgentError as exc:
                     observation = str(exc)
-                    observations.append(observation)
+                    append_observation(observations, observation, self.config.max_output_chars)
                     yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
                 else:
                     for tool_observation in tool_observations:
                         observation = tool_observation.to_message().content
-                        observations.append(observation)
+                        append_observation(observations, observation, self.config.max_output_chars)
                         yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
 
             combined_observation = "\n\n".join(observations)
@@ -117,6 +123,8 @@ def read_supplemental_input(options: LoopOptions) -> str:
 
 
 def iter_steps(max_steps: int) -> Iterator[int]:
+    if max_steps < 0:
+        max_steps = 1
     step = 1
     while max_steps <= 0 or step <= max_steps:
         yield step
@@ -142,3 +150,18 @@ def print_event(event: LoopEvent) -> None:
         return
     elif event.type == LoopEventTypes.MAX_STEPS:
         print(f"\n[max_steps] {event.data[LoopEventData.MAX_STEPS]}")
+    else:
+        print(f"\n[event:{event.type}] {event.data}")
+
+
+def append_observation(observations: list[str], observation: str, max_chars: int) -> None:
+    current_size = sum(len(item) for item in observations)
+    remaining = max(0, max_chars - current_size)
+    if remaining <= 0:
+        if not observations or observations[-1] != "Observation output truncated because the per-step budget was reached.":
+            observations.append("Observation output truncated because the per-step budget was reached.")
+        return
+    if len(observation) <= remaining:
+        observations.append(observation)
+    elif remaining > 3:
+        observations.append(observation[: remaining - 3] + "...")

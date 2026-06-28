@@ -153,16 +153,16 @@ def apply_schema_defaults(value: Any, schema: dict[str, Any]) -> Any:
     if not isinstance(schema, dict):
         return value
     if schema.get("type") == "object" and isinstance(value, dict):
-        prepared = dict(value)
+        prepared: dict[str, Any] = {}
         properties = schema.get("properties", {})
         if isinstance(properties, dict):
             for field_name, field_schema in properties.items():
                 if not isinstance(field_schema, dict):
                     continue
-                if field_name not in prepared and "default" in field_schema:
+                if field_name not in value and "default" in field_schema:
                     prepared[field_name] = field_schema["default"]
-                elif field_name in prepared:
-                    prepared[field_name] = apply_schema_defaults(prepared[field_name], field_schema)
+                elif field_name in value:
+                    prepared[field_name] = apply_schema_defaults(value[field_name], field_schema)
         return prepared
     if schema.get("type") == "array" and isinstance(value, list):
         item_schema = schema.get("items")

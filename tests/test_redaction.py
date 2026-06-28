@@ -10,7 +10,7 @@ class RedactionTest(unittest.TestCase):
             [
                 "OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz123456",
                 "Authorization: Bearer abcdefghijklmnopqrstuvwxyz1234567890",
-                "token='eyJaaaaaaaaaaa.bbbbbbbbbbbb.cccccccccccc'",
+                "token='eyJaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbb.ccccccccccccccccc'",
                 "GEMINI_API_KEY=AIzaabcdefghijklmnopqrstuvwxyz",
             ]
         )
@@ -19,10 +19,15 @@ class RedactionTest(unittest.TestCase):
 
         self.assertNotIn("sk-abcdefghijklmnopqrstuvwxyz123456", redacted)
         self.assertNotIn("abcdefghijklmnopqrstuvwxyz1234567890", redacted)
-        self.assertNotIn("eyJaaaaaaaaaaa.bbbbbbbbbbbb.cccccccccccc", redacted)
+        self.assertNotIn("eyJaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbb.ccccccccccccccccc", redacted)
         self.assertNotIn("AIzaabcdefghijklmnopqrstuvwxyz", redacted)
         self.assertIn("OPENAI_API_KEY=<redacted>", redacted)
         self.assertIn("Authorization: <redacted>", redacted)
+
+    def test_short_jwt_like_text_is_not_redacted(self) -> None:
+        text = "token eyJshortvalue.alsoshort.thirdshort"
+
+        self.assertEqual(redact_text(text), text)
 
     def test_redacts_secret_url_query_parameters(self) -> None:
         text = "https://example.test/path?key=AIzaabcdefghijklmnopqrstuvwxyz&token=super-secret-token&safe=ok"
