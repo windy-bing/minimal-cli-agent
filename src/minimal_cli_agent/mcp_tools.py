@@ -11,6 +11,7 @@ from typing import Any
 
 from minimal_cli_agent.constants import Defaults, EventKinds, ToolPayloadFields, Tools
 from minimal_cli_agent.exceptions import ConfigurationError
+from minimal_cli_agent.logging_utils import get_logger
 from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.tool_registry import ToolRegistry, ToolSpec
 from minimal_cli_agent.types import CommandResult
@@ -20,6 +21,7 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 MCP_CLIENT_NAME = "minimal-cli-agent"
 MCP_CLIENT_VERSION = "0.1.0"
 LUCKIN_TOKEN_FILE = Path.home() / ".my-coffee" / "LUCKIN_MCP_TOKEN"
+logger = get_logger("mcp_tools")
 
 
 class MCPRequestError(RuntimeError):
@@ -74,7 +76,7 @@ class MCPHttpClient:
             )
         except MCPRequestError:
             # Some HTTP MCP servers accept tools/list without an explicit initialize round.
-            pass
+            logger.warning("MCP initialize failed for %s; falling back to direct method calls.", self.config.name, exc_info=True)
         self._initialized = True
 
     def call(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:

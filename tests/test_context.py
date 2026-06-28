@@ -50,6 +50,18 @@ class ContextTest(unittest.TestCase):
 
         self.assertEqual(model.calls, 1)
 
+    def test_model_summary_cache_is_bounded(self) -> None:
+        model = SummaryModel()
+        config = AgentConfig(max_context_chars=10, summarize_context=True, context_tail_messages=2)
+        manager = CompactingContextManager(config, summarizer=model)
+
+        for index in range(manager.SUMMARY_CACHE_MAX_ENTRIES + 5):
+            messages = build_messages()
+            messages[1] = Message(role="user", content=f"old user {index} " * 10)
+            manager.prepare(messages)
+
+        self.assertEqual(len(manager.summary_cache), manager.SUMMARY_CACHE_MAX_ENTRIES)
+
     def test_context_does_not_compact_until_model_token_threshold(self) -> None:
         model = SummaryModel()
         config = AgentConfig(

@@ -21,6 +21,20 @@ class FactoryModel:
         return self.output
 
 
+class RecoveringModel:
+    def __init__(self, calls: list[str], model_name: str, remaining_failures: dict[str, int]) -> None:
+        self.calls = calls
+        self.model_name = model_name
+        self.remaining_failures = remaining_failures
+
+    def complete(self, messages: list[Message]) -> str:
+        self.calls.append(self.model_name)
+        if self.remaining_failures.get(self.model_name, 0):
+            self.remaining_failures[self.model_name] -= 1
+            raise ModelRequestError("temporary")
+        return "recovered"
+
+
 class ModelGatewayTest(unittest.TestCase):
     def test_gateway_falls_back_after_primary_failure(self) -> None:
         calls: list[str] = []
@@ -29,7 +43,7 @@ class ModelGatewayTest(unittest.TestCase):
             "fallback": "fallback ok",
         }
 
-        def factory(config: AgentConfig) -> FactoryModel:
+        def factory(config: AgentConfig):
             return FactoryModel(outputs[config.model], calls, config.model)
 
         config = AgentConfig(
@@ -45,18 +59,18 @@ class ModelGatewayTest(unittest.TestCase):
 
     def test_gateway_retries_before_fallback(self) -> None:
         calls: list[str] = []
+        factory_calls: list[str] = []
         remaining_failures = {"primary": 1}
 
         def factory(config: AgentConfig) -> FactoryModel:
-            if remaining_failures.get(config.model, 0):
-                remaining_failures[config.model] -= 1
-                return FactoryModel(ModelRequestError("temporary"), calls, config.model)
-            return FactoryModel("recovered", calls, config.model)
+            factory_calls.append(config.model)
+            return RecoveringModel(calls, config.model, remaining_failures)
 
         gateway = ModelGateway(AgentConfig(model="primary", model_max_retries=1), model_factory=factory)
 
         self.assertEqual(gateway.complete([Message(role="user", content="hello")]), "recovered")
         self.assertEqual(calls, ["primary", "primary"])
+        self.assertEqual(factory_calls, ["primary"])
 
     def test_gateway_rejects_request_over_token_limit(self) -> None:
         gateway = ModelGateway(AgentConfig(max_input_tokens=1), model_factory=lambda config: FactoryModel("ok", [], config.model))

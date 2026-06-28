@@ -213,7 +213,9 @@ class ModelGateway:
         self.circuit_breaker = CircuitBreaker(config.model_circuit_failure_threshold, config.model_circuit_cooldown)
         self.model_factory = model_factory or ChatModel
         self._semaphores: dict[str, threading.BoundedSemaphore] = {}
+        self._models: dict[str, Model] = {}
         self._semaphore_lock = threading.Lock()
+        self._model_lock = threading.Lock()
         self._key_pool = KeyPool(tuple(key.strip() for key in (config.api_key or "").split(",") if key.strip()))
 
     def complete(self, messages: list[Message]) -> str:
@@ -231,7 +233,8 @@ class ModelGateway:
             self.limiter.check(input_tokens, route)
             retries = max(0, route.max_retries)
             for attempt in range(1, retries + 2):
-                acquired = self._semaphore(route).acquire(timeout=self.config.model_queue_timeout)
+                semaphore = self._semaphore(route)
+                acquired = semaphore.acquire(timeout=self.config.model_queue_timeout)
                 if not acquired:
                     last_error = ModelRequestError(f"Model route concurrency limit reached: {route.provider}/{route.model}")
                     self.circuit_breaker.record_failure(route)
@@ -273,7 +276,7 @@ class ModelGateway:
                         billable=self.config.bill_failed_requests,
                     )
                 finally:
-                    self._semaphore(route).release()
+                    semaphore.release()
         if last_error is not None:
             raise ModelRequestError(f"All model routes failed: {last_error}") from last_error
         raise ModelRequestError("All model routes failed.")
@@ -292,11 +295,17 @@ class ModelGateway:
         return [primary, *self.config.model_fallbacks]
 
     def _model_for(self, route: ModelRoute) -> Model:
+        api_key = self._key_pool.next(route.api_key)
+        cache_key = f"{route.key}:{api_key or ''}:{route.timeout or self.config.model_timeout}"
+        with self._model_lock:
+            model = self._models.get(cache_key)
+            if model is not None:
+                return model
         route_config = AgentConfig(
             provider=route.provider,
             model=route.model,
             base_url=route.base_url,
-            api_key=self._key_pool.next(route.api_key),
+            api_key=api_key,
             cwd=self.config.cwd,
             max_steps=self.config.max_steps,
             command_timeout=self.config.command_timeout,
@@ -316,7 +325,9 @@ class ModelGateway:
             context_compression_ratio=self.config.context_compression_ratio,
             max_output_tokens=self.config.max_output_tokens,
         )
-        return self.model_factory(route_config)
+        model = self.model_factory(route_config)
+        with self._model_lock:
+            return self._models.setdefault(cache_key, model)
 
     def _semaphore(self, route: ModelRoute) -> threading.BoundedSemaphore:
         with self._semaphore_lock:

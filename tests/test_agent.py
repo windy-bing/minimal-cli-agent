@@ -6,6 +6,7 @@ from minimal_cli_agent.agent import Agent
 from minimal_cli_agent.constants import LoopEventTypes
 from minimal_cli_agent.harness import AgentHarness, Observation
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message, ToolCall
+import minimal_cli_agent
 
 
 class FakeModel:
@@ -67,6 +68,10 @@ class RecordingBatchHarness(AgentHarness):
 
 
 class AgentTest(unittest.TestCase):
+    def test_package_exports_public_api(self) -> None:
+        self.assertIs(minimal_cli_agent.Agent, Agent)
+        self.assertIs(minimal_cli_agent.AgentConfig, AgentConfig)
+
     def test_from_config_builds_default_harness_without_hiding_constructor_dependency(self) -> None:
         config = AgentConfig(permission_mode="plan")
 

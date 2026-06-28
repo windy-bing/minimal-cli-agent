@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import os
 import tomllib
@@ -31,38 +32,39 @@ def resolve_profile(
 
 def resolve_ollama(config: AgentConfig, explicit_options: set[str] | None = None) -> AgentConfig:
     explicit_options = explicit_options or set()
-    config.provider = Providers.OLLAMA
+    resolved = replace(config, provider=Providers.OLLAMA)
     if "model" not in explicit_options:
-        config.model = os.getenv("OLLAMA_MODEL", config.model)
+        resolved.model = os.getenv("OLLAMA_MODEL", resolved.model)
     if "base_url" not in explicit_options:
-        config.base_url = os.getenv("OLLAMA_BASE_URL", config.base_url)
-    return config
+        resolved.base_url = os.getenv("OLLAMA_BASE_URL", resolved.base_url)
+    return resolved
 
 
 def resolve_codex(config: AgentConfig, explicit_options: set[str] | None = None) -> AgentConfig:
     explicit_options = explicit_options or set()
+    resolved = replace(config)
     codex_config = Path.home() / ".codex" / "config.toml"
     codex_auth = Path.home() / ".codex" / "auth.json"
     data = read_toml(codex_config)
     auth = read_json(codex_auth)
 
     if "model" not in explicit_options:
-        config.model = os.getenv("OPENAI_MODEL") or str(data.get("model") or config.model)
+        resolved.model = os.getenv("OPENAI_MODEL") or str(data.get("model") or resolved.model)
 
-    user_openai_key = os.getenv("OPENAI_API_KEY") or config.api_key or auth.get("OPENAI_API_KEY")
-    user_openai_base_url = config.base_url if "base_url" in explicit_options else os.getenv("OPENAI_BASE_URL")
+    user_openai_key = os.getenv("OPENAI_API_KEY") or resolved.api_key or auth.get("OPENAI_API_KEY")
+    user_openai_base_url = resolved.base_url if "base_url" in explicit_options else os.getenv("OPENAI_BASE_URL")
     if user_openai_key or user_openai_base_url:
-        config.provider = Providers.OPENAI_COMPATIBLE
-        config.base_url = user_openai_base_url or "https://api.openai.com/v1"
-        config.api_key = user_openai_key
-        return config
+        resolved.provider = Providers.OPENAI_COMPATIBLE
+        resolved.base_url = user_openai_base_url or "https://api.openai.com/v1"
+        resolved.api_key = user_openai_key
+        return resolved
 
     codex_access_token = nested_get(auth, ["tokens", "access_token"])
     if codex_access_token:
-        config.provider = Providers.CODEX
-        config.base_url = "codex-cli"
-        config.api_key = None
-        return config
+        resolved.provider = Providers.CODEX
+        resolved.base_url = "codex-cli"
+        resolved.api_key = None
+        return resolved
 
     if not user_openai_key:
         raise ConfigurationError(
@@ -70,34 +72,34 @@ def resolve_codex(config: AgentConfig, explicit_options: set[str] | None = None)
             "Set OPENAI_API_KEY/OPENAI_BASE_URL for an OpenAI-compatible endpoint, or sign in with Codex "
             "so ~/.codex/auth.json contains tokens.access_token."
         )
-    return config
+    return resolved
 
 
 def resolve_claude(config: AgentConfig, explicit_options: set[str] | None = None) -> AgentConfig:
     explicit_options = explicit_options or set()
+    resolved = replace(config, provider=Providers.ANTHROPIC)
     settings = read_json(Path.home() / ".claude" / "settings.json")
     env = settings.get("env", {}) if isinstance(settings.get("env"), dict) else {}
 
-    config.provider = Providers.ANTHROPIC
     if "model" not in explicit_options:
-        config.model = os.getenv("ANTHROPIC_MODEL") or str(settings.get("model") or "claude-sonnet-4-5")
+        resolved.model = os.getenv("ANTHROPIC_MODEL") or str(settings.get("model") or "claude-sonnet-4-5")
     if "base_url" not in explicit_options:
-        config.base_url = os.getenv("ANTHROPIC_BASE_URL") or str(env.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com")
+        resolved.base_url = os.getenv("ANTHROPIC_BASE_URL") or str(env.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com")
     if "api_key" not in explicit_options:
-        config.api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN") or str(env.get("ANTHROPIC_AUTH_TOKEN") or "")
-    return config
+        resolved.api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN") or str(env.get("ANTHROPIC_AUTH_TOKEN") or "")
+    return resolved
 
 
 def resolve_gemini(config: AgentConfig, explicit_options: set[str] | None = None) -> AgentConfig:
     explicit_options = explicit_options or set()
-    config.provider = Providers.GEMINI
+    resolved = replace(config, provider=Providers.GEMINI)
     if "model" not in explicit_options:
-        config.model = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
+        resolved.model = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
     if "base_url" not in explicit_options:
-        config.base_url = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+        resolved.base_url = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
     if "api_key" not in explicit_options:
-        config.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or config.api_key
-    return config
+        resolved.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or resolved.api_key
+    return resolved
 
 
 def read_toml(path: Path) -> dict:

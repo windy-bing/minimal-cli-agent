@@ -198,7 +198,12 @@ class FileToolEnvironment:
         if is_probably_binary(path):
             return CommandResult(command=f"{Tools.READ_FORWARD} {path}", exit_code=1, output="file appears to be binary; use a binary-aware tool")
 
-        if str(data.get(ToolPayloadFields.MODE, "")).lower() == "lines" or ToolPayloadFields.LINE_OFFSET in data:
+        mode = str(data.get(ToolPayloadFields.MODE, "bytes")).lower()
+        if mode not in {"bytes", "lines"}:
+            return CommandResult(command=f"{Tools.READ_FORWARD} {path}", exit_code=1, output='mode must be "bytes" or "lines"')
+        if mode == "bytes" and (ToolPayloadFields.LINE_OFFSET in data or ToolPayloadFields.LINE_LIMIT in data):
+            return CommandResult(command=f"{Tools.READ_FORWARD} {path}", exit_code=1, output='line_offset and line_limit require mode "lines"')
+        if mode == "lines":
             return self._read_forward_lines(path, data)
 
         offset = read_positive_int(data, ToolPayloadFields.OFFSET, default=0, minimum=0, maximum=max(path.stat().st_size, 0))

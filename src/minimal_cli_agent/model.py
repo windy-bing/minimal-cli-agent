@@ -91,10 +91,7 @@ class ChatModel:
         if not self.config.api_key:
             raise ConfigurationError("gemini provider requires --api-key, GEMINI_API_KEY, or GOOGLE_API_KEY.")
 
-        url = (
-            self.config.base_url.rstrip("/")
-            + f"/models/{self.config.model}:generateContent?key={self.config.api_key}"
-        )
+        url = self.config.base_url.rstrip("/") + f"/models/{self.config.model}:generateContent"
         system, chat_messages = split_system_messages(messages)
         payload = {
             "contents": [
@@ -110,7 +107,7 @@ class ChatModel:
         if system:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
 
-        data = post_json(url, payload, timeout=self.config.model_timeout)
+        data = post_json(url, payload, headers={"x-goog-api-key": self.config.api_key}, timeout=self.config.model_timeout)
         candidates = data.get("candidates", [])
         if not candidates:
             return ""

@@ -85,6 +85,28 @@ class ChatModelTest(unittest.TestCase):
             with self.assertRaisesRegex(ModelRequestError, "stop_reason=max_tokens"):
                 ChatModel(config).complete([Message(role="user", content="hello")])
 
+    def test_gemini_sends_api_key_in_header_not_url(self) -> None:
+        captured: dict = {}
+
+        def fake_post_json(url: str, payload: dict, headers: dict | None = None, timeout: int = 120) -> dict:
+            captured["url"] = url
+            captured["headers"] = headers
+            return {"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}
+
+        config = AgentConfig(
+            provider="gemini",
+            model="gemini-test",
+            base_url="https://generativelanguage.googleapis.com/v1beta",
+            api_key="secret-key",
+        )
+
+        with patch("minimal_cli_agent.model.post_json", fake_post_json):
+            output = ChatModel(config).complete([Message(role="user", content="hello")])
+
+        self.assertEqual(output, "ok")
+        self.assertNotIn("secret-key", captured["url"])
+        self.assertEqual(captured["headers"], {"x-goog-api-key": "secret-key"})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -172,6 +172,22 @@ class HarnessTest(unittest.TestCase):
         self.assertEqual(observation.result.metadata["next_line_offset"], 3)
         self.assertFalse(observation.result.metadata["eof"])
 
+    def test_read_forward_rejects_line_offset_when_mode_is_bytes(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "page.txt"
+            path.write_text("line-0\nline-1\n", encoding="utf-8")
+            harness = AgentHarness(AgentConfig(cwd=Path(tmp), permission_mode="plan"))
+
+            observation = harness.execute_tool(
+                ToolCall(
+                    name=Tools.READ_FORWARD,
+                    payload=json.dumps({"path": "page.txt", "mode": "bytes", "line_offset": 1}),
+                )
+            )
+
+        self.assertEqual(observation.result.exit_code, 1)
+        self.assertIn('mode "lines"', observation.result.output)
+
     def test_read_file_rejects_binary_content(self) -> None:
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "image.bin"

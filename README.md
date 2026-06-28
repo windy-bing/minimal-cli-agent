@@ -107,6 +107,8 @@ Common options:
 --mcp-config     MCP server config JSON
 --plugin         plugin manifest name or path
 --skill          local SKILL.md name or path
+--verbose        enable debug logs for diagnostics
+--quiet          only show error logs
 ```
 
 Profiles:

@@ -19,6 +19,9 @@ minimal-agent = "minimal_cli_agent.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+minimal_cli_agent = ["py.typed"]
+
 [tool.pyright]
 include = ["src", "tests"]
 pythonVersion = "3.11"

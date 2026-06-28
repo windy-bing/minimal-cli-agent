@@ -114,7 +114,7 @@ def extract_plan_paths(plan: PlanArtifact) -> tuple[str, ...]:
     seen: set[str] = set()
     paths: list[str] = []
     for candidate in candidates:
-        normalized = candidate.strip().strip("`'\".,:;)")
+        normalized = candidate.strip().strip("`'\":;)")
         if normalized and normalized not in seen:
             seen.add(normalized)
             paths.append(normalized)
@@ -122,5 +122,13 @@ def extract_plan_paths(plan: PlanArtifact) -> tuple[str, ...]:
 
 
 def extract_path_like_tokens(value: str) -> list[str]:
-    tokens = re.findall(r"(?:[\w.-]+/)+[\w.-]+|[\w.-]+\.(?:py|md|txt|json|toml|yaml|yml|xml|ini|cfg)", value)
-    return [token for token in tokens if not token.startswith(("http://", "https://"))]
+    tokens: list[str] = []
+    for raw in re.split(r"\s+", value):
+        token = raw.strip().strip("`'\":;)")
+        if not token or token.startswith(("http://", "https://")):
+            continue
+        if re.fullmatch(r"(?:\.{1,2}/|/)?(?:[A-Za-z0-9_@+.-]+/)+[A-Za-z0-9_@+.-]+/?", token):
+            tokens.append(token)
+        elif re.fullmatch(r"[A-Za-z0-9_@+.-]+\.(?:py|md|txt|json|toml|yaml|yml|xml|ini|cfg)", token):
+            tokens.append(token)
+    return tokens

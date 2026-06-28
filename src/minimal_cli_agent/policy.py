@@ -4,6 +4,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import fnmatch
 import json
+from pathlib import PurePath
+import shlex
 import sys
 from typing import Literal
 
@@ -107,7 +109,7 @@ class ShellPermissionPolicy:
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked dangerous command: {payload}")
         if any(token in lowered for token in self.rules.sensitive_path_tokens):
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked tool touching sensitive path: {payload}")
-        if action == Tools.SHELL and not self.config.allow_network and any(token in f" {lowered} " for token in self.rules.network_command_tokens):
+        if action == Tools.SHELL and not self.config.allow_network and command_uses_network_tool(payload, self.rules.network_command_tokens):
             return ToolDecision(kind=ToolDecisionKinds.DENY, reason=f"Blocked network command without --allow-network: {payload}")
         if action in Tools.WRITERS:
             scoped_decision = self._decide_write_scope(lowered, payload)
@@ -203,6 +205,41 @@ def permission_target(action: str, payload: str) -> str:
 def command_prefix_allowed(command: str, prefixes: tuple[str, ...]) -> bool:
     normalized = command.strip().lower()
     return any(normalized.startswith(prefix.strip().lower()) for prefix in prefixes)
+
+
+def command_uses_network_tool(command: str, network_tokens: tuple[str, ...]) -> bool:
+    normalized_tokens = {normalize_command_token(token) for token in network_tokens if token.strip()}
+    if not normalized_tokens:
+        return False
+    expect_command = True
+    for word in split_command_words(command.lower()):
+        normalized = normalize_command_token(word)
+        if normalized in {"&&", "||", ";", "|"}:
+            expect_command = True
+            continue
+        if expect_command and "=" in word and not word.startswith(("=", "-")):
+            continue
+        if expect_command and normalized in {"sudo", "env", "command", "builtin", "nohup", "time"}:
+            continue
+        if expect_command and normalized in normalized_tokens:
+            return True
+        expect_command = False
+    return False
+
+
+def split_command_words(command: str) -> list[str]:
+    try:
+        return shlex.split(command, posix=True)
+    except ValueError:
+        return command.split()
+
+
+def normalize_command_token(token: str) -> str:
+    name = PurePath(token.strip().strip("\"'")).name.lower()
+    for suffix in (".exe", ".cmd", ".bat", ".ps1"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
 
 
 def normalize_policy_path(value: str) -> str:

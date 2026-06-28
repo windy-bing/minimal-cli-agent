@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
+from dataclasses import replace
 import json
 import os
 import select
@@ -40,6 +41,7 @@ from minimal_cli_agent.constants import Defaults, InteractiveCommands, LoopEvent
 from minimal_cli_agent.context import estimate_context_tokens, total_message_chars
 from minimal_cli_agent.exceptions import AgentError, ConfigurationError
 from minimal_cli_agent.harness import AgentHarness
+from minimal_cli_agent.logging_utils import configure_logging
 from minimal_cli_agent.memory import compact_messages
 from minimal_cli_agent.memory import JsonSessionStore, SQLiteSessionStore
 from minimal_cli_agent.mcp_tools import load_mcp_config
@@ -75,6 +77,7 @@ from minimal_cli_agent.workflow import (
 def main(argv: list[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(raw_argv)
+    configure_logging(verbose=args.verbose, quiet=args.quiet)
     explicit_options = detect_explicit_options(raw_argv)
     local_defaults = load_cli_defaults(args.cwd.resolve(), args.config_file.resolve() if args.config_file else None)
 
@@ -1324,9 +1327,8 @@ def save_workflow(session: InteractiveSession, workflow: WorkflowArtifact) -> No
 
 
 def rebuild_agent(session: InteractiveSession, config: AgentConfig | None = None) -> None:
-    config = config or session.agent.config
-    model = session.agent.harness.model
-    session.agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=session.session_store))
+    config = replace(config or session.agent.config)
+    session.agent = Agent(config=config, harness=AgentHarness(config=config, session_store=session.session_store))
 
 
 def print_config(config: AgentConfig) -> None:

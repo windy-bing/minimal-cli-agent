@@ -1,6 +1,36 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Final
+
+
+class Provider(StrEnum):
+    OLLAMA = "ollama"
+    OPENAI_COMPATIBLE = "openai-compatible"
+    ANTHROPIC = "anthropic"
+    GEMINI = "gemini"
+    CODEX = "codex"
+
+
+class Profile(StrEnum):
+    OLLAMA = "ollama"
+    CODEX = "codex"
+    CLAUDE = "claude"
+    GEMINI = "gemini"
+
+
+class PermissionMode(StrEnum):
+    DEFAULT = "default"
+    AUTO_EDIT = "autoEdit"
+    PLAN = "plan"
+    YOLO = "yolo"
+
+
+class ToolDecisionKind(StrEnum):
+    ALLOW = "allow"
+    ASK = "ask"
+    DENY = "deny"
+    SKIP = "skip"
 
 
 class Providers:

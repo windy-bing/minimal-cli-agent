@@ -62,9 +62,8 @@ class JsonSessionStore:
             events = [event for event in events if event.kind == kind]
         limit = max(1, limit)
         offset = max(0, offset)
-        if offset:
-            events = events[: -offset] if offset < len(events) else []
-        return events[-limit:]
+        page = list(reversed(events))[offset : offset + limit]
+        return list(reversed(page))
 
     def load_plan(self) -> PlanArtifact | None:
         return parse_plan(self._read_raw())
@@ -157,6 +156,7 @@ class SQLiteSessionStore:
 
     def save(self, messages: list[Message]) -> None:
         with self._connect() as db:
+            db.execute("begin immediate")
             db.execute("delete from messages")
             db.executemany(
                 "insert into messages(idx, role, content) values (?, ?, ?)",
@@ -170,6 +170,7 @@ class SQLiteSessionStore:
 
     def append_event(self, event: EventRecord) -> None:
         with self._connect() as db:
+            db.execute("begin immediate")
             db.execute(
                 "insert into events(kind, data, timestamp) values (?, ?, ?)",
                 (event.kind, json.dumps(event.data, ensure_ascii=False, sort_keys=True), event.timestamp),
@@ -239,6 +240,7 @@ class SQLiteSessionStore:
 
     def _save_json_state(self, key: str, value: Any | None) -> None:
         with self._connect() as db:
+            db.execute("begin immediate")
             if value is None:
                 db.execute("delete from state where key = ?", (key,))
             else:

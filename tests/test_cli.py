@@ -10,7 +10,7 @@ from minimal_cli_agent.constants import EventKinds, PermissionEventFields
 from minimal_cli_agent.exceptions import ModelRequestError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import JsonSessionStore
-from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact
+from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact, extract_plan_paths
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message
 from minimal_cli_agent.types import EventRecord
 from minimal_cli_agent.workflow import WORKFLOW_METADATA_KEY
@@ -95,6 +95,21 @@ class MultiStepCaptureModel:
 
 
 class CliTest(unittest.TestCase):
+    def test_extract_plan_paths_accepts_directory_and_special_character_paths(self) -> None:
+        plan = PlanArtifact(
+            goal="Update src/my_package and packages/@scope/lib+core",
+            summary="Touch pyproject.toml but ignore https://example.com/a/b",
+            steps=["Review ./docs/architecture and src/minimal_cli_agent"],
+        )
+
+        paths = extract_plan_paths(plan)
+
+        self.assertIn("src/my_package", paths)
+        self.assertIn("packages/@scope/lib+core", paths)
+        self.assertIn("pyproject.toml", paths)
+        self.assertIn("./docs/architecture", paths)
+        self.assertNotIn("https://example.com/a/b", paths)
+
     def test_run_turn_updates_context_messages(self) -> None:
         model = CountingModel()
         config = AgentConfig(permission_mode="plan")

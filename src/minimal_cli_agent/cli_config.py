@@ -59,6 +59,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-context-tokens", type=int, default=parse_optional_int_env("AGENT_MODEL_CONTEXT_TOKENS"), help="Approximate model context window. Context is compacted near this budget.")
     parser.add_argument("--context-compression-ratio", type=float, default=float(os.getenv("AGENT_CONTEXT_COMPRESSION_RATIO", Defaults.CONTEXT_COMPRESSION_RATIO)), help="Fraction of model context tokens that triggers compaction.")
     parser.add_argument("--show-config", action="store_true", help="Print resolved provider/model/base URL without secrets.")
+    parser.add_argument("--verbose", action="store_true", help="Enable debug logs for diagnostics.")
+    parser.add_argument("--quiet", action="store_true", help="Only show error logs; CLI output is unchanged.")
     parser.add_argument("--permission", choices=PermissionModes.ALL, default=os.getenv("AGENT_PERMISSION", PermissionModes.DEFAULT))
     parser.add_argument("--session", type=Path, help="Persist messages to this JSON session file.")
     parser.add_argument("--session-db", type=Path, help="Persist full transcript and events to this SQLite database.")
@@ -273,6 +275,8 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
     flag_map = {
         "--bill-failed-requests": "bill_failed_requests",
         "--allow-network": "allow_network",
+        "--verbose": "verbose",
+        "--quiet": "quiet",
         "--summarize-context": "summarize_context",
         "--no-summarize-context": "summarize_context",
         "--no-plugin-discovery": "no_plugin_discovery",

@@ -8,12 +8,21 @@ from minimal_cli_agent.constants import EventKinds, PermissionEventFields, Permi
 from minimal_cli_agent.exceptions import ConfigurationError, PermissionDenied
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import JsonSessionStore
+from minimal_cli_agent.policy import command_uses_network_tool
 from minimal_cli_agent.tool_pipeline import DecisionHookSpec
 from minimal_cli_agent.tool_registry import ToolRegistry, ToolSpec
 from minimal_cli_agent.types import AgentConfig, CommandResult, ToolCall, ToolDecision
 
 
 class ToolPipelineTest(unittest.TestCase):
+    def test_network_command_detection_handles_executable_variants(self) -> None:
+        tokens = ("curl ", "wget ")
+
+        self.assertTrue(command_uses_network_tool('curl "https://example.com"', tokens))
+        self.assertTrue(command_uses_network_tool("C:/Tools/curl.exe https://example.com", tokens))
+        self.assertTrue(command_uses_network_tool("/usr/bin/wget https://example.com", tokens))
+        self.assertFalse(command_uses_network_tool("echo curl", tokens))
+
     def test_plan_mode_skips_shell_execution(self) -> None:
         harness = AgentHarness(AgentConfig(permission_mode="plan"))
 

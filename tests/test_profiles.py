@@ -23,12 +23,16 @@ class ProfileTest(unittest.TestCase):
             self.assertEqual(read_json(path)["model"], "claude-test")
 
     def test_resolve_gemini_uses_env(self) -> None:
+        original = AgentConfig(provider="ollama", model="original", api_key="old")
         with patch.dict(os.environ, {"GEMINI_MODEL": "gemini-test", "GEMINI_API_KEY": "key"}, clear=False):
-            config = resolve_gemini(AgentConfig())
+            config = resolve_gemini(original)
 
         self.assertEqual(config.provider, "gemini")
         self.assertEqual(config.model, "gemini-test")
         self.assertEqual(config.api_key, "key")
+        self.assertEqual(original.provider, "ollama")
+        self.assertEqual(original.model, "original")
+        self.assertEqual(original.api_key, "old")
 
     def test_resolve_ollama_uses_env_when_cli_option_is_not_explicit(self) -> None:
         with patch.dict(

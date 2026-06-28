@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 import hashlib
 
 from minimal_cli_agent.interfaces import Model
@@ -9,10 +10,12 @@ from minimal_cli_agent.types import AgentConfig, Message
 
 
 class CompactingContextManager:
+    SUMMARY_CACHE_MAX_ENTRIES = 64
+
     def __init__(self, config: AgentConfig, summarizer: Model | None = None) -> None:
         self.config = config
         self.summarizer = summarizer
-        self.summary_cache: dict[str, Message] = {}
+        self.summary_cache: OrderedDict[str, Message] = OrderedDict()
 
     def prepare(self, messages: list[Message]) -> list[Message]:
         if not should_compact_context(messages, self.config):
@@ -32,6 +35,11 @@ class CompactingContextManager:
             initial_goal = first_user_content(messages)
             summary = Message(role="user", content=build_summary_message(self.summarizer.complete(build_summary_prompt(older)), initial_goal))
             self.summary_cache[cache_key] = summary
+            self.summary_cache.move_to_end(cache_key)
+            while len(self.summary_cache) > self.SUMMARY_CACHE_MAX_ENTRIES:
+                self.summary_cache.popitem(last=False)
+        else:
+            self.summary_cache.move_to_end(cache_key)
         return system + [summary] + tail
 
 

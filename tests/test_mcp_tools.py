@@ -6,6 +6,9 @@ import unittest
 from unittest.mock import patch
 
 from minimal_cli_agent.mcp_tools import (
+    MCPHttpClient,
+    MCPRequestError,
+    MCPServerConfig,
     build_mcp_tool_name,
     expand_env_vars,
     format_mcp_result,
@@ -96,6 +99,21 @@ class MCPToolsTest(unittest.TestCase):
 
         self.assertIn("hello", output)
         self.assertIn('"ok": true', output)
+
+    def test_mcp_initialize_failure_is_logged_before_fallback(self) -> None:
+        client = MCPHttpClient(MCPServerConfig(name="demo", url="https://example.test/mcp"))
+
+        def fake_call(method: str, params=None):
+            if method == "initialize":
+                raise MCPRequestError("init failed")
+            return {}
+
+        with patch.object(client, "call", fake_call):
+            with self.assertLogs("minimal_cli_agent.mcp_tools", level="WARNING") as logs:
+                client.ensure_initialized()
+
+        self.assertTrue(client._initialized)
+        self.assertIn("MCP initialize failed", "\n".join(logs.output))
 
     def test_register_mcp_tools_records_registration_events(self) -> None:
         events = []
