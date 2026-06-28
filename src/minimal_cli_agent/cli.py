@@ -42,11 +42,12 @@ from minimal_cli_agent.constants import Defaults, InteractiveCommands, LoopEvent
 from minimal_cli_agent.context import estimate_context_tokens, total_message_chars
 from minimal_cli_agent.exceptions import AgentError, ConfigurationError
 from minimal_cli_agent.harness import AgentHarness
+from minimal_cli_agent.interfaces import SessionStore
 from minimal_cli_agent.logging_utils import configure_logging
 from minimal_cli_agent.memory import compact_messages
 from minimal_cli_agent.memory import JsonSessionStore, SQLiteSessionStore
 
-SessionStoreType = JsonSessionStore | SQLiteSessionStore | None
+SessionStoreType = SessionStore | None
 from minimal_cli_agent.mcp_tools import load_mcp_config
 from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact, build_plan_prompt, create_plan_artifact, extract_plan_paths, format_plan_artifact, format_plan_execution_context
 from minimal_cli_agent.plugins import (
