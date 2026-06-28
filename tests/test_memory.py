@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from minimal_cli_agent.constants import EventKinds, PermissionEventFields
-from minimal_cli_agent.memory import JsonSessionStore, SQLiteSessionStore, compact_messages
+from minimal_cli_agent.memory import JsonSessionStore, SQLiteSessionStore, build_fts_query, compact_messages
 from minimal_cli_agent.plan import PlanArtifact
 from minimal_cli_agent.types import EventRecord, Message
 from minimal_cli_agent.workflow import WorkflowArtifact, WorkflowDelegation, WorkflowStep
@@ -185,6 +185,26 @@ class MemoryTest(unittest.TestCase):
         self.assertEqual(plan.goal, "ship")
         assert workflow is not None
         self.assertEqual(workflow.goal, "workflow")
+
+    def test_sqlite_session_store_uses_fts_memory_when_available(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.sqlite"
+            store = SQLiteSessionStore(path)
+            store.save(
+                [
+                    Message(role="user", content="release checklist"),
+                    Message(role="assistant", content="rollback strategy and release notes"),
+                ]
+            )
+            store.append_event(EventRecord(kind="tool_execution", data={"command": "release checklist"}))
+
+            matches = store.search_memory("release checklist", limit=5)
+
+        self.assertTrue(any(match.kind == "message:user" for match in matches))
+        self.assertTrue(any(match.kind == "event:tool_execution" for match in matches))
+
+    def test_build_fts_query_quotes_terms(self) -> None:
+        self.assertEqual(build_fts_query(['alpha"', "beta"]), '"alpha""" "beta"')
 
 
 if __name__ == "__main__":

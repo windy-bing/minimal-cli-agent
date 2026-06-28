@@ -4,8 +4,9 @@ import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from minimal_cli_agent.constants import Tools
+from minimal_cli_agent.constants import EventKinds, Tools
 from minimal_cli_agent.harness import AgentHarness, Observation, bucket_tool_calls
+from minimal_cli_agent.memory import JsonSessionStore
 from minimal_cli_agent.types import AgentConfig, CommandResult, ToolCall
 
 
@@ -153,6 +154,46 @@ class HarnessTest(unittest.TestCase):
                     ToolCall(name=Tools.READ_TAIL, payload="boom"),
                 ]
             )
+
+    def test_execute_tools_records_batch_metrics(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.txt").write_text("alpha", encoding="utf-8")
+            (root / "b.txt").write_text("beta", encoding="utf-8")
+            store = JsonSessionStore(root / "session.json")
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="plan"), session_store=store)
+
+            harness.execute_tools(
+                [
+                    ToolCall(name=Tools.READ_FILE, payload=json.dumps({"path": "a.txt"})),
+                    ToolCall(name=Tools.READ_FILE, payload=json.dumps({"path": "b.txt"})),
+                ]
+            )
+            events = store.query_events(kind=EventKinds.TOOL_BATCH, limit=5)
+
+        self.assertEqual(len(events), 1)
+        self.assertTrue(events[0].data["parallel"])
+        self.assertEqual(events[0].data["status"], "ok")
+        self.assertEqual(events[0].data["actions"], [Tools.READ_FILE, Tools.READ_FILE])
+
+    def test_execute_tools_records_parallel_error_metrics(self) -> None:
+        with TemporaryDirectory() as tmp:
+            store = JsonSessionStore(Path(tmp) / "session.json")
+            harness = FailingReadHarness(AgentConfig(permission_mode="plan"), session_store=store)
+
+            with self.assertRaisesRegex(RuntimeError, "boom"):
+                harness.execute_tools(
+                    [
+                        ToolCall(name=Tools.READ_FILE, payload="ok"),
+                        ToolCall(name=Tools.READ_TAIL, payload="boom"),
+                    ]
+                )
+            events = store.query_events(kind=EventKinds.TOOL_BATCH, limit=5)
+
+        self.assertEqual(len(events), 1)
+        self.assertTrue(events[0].data["parallel"])
+        self.assertEqual(events[0].data["status"], "error")
+        self.assertIn("boom", events[0].data["error"])
 
     def test_read_forward_line_mode_returns_paging_metadata(self) -> None:
         with TemporaryDirectory() as tmp:

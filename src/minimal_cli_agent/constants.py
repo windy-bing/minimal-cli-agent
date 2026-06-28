@@ -104,6 +104,7 @@ class EventKinds:
     TOOL_DECISION: Final = "tool_decision"
     TOOL_DECISION_CONFLICT: Final = "tool_decision_conflict"
     TOOL_EXECUTION: Final = "tool_execution"
+    TOOL_BATCH: Final = "tool_batch"
     GROUP_SESSION: Final = "group_session"
     MCP_REGISTRATION: Final = "mcp_registration"
 

@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+import time
 
 from minimal_cli_agent.context import CompactingContextManager
-from minimal_cli_agent.constants import Tools
+from minimal_cli_agent.constants import EventKinds, Tools
 from minimal_cli_agent.environment import LocalEnvironment
 from minimal_cli_agent.file_tools import (
     FileToolEnvironment,
@@ -193,10 +194,38 @@ class AgentHarness:
     def execute_tools(self, calls: list[ToolCall]) -> list[Observation]:
         observations: list[Observation] = []
         for batch in bucket_tool_calls(calls, self.is_parallel_safe):
-            if len(batch) > 1:
-                observations.extend(self._execute_parallel_batch(batch))
-            else:
-                observations.extend(self.execute_tool(call) for call in batch)
+            observations.extend(self._execute_batch(batch))
+        return observations
+
+    def _execute_batch(self, calls: list[ToolCall]) -> list[Observation]:
+        started = time.monotonic()
+        parallel = len(calls) > 1
+        try:
+            observations = self._execute_parallel_batch(calls) if parallel else [self.execute_tool(calls[0])]
+        except Exception as exc:
+            self.record_event(
+                EventKinds.TOOL_BATCH,
+                {
+                    "actions": [call.name for call in calls],
+                    "parallel": parallel,
+                    "size": len(calls),
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                    "status": "error",
+                    "error": str(exc),
+                },
+            )
+            raise
+        self.record_event(
+            EventKinds.TOOL_BATCH,
+            {
+                "actions": [observation.action for observation in observations],
+                "parallel": parallel,
+                "size": len(calls),
+                "duration_ms": int((time.monotonic() - started) * 1000),
+                "status": "ok",
+                "exit_codes": [observation.result.exit_code for observation in observations],
+            },
+        )
         return observations
 
     def is_parallel_safe(self, call: ToolCall) -> bool:

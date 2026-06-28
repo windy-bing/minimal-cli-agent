@@ -166,6 +166,12 @@ class SQLiteSessionStore:
                 "insert into messages(idx, role, content) values (?, ?, ?)",
                 [(index, message.role, message.content) for index, message in enumerate(messages)],
             )
+            if self._fts_available(db):
+                db.execute("delete from memory_fts where kind like 'message:%'")
+                db.executemany(
+                    "insert into memory_fts(kind, text, timestamp) values (?, ?, '')",
+                    [(f"message:{message.role}", message.content) for message in messages],
+                )
 
     def load_events(self) -> list[EventRecord]:
         with self._connect() as db:
@@ -173,12 +179,18 @@ class SQLiteSessionStore:
         return [EventRecord(kind=row["kind"], data=json.loads(row["data"]), timestamp=row["timestamp"]) for row in rows]
 
     def append_event(self, event: EventRecord) -> None:
+        event_text = json.dumps(event.data, ensure_ascii=False, sort_keys=True)
         with self._connect() as db:
             db.execute("begin immediate")
             db.execute(
                 "insert into events(kind, data, timestamp) values (?, ?, ?)",
-                (event.kind, json.dumps(event.data, ensure_ascii=False, sort_keys=True), event.timestamp),
+                (event.kind, event_text, event.timestamp),
             )
+            if self._fts_available(db):
+                db.execute(
+                    "insert into memory_fts(kind, text, timestamp) values (?, ?, ?)",
+                    (f"event:{event.kind}", f"{event.kind} {event_text}", event.timestamp),
+                )
 
     def query_events(self, kind: str | None = None, limit: int = 20, offset: int = 0) -> list[EventRecord]:
         limit = max(1, limit)
@@ -214,6 +226,9 @@ class SQLiteSessionStore:
         terms = [term.lower() for term in query.split() if term.strip()]
         if not terms:
             return []
+        fts_results = self._search_memory_fts(terms, max(1, limit))
+        if fts_results is not None:
+            return fts_results
         results: list[MemorySearchResult] = []
         like = f"%{terms[0]}%"
         with self._connect() as db:
@@ -236,6 +251,33 @@ class SQLiteSessionStore:
             if score:
                 results.append(MemorySearchResult(kind=f"event:{row['kind']}", text=truncate_memory_text(text), score=score, timestamp=row["timestamp"]))
         return sorted(results, key=lambda item: (-item.score, item.kind, item.timestamp))[: max(1, limit)]
+
+    def _search_memory_fts(self, terms: list[str], limit: int) -> list[MemorySearchResult] | None:
+        query = build_fts_query(terms)
+        if not query:
+            return None
+        with self._connect() as db:
+            if not self._fts_available(db):
+                return None
+            rows = db.execute(
+                "select kind, text, timestamp, bm25(memory_fts) as rank "
+                "from memory_fts where memory_fts match ? order by rank limit ?",
+                (query, max(1, limit * 3)),
+            ).fetchall()
+        results: list[MemorySearchResult] = []
+        for row in rows:
+            text = row["text"]
+            score = memory_score(text, terms)
+            if score:
+                results.append(
+                    MemorySearchResult(
+                        kind=row["kind"],
+                        text=truncate_memory_text(text),
+                        score=score,
+                        timestamp=row["timestamp"],
+                    )
+                )
+        return sorted(results, key=lambda item: (-item.score, item.kind, item.timestamp))[:limit]
 
     def _load_json_state(self, key: str) -> Any:
         with self._connect() as db:
@@ -273,6 +315,17 @@ class SQLiteSessionStore:
             db.execute("create index if not exists idx_events_kind on events(kind)")
             db.execute("create index if not exists idx_messages_content on messages(content)")
             db.execute("create index if not exists idx_events_data on events(data)")
+            try:
+                db.execute(
+                    "create virtual table if not exists memory_fts "
+                    "using fts5(kind unindexed, text, timestamp unindexed)"
+                )
+            except sqlite3.OperationalError:
+                pass
+
+    def _fts_available(self, db: sqlite3.Connection) -> bool:
+        row = db.execute("select 1 from sqlite_master where type = 'table' and name = 'memory_fts'").fetchone()
+        return row is not None
 
 
 def parse_messages(raw) -> list[Message]:
@@ -371,6 +424,15 @@ def first_user_content(messages: list[Message], limit: int = 500) -> str:
 def memory_score(text: str, terms: list[str]) -> int:
     lowered = text.lower()
     return sum(lowered.count(term) for term in terms)
+
+
+def build_fts_query(terms: list[str]) -> str:
+    quoted = []
+    for term in terms:
+        cleaned = term.strip().replace('"', '""')
+        if cleaned:
+            quoted.append(f'"{cleaned}"')
+    return " ".join(quoted)
 
 
 def truncate_memory_text(text: str, limit: int = 500) -> str:

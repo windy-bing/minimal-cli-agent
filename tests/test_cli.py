@@ -1,5 +1,6 @@
 import json
 import unittest
+import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -625,6 +626,24 @@ class CliTest(unittest.TestCase):
         self.assertNotIn("sk-abcdefghijklmnopqrstuvwxyz123456", encoded)
         self.assertNotIn("secret-value", encoded)
         self.assertIn("<redacted>", encoded)
+
+    def test_run_interactive_debug_bundle_can_write_zip(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / "bundle.zip"
+            config = AgentConfig(cwd=root, permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+
+            with patch("builtins.input", side_effect=[f"/debug bundle {output}", "/quit"]), patch("builtins.print"):
+                exit_code = run_interactive(agent, ChatContext())
+            with zipfile.ZipFile(output) as archive:
+                names = set(archive.namelist())
+                debug_data = json.loads(archive.read("debug-bundle.json").decode("utf-8"))
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(names, {"debug-bundle.json", "doctor.json", "policy.json", "events.json"})
+        self.assertEqual(debug_data["config"]["permission"], "plan")
 
     def test_run_interactive_memory_search_uses_sqlite_store(self) -> None:
         model = CountingModel()

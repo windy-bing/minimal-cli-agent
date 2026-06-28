@@ -8,6 +8,7 @@ import os
 import select
 import sys
 import time
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -917,8 +918,7 @@ def handle_debug_command(session: InteractiveSession, argument: str) -> None:
     default_path = session.agent.config.cwd / ".agent" / "debug-bundle.json"
     output_path = resolve_path_option(parts[1], session.agent.config.cwd) if len(parts) > 1 else default_path
     bundle = build_debug_bundle(session)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_debug_bundle(output_path, bundle)
     print(f"debug_bundle: {output_path}")
 
 
@@ -953,6 +953,18 @@ def build_debug_bundle(session: InteractiveSession) -> dict[str, Any]:
         "events": [redact_debug_value(event.to_dict()) for event in events],
     }
     return redact_debug_value(bundle)
+
+
+def write_debug_bundle(output_path: Path, bundle: dict[str, Any]) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.suffix.lower() == ".zip":
+        with zipfile.ZipFile(output_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("debug-bundle.json", json.dumps(bundle, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+            archive.writestr("doctor.json", json.dumps(bundle["doctor"], ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+            archive.writestr("policy.json", json.dumps(bundle["policy"], ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+            archive.writestr("events.json", json.dumps(bundle["events"], ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+        return
+    output_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def redact_debug_value(value: Any) -> Any:
