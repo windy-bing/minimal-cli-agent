@@ -515,7 +515,7 @@ def is_user_prompt_history_entry(content: str) -> bool:
 
 
 def print_quick_command_hint() -> None:
-    print("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /doctor, /debug, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit")
+    print("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /doctor, /debug, /history, /events, /session, /memory, /plan, /workflow, /delegate, /review, /exit")
 
 
 def print_interactive_help() -> None:
@@ -591,6 +591,9 @@ def handle_interactive_command(raw: str, session: InteractiveSession) -> Interac
         return InteractiveCommandResult(handled=True, replay_message=replay)
     if command == InteractiveCommands.EVENTS:
         handle_events_command(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.SESSION:
+        handle_session_command(session, argument)
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.PLAN:
         handle_plan_command(session, argument)
@@ -683,6 +686,12 @@ def handle_config_command(session: InteractiveSession, argument: str) -> None:
         print(f"project_config: {session.agent.config.cwd / Defaults.LOCAL_CONFIG_FILE}")
         print(f"user_config: {default_user_config_path()}")
         return
+    if action == "explain":
+        print_config_explanation(session)
+        return
+    if action == "capabilities":
+        print_runtime_capabilities(session)
+        return
     if action == "save":
         target = value or "project"
         if target not in {"project", "user"}:
@@ -692,7 +701,39 @@ def handle_config_command(session: InteractiveSession, argument: str) -> None:
         save_cli_config(path, session)
         print(f"config saved: {path}")
         return
-    print(f"Usage: {InteractiveCommands.CONFIG} [show|save [project|user]]")
+    print(f"Usage: {InteractiveCommands.CONFIG} [show|explain|capabilities|save [project|user]]")
+
+
+def print_config_explanation(session: InteractiveSession) -> None:
+    config = session.agent.config
+    print("config_precedence:")
+    print("1: command line flags")
+    print("2: environment variables")
+    print(f"3: project config {config.cwd / Defaults.LOCAL_CONFIG_FILE}")
+    print(f"4: user config {default_user_config_path()}")
+    print("5: built-in defaults")
+    print(f"active_provider: {config.provider}")
+    print(f"active_model: {config.model}")
+    print(f"active_permission: {config.permission_mode}")
+    print(f"active_sandbox: {config.sandbox_kind}")
+
+
+def print_runtime_capabilities(session: InteractiveSession) -> None:
+    config = session.agent.config
+    session_backend = "none"
+    if isinstance(session.session_store, SQLiteSessionStore):
+        session_backend = "sqlite"
+    elif isinstance(session.session_store, JsonSessionStore):
+        session_backend = "json"
+    searcher = getattr(session.session_store, "search_memory", None)
+    print(f"session_backend: {session_backend}")
+    print(f"retrieval_memory: {'yes' if searcher else 'no'}")
+    print(f"session_export: {'yes' if getattr(session.session_store, 'export_data', None) else 'no'}")
+    print(f"session_import: {'yes' if getattr(session.session_store, 'import_data', None) else 'no'}")
+    print(f"plugins_loaded: {len(config.plugin_paths)}")
+    print(f"skills_loaded: {len(config.skill_paths)}")
+    print(f"sandbox: {config.sandbox_kind}")
+    print(f"network_shell_commands: {'yes' if config.allow_network else 'no'}")
 
 
 def update_base_url(session: InteractiveSession, base_url: str) -> None:
@@ -1154,6 +1195,79 @@ def handle_events_command(session: InteractiveSession, argument: str) -> None:
         return
     for index, event in enumerate(events, start=1):
         print(f"{index}: {event.timestamp} {event.kind} {json.dumps(event.data, ensure_ascii=False, sort_keys=True)}")
+
+
+def handle_session_command(session: InteractiveSession, argument: str) -> None:
+    action, value = split_command_argument(argument)
+    if action in {"", "stats"}:
+        print_session_stats(session)
+        return
+    if session.session_store is None:
+        print("no session store configured")
+        return
+    if action == "export":
+        exporter = getattr(session.session_store, "export_data", None)
+        if exporter is None:
+            print("session export is not supported by this session store")
+            return
+        output_path = resolve_path_option(value, session.agent.config.cwd) if value else session.agent.config.cwd / ".agent" / "session-export.json"
+        data = exporter()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print(f"session_export: {output_path}")
+        return
+    if action == "import":
+        if not value:
+            print(f"Usage: {InteractiveCommands.SESSION} import <path>")
+            return
+        importer = getattr(session.session_store, "import_data", None)
+        if importer is None:
+            print("session import is not supported by this session store")
+            return
+        input_path = resolve_path_option(value, session.agent.config.cwd)
+        try:
+            data = json.loads(input_path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            print(f"unable to read session import: {exc}")
+            return
+        except json.JSONDecodeError as exc:
+            print(f"session import must be valid JSON: {exc}")
+            return
+        if not isinstance(data, dict):
+            print("session import must contain a JSON object")
+            return
+        importer(data)
+        session.context.messages = session.session_store.load()
+        plan = session.session_store.load_plan()
+        workflow = session.session_store.load_workflow()
+        if plan is not None:
+            session.context.metadata[PLAN_METADATA_KEY] = plan
+        else:
+            session.context.metadata.pop(PLAN_METADATA_KEY, None)
+        if workflow is not None:
+            session.context.metadata[WORKFLOW_METADATA_KEY] = workflow
+        else:
+            session.context.metadata.pop(WORKFLOW_METADATA_KEY, None)
+        print(f"session_imported: {input_path}")
+        print_session_stats(session)
+        return
+    print(f"Usage: {InteractiveCommands.SESSION} stats|export [path]|import <path>")
+
+
+def print_session_stats(session: InteractiveSession) -> None:
+    messages = session.context.messages
+    events = session.session_store.load_events() if session.session_store else []
+    print(f"messages: {len(messages)}")
+    print(f"message_chars: {total_message_chars(messages)}")
+    print(f"events: {len(events)}")
+    print(f"plan: {'yes' if session.context.metadata.get(PLAN_METADATA_KEY) else 'no'}")
+    print(f"workflow: {'yes' if session.context.metadata.get(WORKFLOW_METADATA_KEY) else 'no'}")
+    if session.session_store:
+        backend = "sqlite" if isinstance(session.session_store, SQLiteSessionStore) else "json"
+        print(f"session_backend: {backend}")
+        print(f"session_path: {session.session_store.path}")
+    else:
+        print("session_backend: none")
 
 
 def handle_memory_command(session: InteractiveSession, query: str) -> None:

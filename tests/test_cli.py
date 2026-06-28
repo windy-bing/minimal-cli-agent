@@ -190,7 +190,7 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
-        self.assertIn("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /doctor, /debug, /history, /events, /memory, /plan, /workflow, /delegate, /review, /exit", printed)
+        self.assertIn("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /doctor, /debug, /history, /events, /session, /memory, /plan, /workflow, /delegate, /review, /exit", printed)
 
     def test_detect_explicit_options_supports_space_and_equals_forms(self) -> None:
         explicit = detect_explicit_options([
@@ -272,6 +272,25 @@ class CliTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn('"model": "saved-model"', saved)
         self.assertIn('"session": ".agent/session.json"', saved)
+
+    def test_run_interactive_config_explain_and_capabilities(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = JsonSessionStore(root / "session.json")
+            config = AgentConfig(cwd=root, permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=store))
+
+            with patch("builtins.input", side_effect=["/config explain", "/config capabilities", "/quit"]), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, ChatContext(), session_store=store)
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("config_precedence:", printed)
+        self.assertIn("active_sandbox: host", printed)
+        self.assertIn("session_backend: json", printed)
+        self.assertIn("session_export: yes", printed)
+        self.assertIn("retrieval_memory: no", printed)
 
     def test_model_timeout_can_be_configured_on_agent_config(self) -> None:
         config = AgentConfig(model_timeout=7)
@@ -661,6 +680,37 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertIn("remember alpha topic", printed)
+
+    def test_run_interactive_session_export_import_and_stats(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = JsonSessionStore(root / "source.json")
+            source.save([Message(role="user", content="portable prompt")])
+            source.append_event(EventRecord(kind="note", data={"value": 1}))
+            export_path = root / "session-export.json"
+            config = AgentConfig(cwd=root, permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=source))
+
+            with patch("builtins.input", side_effect=[f"/session export {export_path}", "/quit"]), patch("builtins.print") as print_mock:
+                export_exit = run_interactive(agent, ChatContext(messages=source.load()), session_store=source)
+
+            target = JsonSessionStore(root / "target.json")
+            imported_agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=target))
+            with patch("builtins.input", side_effect=[f"/session import {export_path}", "/session stats", "/quit"]), patch("builtins.print") as import_print:
+                import_exit = run_interactive(imported_agent, ChatContext(), session_store=target)
+            exported = json.loads(export_path.read_text(encoding="utf-8"))
+            imported_messages = target.load()
+
+        import_output = "\n".join(str(call.args[0]) for call in import_print.call_args_list if call.args)
+        export_output = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(export_exit, 0)
+        self.assertEqual(import_exit, 0)
+        self.assertEqual(exported["messages"][0]["content"], "portable prompt")
+        self.assertEqual(imported_messages[0].content, "portable prompt")
+        self.assertIn("session_export:", export_output)
+        self.assertIn("session_imported:", import_output)
+        self.assertIn("messages: 1", import_output)
 
     def test_run_interactive_skills_discovers_and_loads_workspace_skill(self) -> None:
         model = CountingModel()

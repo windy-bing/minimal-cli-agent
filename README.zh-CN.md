@@ -141,7 +141,7 @@ minimal-agent
 minimal-agent "Analyze this project"
 ```
 
-输入 `/help` 查看交互命令。输入 `/` 会快速展示常用命令；输入 `/exit`、`/quit`、`exit` 或 `quit` 退出。默认每轮结束后会把 messages 保存到 `.agent/session.json`，下次运行时继续加载。使用 `--session path/to/session.json` 可以指定其他 session 文件，使用 `--no-session` 可以关闭持久化。
+输入 `/help` 查看交互命令。输入 `/` 会快速展示常用命令；输入 `/exit`、`/quit`、`exit` 或 `quit` 退出。默认每轮结束后会把 messages 保存到 `.agent/session.json`，下次运行时继续加载。使用 `--session path/to/session.json` 可以指定 JSON session 文件，使用 `--session-db path/to/session.sqlite` 可以启用 SQLite transcript/event store 和 retrieval memory，使用 `--no-session` 可以关闭持久化。
 
 启动默认配置会先读取 `~/.minimal-agent/config.json`，再读取项目内 `.minimal-agent.json`；项目配置优先于用户配置。CLI 参数和环境变量仍然拥有更高优先级。在 REPL 中可以用 `/model`、`/provider`、`/base-url`、`/permission`、`/policy`、`/mcp`、`/plugin` 和 `/skill` 查看或切换运行时配置，再用 `/config save` 写入项目 `.minimal-agent.json`，或用 `/config save user` 写入用户配置。
 
@@ -163,6 +163,8 @@ minimal-agent "Analyze this project"
 
 ```text
 /config
+/config explain
+/config capabilities
 /config save
 /profile codex
 /provider ollama
@@ -181,6 +183,12 @@ minimal-agent "Analyze this project"
 /history
 /history 1
 /events
+/session stats
+/session export .agent/session-export.json
+/session import .agent/session-export.json
+/memory alpha
+/doctor
+/debug bundle .agent/debug-bundle.zip
 /plan improve test coverage
 /plan show
 /plan clear
@@ -198,7 +206,9 @@ minimal-agent "Analyze this project"
 
 `/delegate <task>` 会在隔离上下文中运行一个只读 SubAgent，并把结果记录到 active workflow；如果当前没有 workflow，会自动创建一个 delegated-work workflow。
 
-`/events [kind|number]` 会显示当前 JSON session store 里的最近持久化 events。
+`/events [kind|number]` 会显示当前 session store 里的最近持久化 events。
+
+`/session stats|export [path]|import <path>` 可查看、导出或导入当前 session state，用于 JSON/SQLite session 之间迁移和复现问题。
 
 `/review [path]` 会通过同一个 agent loop 发起 review turn，所以它可以用 `read_file` 检查文件，并遵守当前 permission mode。
 
@@ -326,6 +336,7 @@ Profile 行为：
 --interactive    启动多轮交互 CLI 会话
 --permission     default、autoEdit、plan 或 yolo
 --session        用于持久化 messages 的 JSON 文件；默认是 .agent/session.json
+--session-db     用于持久化完整 transcript、events 和 retrieval memory 的 SQLite 数据库
 --no-session     关闭默认 session 持久化
 --config-file    用于读取启动默认值的 JSON 配置文件
 ```

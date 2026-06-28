@@ -58,12 +58,19 @@ Useful slash commands:
 /base-url http://localhost:11434
 /permission autoEdit
 /config
+/config explain
+/config capabilities
 /config save
 /context status
 /context compact
 /history 20
 /events
+/session stats
+/session export .agent/session-export.json
+/session import .agent/session-export.json
+/memory alpha
 /doctor
+/debug bundle .agent/debug-bundle.zip
 /policy
 /skills
 /skills load all
@@ -75,7 +82,7 @@ Useful slash commands:
 /review src/minimal_cli_agent
 ```
 
-Session files are enabled by default. Use `--session path/to/session.json` to choose a file or `--no-session` to run without persistence.
+Session files are enabled by default. Use `--session path/to/session.json` for JSON persistence, `--session-db path/to/session.sqlite` for SQLite transcript/event storage and retrieval memory, or `--no-session` to run without persistence.
 
 ## Configuration
 
@@ -101,7 +108,8 @@ Common options:
 --max-steps      maximum loop iterations; 0 means unlimited
 --timeout        command timeout in seconds
 --model-timeout  model request timeout in seconds
---session        JSON or SQLite session path
+--session        JSON session path
+--session-db     SQLite session database path
 --no-session     disable persistence
 --policy-file    shell and write-scope policy JSON
 --mcp-config     MCP server config JSON

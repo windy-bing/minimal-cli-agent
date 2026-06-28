@@ -294,6 +294,7 @@ class InteractiveCommands:
     DEBUG: Final = "/debug"
     HISTORY: Final = "/history"
     EVENTS: Final = "/events"
+    SESSION: Final = "/session"
     PLAN: Final = "/plan"
     WORKFLOW: Final = "/workflow"
     MEMORY: Final = "/memory"
@@ -311,7 +312,7 @@ class InteractiveCommands:
     QUICK_HINT: Final = "/"
     DESCRIPTIONS: Final = {
         HELP: "Show interactive commands.",
-        CONFIG: "Show or save runtime config. Usage: /config [show|save [project|user]]",
+        CONFIG: "Show, explain, or save runtime config. Usage: /config [show|explain|capabilities|save [project|user]]",
         PROFILE: "Switch model profile. Usage: /profile codex|ollama|claude|gemini",
         PROVIDER: "Switch provider. Usage: /provider ollama|codex|openai-compatible|anthropic|gemini",
         MODEL: "Switch model. Usage: /model <model-name>",
@@ -325,6 +326,7 @@ class InteractiveCommands:
         DEBUG: "Export a redacted diagnostic bundle. Usage: /debug bundle [path]",
         HISTORY: "Show or replay user prompt history. Usage: /history [number]",
         EVENTS: "Show persisted session events. Usage: /events [kind] [limit] [offset] [format=json]",
+        SESSION: "Export, import, or inspect session state. Usage: /session stats|export [path]|import <path>",
         PLAN: "Create, show, or clear an isolated plan. Usage: /plan <goal>|show|clear",
         WORKFLOW: "Manage typed workflow state. Usage: /workflow create <goal>|step <text>|schedule|done <number>|merge|verify|wait|show|clear",
         MEMORY: "Search persisted SQLite memory. Usage: /memory <query>",
@@ -356,6 +358,7 @@ class InteractiveCommands:
         DEBUG,
         HISTORY,
         EVENTS,
+        SESSION,
         PLAN,
         WORKFLOW,
         DELEGATE,

@@ -186,6 +186,27 @@ class MemoryTest(unittest.TestCase):
         assert workflow is not None
         self.assertEqual(workflow.goal, "workflow")
 
+    def test_session_export_import_moves_json_to_sqlite(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            json_store = JsonSessionStore(root / "session.json")
+            json_store.save([Message(role="user", content="portable session")])
+            json_store.append_event(EventRecord(kind="note", data={"value": 1}))
+            json_store.save_plan(PlanArtifact(goal="move", summary="portable"))
+            exported = json_store.export_data()
+
+            sqlite_store = SQLiteSessionStore(root / "session.sqlite")
+            sqlite_store.import_data(exported)
+
+            messages = sqlite_store.load_all_messages()
+            events = sqlite_store.load_events()
+            plan = sqlite_store.load_plan()
+
+        self.assertEqual(messages, [Message(role="user", content="portable session")])
+        self.assertEqual(events[0].kind, "note")
+        assert plan is not None
+        self.assertEqual(plan.goal, "move")
+
     def test_sqlite_session_store_uses_fts_memory_when_available(self) -> None:
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "session.sqlite"

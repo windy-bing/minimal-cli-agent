@@ -89,6 +89,18 @@ class JsonSessionStore:
             data = self._build_data(messages, events, existing_plan, workflow)
             self._write_raw_unlocked(data)
 
+    def export_data(self) -> dict[str, Any]:
+        raw = self._read_raw()
+        return build_session_export(parse_messages(raw), parse_events(raw), parse_plan(raw), parse_workflow(raw))
+
+    def import_data(self, data: dict[str, Any]) -> None:
+        messages = parse_messages(data)
+        events = parse_events(data)
+        plan = parse_plan(data)
+        workflow = parse_workflow(data)
+        with self._locked():
+            self._write_raw_unlocked(self._build_data(messages, events, plan, workflow))
+
     def _build_data(
         self,
         messages: list[Message],
@@ -222,6 +234,60 @@ class SQLiteSessionStore:
     def save_workflow(self, workflow: WorkflowArtifact | None) -> None:
         self._save_json_state(SessionFields.WORKFLOW, workflow.to_dict() if workflow is not None else None)
 
+    def export_data(self) -> dict[str, Any]:
+        return build_session_export(self.load_all_messages(), self.load_events(), self.load_plan(), self.load_workflow())
+
+    def import_data(self, data: dict[str, Any]) -> None:
+        messages = parse_messages(data)
+        events = parse_events(data)
+        plan = parse_plan(data)
+        workflow = parse_workflow(data)
+        with self._connect() as db:
+            db.execute("begin immediate")
+            db.execute("delete from messages")
+            db.executemany(
+                "insert into messages(idx, role, content) values (?, ?, ?)",
+                [(index, message.role, message.content) for index, message in enumerate(messages)],
+            )
+            db.execute("delete from events")
+            db.executemany(
+                "insert into events(kind, data, timestamp) values (?, ?, ?)",
+                [(event.kind, json.dumps(event.data, ensure_ascii=False, sort_keys=True), event.timestamp) for event in events],
+            )
+            db.execute("delete from state where key in (?, ?)", (SessionFields.PLAN, SessionFields.WORKFLOW))
+            if plan is not None:
+                db.execute(
+                    "insert into state(key, value) values (?, ?)",
+                    (SessionFields.PLAN, json.dumps(plan.to_dict(), ensure_ascii=False, sort_keys=True)),
+                )
+            if workflow is not None:
+                db.execute(
+                    "insert into state(key, value) values (?, ?)",
+                    (SessionFields.WORKFLOW, json.dumps(workflow.to_dict(), ensure_ascii=False, sort_keys=True)),
+                )
+            if self._fts_available(db):
+                db.execute("delete from memory_fts")
+                db.executemany(
+                    "insert into memory_fts(kind, text, timestamp) values (?, ?, '')",
+                    [(f"message:{message.role}", message.content) for message in messages],
+                )
+                db.executemany(
+                    "insert into memory_fts(kind, text, timestamp) values (?, ?, ?)",
+                    [
+                        (
+                            f"event:{event.kind}",
+                            f"{event.kind} {json.dumps(event.data, ensure_ascii=False, sort_keys=True)}",
+                            event.timestamp,
+                        )
+                        for event in events
+                    ],
+                )
+
+    def load_all_messages(self) -> list[Message]:
+        with self._connect() as db:
+            rows = db.execute("select role, content from messages order by idx").fetchall()
+        return [Message(role=row["role"], content=row["content"]) for row in rows]
+
     def search_memory(self, query: str, limit: int = 10) -> list[MemorySearchResult]:
         terms = [term.lower() for term in query.split() if term.strip()]
         if not terms:
@@ -339,6 +405,23 @@ def parse_messages(raw) -> list[Message]:
         for item in raw_messages
         if is_message_record(item)
     ]
+
+
+def build_session_export(
+    messages: list[Message],
+    events: list[EventRecord],
+    plan: PlanArtifact | None,
+    workflow: WorkflowArtifact | None,
+) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        SessionFields.MESSAGES: [message.to_dict() for message in messages],
+        SessionFields.EVENTS: [event.to_dict() for event in events],
+    }
+    if plan is not None:
+        data[SessionFields.PLAN] = plan.to_dict()
+    if workflow is not None:
+        data[SessionFields.WORKFLOW] = workflow.to_dict()
+    return data
 
 
 def parse_events(raw) -> list[EventRecord]:
