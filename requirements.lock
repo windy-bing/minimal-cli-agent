@@ -1,0 +1,11 @@
+# Runtime dependency constraints for reproducible CLI installs.
+# Update after dependency changes with a clean virtual environment and `pip freeze`.
+anyio==4.14.0
+certifi==2026.6.17
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+idna==3.18
+prompt_toolkit==3.0.52
+typing_extensions==4.15.0
+wcwidth==0.8.1

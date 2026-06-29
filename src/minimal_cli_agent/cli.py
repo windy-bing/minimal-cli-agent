@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from dataclasses import replace
+from importlib import import_module
 import json
 import os
 import select
@@ -19,6 +20,8 @@ except ImportError:  # pragma: no cover - readline is platform-dependent.
 
 from minimal_cli_agent.agent import Agent, print_event
 from minimal_cli_agent.cli_config import (
+    CONFIG_SCHEMA_VERSION,
+    CONFIG_SCHEMA_VERSION_KEY,
     bool_config_value,
     build_parser,
     build_session_store,
@@ -36,10 +39,11 @@ from minimal_cli_agent.cli_config import (
     resolve_default_session_path,
     resolve_optional_path,
     resolve_path_option,
+    validate_cli_defaults,
 )
 from minimal_cli_agent.cli_events import parse_events_query
 from minimal_cli_agent.cli_format import format_duration, is_plan_mode_write_block, print_compact_event, render_prompt
-from minimal_cli_agent.constants import Defaults, InteractiveCommands, LoopEventData, LoopEventTypes, PermissionModes, Profiles, Providers, ToolDecisionKinds, ToolPayloadFields, Tools
+from minimal_cli_agent.constants import Defaults, EventKinds, InteractiveCommands, LoopEventData, LoopEventTypes, PermissionModes, PolicyPresets, Profiles, Providers, ToolDecisionKinds, ToolPayloadFields, Tools
 from minimal_cli_agent.context import estimate_context_tokens, total_message_chars
 from minimal_cli_agent.exceptions import AgentError, ConfigurationError
 from minimal_cli_agent.harness import AgentHarness
@@ -167,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
             permission_mode=str(choose_config_value("permission", args.permission, local_defaults, explicit_options, ("AGENT_PERMISSION",))),
             allow_network=bool_config_value(choose_config_value("allow_network", args.allow_network, local_defaults, explicit_options, ("AGENT_ALLOW_NETWORK",)), default=False),
             policy_file=resolve_optional_path(choose_config_value("policy_file", args.policy_file, local_defaults, explicit_options, ("AGENT_POLICY_FILE",)), cwd),
+            policy_preset=str(choose_config_value("policy_preset", args.policy_preset, local_defaults, explicit_options, ("AGENT_POLICY_PRESET",))),
             mcp_config=resolve_optional_path(choose_config_value("mcp_config", args.mcp_config, local_defaults, explicit_options, ("AGENT_MCP_CONFIG",)), cwd),
             plugin_paths=plugin_paths,
             skill_paths=merge_paths(resolve_skill_paths(skill_inputs, cwd.resolve()), plugin_skill_paths),
@@ -187,6 +192,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"sandbox_image: {config.sandbox_image}")
             print(f"sandbox_network: {config.sandbox_network}")
             print(f"sandbox_read_only: {config.sandbox_read_only}")
+            print(f"policy_preset: {config.policy_preset}")
             print(f"model_price_input_per_1m: {config.model_price_input_per_1m}")
             print(f"model_price_output_per_1m: {config.model_price_output_per_1m}")
             print(f"usage_ledger: {config.usage_ledger_path or '<none>'}")
@@ -367,7 +373,7 @@ def run_interactive(
     while True:
         if pending is None:
             try:
-                pending = input(render_prompt(session.agent.config)).strip()
+                pending = read_interactive_prompt(session).strip()
             except EOFError:
                 print()
                 return 0
@@ -462,6 +468,124 @@ def read_supplemental_stdin() -> str | None:
     return text or None
 
 
+def read_interactive_prompt(session: InteractiveSession) -> str:
+    if not sys.stdin.isatty():
+        return input(render_prompt(session.agent.config))
+    try:
+        prompt_toolkit = import_module("prompt_toolkit")
+        completion_module = import_module("prompt_toolkit.completion")
+        formatted_text_module = import_module("prompt_toolkit.formatted_text")
+        key_binding_module = import_module("prompt_toolkit.key_binding")
+    except ImportError:
+        return input(render_prompt(session.agent.config))
+    key_bindings = key_binding_module.KeyBindings()
+
+    @key_bindings.add("c-j")
+    def insert_newline(event: Any) -> None:
+        event.current_buffer.insert_text("\n")
+
+    class SlashCommandCompleter(completion_module.Completer):  # type: ignore[misc]
+        def get_completions(self, document: Any, complete_event: Any) -> Any:
+            text = str(document.text_before_cursor)
+            for suggestion in interactive_command_suggestions(text):
+                yield completion_module.Completion(
+                    suggestion.value,
+                    start_position=-suggestion.replace_length,
+                    display=suggestion.value,
+                    display_meta=suggestion.description,
+                )
+
+    return prompt_toolkit.prompt(
+        formatted_text_module.ANSI(render_prompt(session.agent.config)),
+        completer=SlashCommandCompleter(),
+        complete_while_typing=True,
+        enable_history_search=True,
+        key_bindings=key_bindings,
+        bottom_toolbar="Ctrl-R search history | Ctrl-J newline",
+        reserve_space_for_menu=8,
+    )
+
+
+def command_prefix(text: str) -> str:
+    stripped = text.lstrip()
+    if not stripped.startswith("/") or " " in stripped:
+        return ""
+    return stripped
+
+
+@dataclass(frozen=True)
+class InteractiveSuggestion:
+    value: str
+    description: str
+    replace_length: int
+
+    def __iter__(self):
+        yield self.value
+        yield self.description
+
+
+def interactive_command_suggestions(text: str) -> list[InteractiveSuggestion]:
+    stripped = text.lstrip()
+    prefix = command_prefix(text)
+    if prefix:
+        commands = [
+            InteractiveSuggestion(command, description, len(prefix))
+            for command, description in InteractiveCommands.DESCRIPTIONS.items()
+            if command.startswith("/") and command != InteractiveCommands.QUICK_HINT
+        ]
+        if prefix == InteractiveCommands.QUICK_HINT:
+            return commands
+        return [suggestion for suggestion in commands if suggestion.value.startswith(prefix)]
+    if not stripped.startswith("/") or stripped.endswith("  "):
+        return []
+    parts = stripped.split()
+    if len(parts) < 2 and not stripped.endswith(" "):
+        return []
+    command = parts[0]
+    token = "" if stripped.endswith(" ") else parts[-1]
+    return [
+        InteractiveSuggestion(value, description, len(token))
+        for value, description in interactive_argument_suggestions(command)
+        if value.startswith(token)
+    ]
+
+
+def interactive_argument_suggestions(command: str) -> list[tuple[str, str]]:
+    return {
+        InteractiveCommands.CONFIG: [
+            ("show", "Show runtime config."),
+            ("explain", "Explain config precedence."),
+            ("capabilities", "Show runtime capabilities."),
+            ("save", "Save runtime config."),
+        ],
+        InteractiveCommands.PROFILE: [(profile, "Switch model profile.") for profile in Profiles.ALL],
+        InteractiveCommands.PROVIDER: [(provider, "Switch provider.") for provider in Providers.ALL],
+        InteractiveCommands.PERMISSION: [(mode, "Switch permission mode.") for mode in PermissionModes.ALL],
+        InteractiveCommands.POLICY: [("json", "Print policy report."), ("explain", "Explain a tool decision.")],
+        InteractiveCommands.NETWORK: [("on", "Allow network shell commands."), ("off", "Block network shell commands.")],
+        InteractiveCommands.SUMMARIZE: [("on", "Enable model context summaries."), ("off", "Disable model context summaries.")],
+        InteractiveCommands.CONTEXT: [("status", "Show context size."), ("compact", "Compact context."), ("clear", "Clear context.")],
+        InteractiveCommands.DOCTOR: [("json", "Print JSON health report.")],
+        InteractiveCommands.DEBUG: [("bundle", "Write redacted diagnostic bundle.")],
+        InteractiveCommands.METRICS: [("json", "Print JSON metrics report.")],
+        InteractiveCommands.SESSION: [("stats", "Show session stats."), ("export", "Export session."), ("import", "Import session.")],
+        InteractiveCommands.PLAN: [("show", "Show active plan."), ("clear", "Clear active plan.")],
+        InteractiveCommands.WORKFLOW: [
+            ("create", "Create workflow."),
+            ("step", "Add step."),
+            ("schedule", "Schedule next step."),
+            ("done", "Mark step done."),
+            ("merge", "Merge delegations."),
+            ("verify", "Verify step."),
+            ("wait", "Show workflow wait status."),
+            ("show", "Show workflow."),
+            ("clear", "Clear workflow."),
+        ],
+        InteractiveCommands.PLUGINS: [("load", "Load plugin by name or all.")],
+        InteractiveCommands.SKILLS: [("load", "Load skill by name or all.")],
+    }.get(command, [])
+
+
 def configure_readline_history(history: list[str]) -> None:
     if readline is None:
         return
@@ -515,7 +639,7 @@ def is_user_prompt_history_entry(content: str) -> bool:
 
 
 def print_quick_command_hint() -> None:
-    print("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /doctor, /debug, /history, /events, /session, /memory, /plan, /workflow, /delegate, /review, /exit")
+    print("Commands: /help, /config, /profile, /permission, /policy, /metrics, /mcp, /plugin, /plugins, /skill, /skills, /context, /doctor, /debug, /history, /events, /session, /memory, /plan, /workflow, /delegate, /review, /exit")
 
 
 def print_interactive_help() -> None:
@@ -569,6 +693,9 @@ def handle_interactive_command(raw: str, session: InteractiveSession) -> Interac
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.POLICY:
         handle_policy_command(session, argument)
+        return InteractiveCommandResult(handled=True)
+    if command == InteractiveCommands.METRICS:
+        handle_metrics_command(session, argument)
         return InteractiveCommandResult(handled=True)
     if command == InteractiveCommands.NETWORK:
         update_boolean_option(session, "allow_network", argument, "network shell commands")
@@ -716,6 +843,7 @@ def print_config_explanation(session: InteractiveSession) -> None:
     print(f"active_model: {config.model}")
     print(f"active_permission: {config.permission_mode}")
     print(f"active_sandbox: {config.sandbox_kind}")
+    print(f"active_policy_preset: {config.policy_preset}")
 
 
 def print_runtime_capabilities(session: InteractiveSession) -> None:
@@ -733,6 +861,7 @@ def print_runtime_capabilities(session: InteractiveSession) -> None:
     print(f"plugins_loaded: {len(config.plugin_paths)}")
     print(f"skills_loaded: {len(config.skill_paths)}")
     print(f"sandbox: {config.sandbox_kind}")
+    print(f"policy_preset: {config.policy_preset}")
     print(f"network_shell_commands: {'yes' if config.allow_network else 'no'}")
 
 
@@ -876,6 +1005,7 @@ def handle_policy_command(session: InteractiveSession, argument: str) -> None:
         return
     print(f"permission_mode: {report['permission_mode']}")
     print(f"allow_network: {report['allow_network']}")
+    print(f"policy_preset: {report['policy_preset']}")
     print(f"policy_file: {report['policy_file']}")
     print(f"dangerous_tokens: {report['dangerous_tokens_count']}")
     print(f"sensitive_path_tokens: {report['sensitive_path_tokens_count']}")
@@ -904,6 +1034,7 @@ def build_policy_report(session: InteractiveSession) -> dict[str, Any]:
     return {
         "permission_mode": session.agent.config.permission_mode,
         "allow_network": session.agent.config.allow_network,
+        "policy_preset": session.agent.config.policy_preset,
         "policy_file": str(session.agent.config.policy_file) if session.agent.config.policy_file else "<none>",
         "dangerous_tokens_count": len(rules.dangerous_tokens),
         "sensitive_path_tokens_count": len(rules.sensitive_path_tokens),
@@ -979,6 +1110,7 @@ def build_debug_bundle(session: InteractiveSession) -> dict[str, Any]:
             "api_key_present": bool(config.api_key),
             "permission": config.permission_mode,
             "allow_network": config.allow_network,
+            "policy_preset": config.policy_preset,
             "shell": config.shell_kind,
             "sandbox": config.sandbox_kind,
             "sandbox_image": config.sandbox_image,
@@ -1021,6 +1153,7 @@ def redact_debug_value(value: Any) -> Any:
 def build_doctor_report(session: InteractiveSession) -> dict[str, Any]:
     checks = [
         doctor_check_workspace(session),
+        *doctor_check_config_files(session),
         doctor_check_session(session),
         doctor_check_model(session),
         doctor_check_policy(session),
@@ -1044,6 +1177,35 @@ def doctor_check_workspace(session: InteractiveSession) -> dict[str, str]:
     if not os.access(cwd, os.R_OK | os.W_OK | os.X_OK):
         return doctor_item("workspace", "warn", f"cwd may not be fully readable/writable: {cwd}")
     return doctor_item("workspace", "ok", str(cwd))
+
+
+def doctor_check_config_files(session: InteractiveSession) -> list[dict[str, str]]:
+    checks: list[dict[str, str]] = []
+    for label, path in (
+        ("user_config", default_user_config_path()),
+        ("project_config", session.agent.config.cwd / Defaults.LOCAL_CONFIG_FILE),
+    ):
+        if not path.exists():
+            checks.append(doctor_item(label, "ok", f"not present: {path}"))
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            checks.append(doctor_item(label, "error", f"unable to read {path}: {exc}"))
+            continue
+        except json.JSONDecodeError as exc:
+            checks.append(doctor_item(label, "error", f"invalid JSON {path}: {exc}"))
+            continue
+        if not isinstance(data, dict):
+            checks.append(doctor_item(label, "error", f"config must contain a JSON object: {path}"))
+            continue
+        warnings = validate_cli_defaults(data, path)
+        if warnings:
+            checks.extend(doctor_item(label, "warn", warning) for warning in warnings)
+        else:
+            version = data.get(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION)
+            checks.append(doctor_item(label, "ok", f"schema={version} path={path}"))
+    return checks
 
 
 def doctor_check_session(session: InteractiveSession) -> dict[str, str]:
@@ -1076,9 +1238,11 @@ def doctor_check_policy(session: InteractiveSession) -> dict[str, str]:
     config = session.agent.config
     if config.policy_file and not config.policy_file.is_file():
         return doctor_item("policy", "error", f"policy file not found: {config.policy_file}")
+    if config.policy_preset not in PolicyPresets.ALL:
+        return doctor_item("policy", "error", f"unknown policy preset: {config.policy_preset}")
     rules = session.agent.harness.policy.rules
     detail = (
-        f"mode={config.permission_mode} allow_network={config.allow_network} "
+        f"mode={config.permission_mode} preset={config.policy_preset} allow_network={config.allow_network} "
         f"write_allow={len(rules.write_allow_paths)} write_deny={len(rules.write_deny_paths)}"
     )
     return doctor_item("policy", "ok", detail)
@@ -1195,6 +1359,56 @@ def handle_events_command(session: InteractiveSession, argument: str) -> None:
         return
     for index, event in enumerate(events, start=1):
         print(f"{index}: {event.timestamp} {event.kind} {json.dumps(event.data, ensure_ascii=False, sort_keys=True)}")
+
+
+def handle_metrics_command(session: InteractiveSession, argument: str) -> None:
+    if argument and argument != "json":
+        print(f"Usage: {InteractiveCommands.METRICS} [json]")
+        return
+    if session.session_store is None:
+        print("no session store configured")
+        return
+    report = build_metrics_report(session)
+    if argument == "json":
+        print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+    print(f"events: {report['events']}")
+    print(f"traces: {report['traces']}")
+    print(f"tool_executions: {report['tool_executions']}")
+    print(f"tool_success: {report['tool_success']}")
+    print(f"tool_failed: {report['tool_failed']}")
+    print(f"tool_skipped: {report['tool_skipped']}")
+    print(f"permission_allows: {report['permission_allows']}")
+    print(f"permission_denies: {report['permission_denies']}")
+    print(f"tool_batches: {report['tool_batches']}")
+    print(f"tool_batch_avg_ms: {report['tool_batch_avg_ms']}")
+
+
+def build_metrics_report(session: InteractiveSession) -> dict[str, Any]:
+    events = session.session_store.load_events() if session.session_store else []
+    tool_events = [event for event in events if event.kind == EventKinds.TOOL_EXECUTION]
+    permission_events = [event for event in events if event.kind == EventKinds.PERMISSION_DECISION]
+    batch_events = [event for event in events if event.kind == EventKinds.TOOL_BATCH]
+    batch_durations = [
+        int(event.data["duration_ms"])
+        for event in batch_events
+        if isinstance(event.data.get("duration_ms"), int)
+    ]
+    traces = {str(event.data.get("trace_id")) for event in events if event.data.get("trace_id")}
+    statuses = [str(event.data.get("status", "")) for event in tool_events]
+    permission_decisions = [str(event.data.get("decision", "")) for event in permission_events]
+    return {
+        "events": len(events),
+        "traces": len(traces),
+        "tool_executions": len(tool_events),
+        "tool_success": statuses.count("success"),
+        "tool_failed": statuses.count("failed"),
+        "tool_skipped": statuses.count("skipped"),
+        "permission_allows": permission_decisions.count(ToolDecisionKinds.ALLOW),
+        "permission_denies": permission_decisions.count(ToolDecisionKinds.DENY),
+        "tool_batches": len(batch_events),
+        "tool_batch_avg_ms": int(sum(batch_durations) / len(batch_durations)) if batch_durations else 0,
+    }
 
 
 def handle_session_command(session: InteractiveSession, argument: str) -> None:
@@ -1505,6 +1719,7 @@ def print_config(config: AgentConfig) -> None:
     print(f"model: {config.model}")
     print(f"base_url: {redact_text(config.base_url)}")
     print(f"permission: {config.permission_mode}")
+    print(f"policy_preset: {config.policy_preset}")
     print(f"shell: {config.shell_kind}")
     print(f"sandbox: {config.sandbox_kind}")
     print(f"sandbox_image: {config.sandbox_image}")
@@ -1530,10 +1745,12 @@ def print_config(config: AgentConfig) -> None:
 def save_cli_config(path: Path, session: InteractiveSession) -> None:
     config = session.agent.config
     data: dict[str, Any] = {
+        CONFIG_SCHEMA_VERSION_KEY: CONFIG_SCHEMA_VERSION,
         "provider": config.provider,
         "model": config.model,
         "base_url": config.base_url,
         "permission": config.permission_mode,
+        "policy_preset": config.policy_preset,
         "shell": config.shell_kind,
         "sandbox": config.sandbox_kind,
         "sandbox_image": config.sandbox_image,

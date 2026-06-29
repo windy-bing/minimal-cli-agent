@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator, Iterator
+from uuid import uuid4
 
 from minimal_cli_agent.constants import LoopEventData, LoopEventTypes
 from minimal_cli_agent.exceptions import AgentFinished, FormatError, ModelRequestError, NonTerminatingAgentError
@@ -29,6 +30,8 @@ class Agent:
     ) -> Generator[LoopEvent, None, LoopResult]:
         options = options or LoopOptions()
         context = context or ChatContext()
+        previous_trace_id = self.harness.trace_id
+        self.harness.trace_id = context.metadata.get("trace_id") if isinstance(context.metadata.get("trace_id"), str) else uuid4().hex[:12]
         messages = list(context.messages)
         if not messages:
             messages.append(Message(role="system", content=options.system_prompt or SYSTEM_PROMPT))
@@ -46,7 +49,9 @@ class Agent:
                 observation = f"Model request failed: {exc}"
                 messages.append(Message(role="user", content=observation))
                 yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
-                return LoopResult(success=False, final_messages=messages)
+                result = LoopResult(success=False, final_messages=messages)
+                self.harness.trace_id = previous_trace_id
+                return result
             yield LoopEvent(type=LoopEventTypes.MODEL_OUTPUT, data={LoopEventData.CONTENT: output})
             messages.append(Message(role="assistant", content=output))
 
@@ -55,11 +60,15 @@ class Agent:
                 calls = parse_actions(output)
             except AgentFinished as exc:
                 yield LoopEvent(type=LoopEventTypes.DONE, data={LoopEventData.REASON: str(exc)})
-                return LoopResult(success=True, final_messages=messages)
+                result = LoopResult(success=True, final_messages=messages)
+                self.harness.trace_id = previous_trace_id
+                return result
             except FormatError as exc:
                 if options.allow_final_text:
                     yield LoopEvent(type=LoopEventTypes.TURN_COMPLETE, data={LoopEventData.REASON: "final text"})
-                    return LoopResult(success=True, final_messages=messages)
+                    result = LoopResult(success=True, final_messages=messages)
+                    self.harness.trace_id = previous_trace_id
+                    return result
                 observation = str(exc)
                 append_observation(observations, observation, self.config.max_output_chars)
                 yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
@@ -89,7 +98,9 @@ class Agent:
 
         messages.append(Message(role="user", content="Max steps reached. Stop and summarize current state."))
         yield LoopEvent(type=LoopEventTypes.MAX_STEPS, data={LoopEventData.MAX_STEPS: self.config.max_steps})
-        return LoopResult(success=False, final_messages=messages)
+        result = LoopResult(success=False, final_messages=messages)
+        self.harness.trace_id = previous_trace_id
+        return result
 
     def chat(
         self,

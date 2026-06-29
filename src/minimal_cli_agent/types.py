@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from minimal_cli_agent.constants import Defaults, PermissionModes, Providers, SessionFields
+from minimal_cli_agent.constants import Defaults, PermissionModes, PolicyPresets, Providers, SessionFields
 from minimal_cli_agent.redaction import redact_text
 
 Role = str
@@ -99,6 +99,7 @@ class AgentConfig:
     permission_mode: PermissionMode = PermissionModes.DEFAULT
     allow_network: bool = False
     policy_file: Path | None = None
+    policy_preset: str = PolicyPresets.DEFAULT
     mcp_config: Path | None = None
     plugin_paths: tuple[Path, ...] = field(default_factory=tuple)
     skill_paths: tuple[Path, ...] = field(default_factory=tuple)

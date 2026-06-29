@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import fnmatch
 import json
 from pathlib import PurePath
+from pathlib import Path
 import shlex
 import sys
 from typing import Literal
@@ -20,6 +21,7 @@ from minimal_cli_agent.constants import (
     EventKinds,
     PermissionEventFields,
     PermissionModes,
+    PolicyPresets,
     PolicyDefaults,
     PolicyFileFields,
     ToolDecisionKinds,
@@ -46,6 +48,7 @@ class ShellPolicyRules:
 
 def load_shell_policy_rules(config: AgentConfig) -> ShellPolicyRules:
     rules = ShellPolicyRules()
+    rules = apply_policy_preset(rules, config.policy_preset)
     if config.policy_file is None:
         return rules
 
@@ -59,13 +62,51 @@ def load_shell_policy_rules(config: AgentConfig) -> ShellPolicyRules:
     if not isinstance(raw, dict):
         raise ConfigurationError("Policy file must contain a JSON object.")
 
+    base_dir = config.policy_file.parent
+    allow_prefixes = read_token_list(raw, PolicyFileFields.ALLOW_COMMAND_PREFIXES)
+    allow_prefixes += read_command_prefix_files(raw, PolicyFileFields.ALLOW_COMMAND_PREFIX_FILES, base_dir)
     return ShellPolicyRules(
         dangerous_tokens=rules.dangerous_tokens + read_token_list(raw, PolicyFileFields.DENY_COMMAND_TOKENS),
         sensitive_path_tokens=rules.sensitive_path_tokens + read_token_list(raw, PolicyFileFields.SENSITIVE_PATH_TOKENS),
         network_command_tokens=rules.network_command_tokens + read_token_list(raw, PolicyFileFields.NETWORK_COMMAND_TOKENS),
-        allow_command_prefixes=read_token_list(raw, PolicyFileFields.ALLOW_COMMAND_PREFIXES),
-        write_allow_paths=read_path_list(raw, PolicyFileFields.WRITE_ALLOW_PATHS),
-        write_deny_paths=read_path_list(raw, PolicyFileFields.WRITE_DENY_PATHS),
+        allow_command_prefixes=rules.allow_command_prefixes + allow_prefixes,
+        write_allow_paths=rules.write_allow_paths + read_path_list(raw, PolicyFileFields.WRITE_ALLOW_PATHS),
+        write_deny_paths=rules.write_deny_paths + read_path_list(raw, PolicyFileFields.WRITE_DENY_PATHS),
+    )
+
+
+def apply_policy_preset(rules: ShellPolicyRules, preset: str) -> ShellPolicyRules:
+    if preset == PolicyPresets.DEFAULT:
+        return rules
+    if preset != PolicyPresets.STRICT:
+        raise ConfigurationError(f"Unknown policy preset: {preset}")
+    strict_sensitive = (
+        ".npmrc",
+        ".pypirc",
+        ".netrc",
+        "credentials.json",
+        "kubeconfig",
+        ".kube/config",
+        ".docker/config.json",
+        ".aws/credentials",
+        ".config/gcloud",
+    )
+    strict_write_deny = (
+        ".git/**",
+        ".agent/**",
+        ".minimal-agent.json",
+        "**/.env",
+        "**/.env.*",
+        "**/*secret*",
+        "**/*credential*",
+    )
+    return ShellPolicyRules(
+        dangerous_tokens=rules.dangerous_tokens,
+        sensitive_path_tokens=rules.sensitive_path_tokens + strict_sensitive,
+        network_command_tokens=rules.network_command_tokens,
+        allow_command_prefixes=rules.allow_command_prefixes,
+        write_allow_paths=rules.write_allow_paths,
+        write_deny_paths=rules.write_deny_paths + strict_write_deny,
     )
 
 
@@ -74,6 +115,32 @@ def read_token_list(raw: dict, field: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
         raise ConfigurationError(f"Policy field {field} must be a list of non-empty strings.")
     return tuple(item.lower() for item in value)
+
+
+def read_command_prefix_files(raw: dict, field: str, base_dir: Path) -> tuple[str, ...]:
+    paths = read_raw_string_list(raw, field)
+    prefixes: list[str] = []
+    for path_text in paths:
+        path = Path(path_text).expanduser()
+        if not path.is_absolute():
+            path = base_dir / path
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ConfigurationError(f"Unable to read policy allowlist file {path}: {exc}") from exc
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            prefixes.append(stripped.lower())
+    return tuple(prefixes)
+
+
+def read_raw_string_list(raw: dict, field: str) -> tuple[str, ...]:
+    value = raw.get(field, [])
+    if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
+        raise ConfigurationError(f"Policy field {field} must be a list of non-empty strings.")
+    return tuple(item.strip() for item in value)
 
 
 def read_path_list(raw: dict, field: str) -> tuple[str, ...]:

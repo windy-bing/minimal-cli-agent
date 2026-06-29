@@ -573,6 +573,26 @@ class ToolPipelineTest(unittest.TestCase):
         input_mock.assert_not_called()
         self.assertEqual(observation.result.output, "hello")
 
+    def test_policy_file_can_load_enterprise_allowlist_file(self) -> None:
+        with TemporaryDirectory() as tmp:
+            allowlist = Path(tmp) / "allow-prefixes.txt"
+            allowlist.write_text("# approved commands\nprintf \n", encoding="utf-8")
+            policy_file = Path(tmp) / "policy.json"
+            policy_file.write_text(json.dumps({"allow_command_prefix_files": ["allow-prefixes.txt"]}), encoding="utf-8")
+            harness = AgentHarness(AgentConfig(permission_mode="default", policy_file=policy_file))
+
+            with patch("builtins.input") as input_mock:
+                observation = harness.execute_shell("printf hello")
+
+        input_mock.assert_not_called()
+        self.assertEqual(observation.result.output, "hello")
+
+    def test_strict_policy_preset_blocks_common_secret_writes(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="autoEdit", policy_preset="strict"))
+
+        with self.assertRaisesRegex(PermissionDenied, "write_deny_paths"):
+            harness.execute_tool(ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": "notes/secret.txt", "content": "secret"})))
+
     def test_policy_file_write_allow_paths_restricts_workspace_writes(self) -> None:
         with TemporaryDirectory() as tmp:
             policy_file = Path(tmp) / "policy.json"

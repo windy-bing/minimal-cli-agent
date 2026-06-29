@@ -71,7 +71,7 @@ ls -la
 - transcript 接近配置的上下文预算时，才会触发上下文压缩。
 - 默认在压缩旧上下文时使用模型生成摘要；可用 `--no-summarize-context` 关闭。
 - 上下文压缩会保留初始用户目标，降低压缩后忘记原任务的风险。
-- 交互模式支持 readline 方向键历史，以及 `/history [number]` 查看和重放用户问题。
+- 交互模式支持方向键历史、slash 命令即时候选，以及 `/history [number]` 查看和重放用户问题。
 - 支持 `/events` 查看持久化 session 事件。
 - 支持 `/skills` 自动发现工作区 skill，并通过 `/skills load <name>|all` 加载。
 - 支持 `/workflow` typed workflow state，用于 create/show/step/done/clear。
@@ -103,6 +103,12 @@ ls -la
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
+```
+
+需要可复现依赖版本时：
+
+```bash
+pip install -c requirements.lock -e .
 ```
 
 项目已包含 `httpx[socks]`，模型请求可以读取 `http_proxy`、`https_proxy`、`all_proxy` 中的 SOCKS 代理配置。
@@ -141,7 +147,7 @@ minimal-agent
 minimal-agent "Analyze this project"
 ```
 
-输入 `/help` 查看交互命令。输入 `/` 会快速展示常用命令；输入 `/exit`、`/quit`、`exit` 或 `quit` 退出。默认每轮结束后会把 messages 保存到 `.agent/session.json`，下次运行时继续加载。使用 `--session path/to/session.json` 可以指定 JSON session 文件，使用 `--session-db path/to/session.sqlite` 可以启用 SQLite transcript/event store 和 retrieval memory，使用 `--no-session` 可以关闭持久化。
+输入 `/help` 查看交互命令。输入 `/` 会快速展示常用命令；在支持的终端里，键入 `/`、`/p` 等前缀时会即时显示匹配命令候选。输入 `/exit`、`/quit`、`exit` 或 `quit` 退出。默认每轮结束后会把 messages 保存到 `.agent/session.json`，下次运行时继续加载。使用 `--session path/to/session.json` 可以指定 JSON session 文件，使用 `--session-db path/to/session.sqlite` 可以启用 SQLite transcript/event store 和 retrieval memory，使用 `--no-session` 可以关闭持久化。
 
 启动默认配置会先读取 `~/.minimal-agent/config.json`，再读取项目内 `.minimal-agent.json`；项目配置优先于用户配置。CLI 参数和环境变量仍然拥有更高优先级。在 REPL 中可以用 `/model`、`/provider`、`/base-url`、`/permission`、`/policy`、`/mcp`、`/plugin` 和 `/skill` 查看或切换运行时配置，再用 `/config save` 写入项目 `.minimal-agent.json`，或用 `/config save user` 写入用户配置。
 
@@ -149,7 +155,7 @@ minimal-agent "Analyze this project"
 
 交互模式默认压缩工具过程输出：终端只显示工具名、目标路径或命令摘要、状态和输出大小，不直接倾倒完整文件内容。完整 observation 仍会保留在 agent context 里给模型使用。
 
-交互输入提示会带样式，并显示当前 provider/model 和 permission mode。在输入提示处按 `Ctrl-C` 只会清空当前输入并保持 REPL；在运行中的 turn 按 `Ctrl-C` 会中断当前 turn 并回到输入提示。每个 turn 结束后会显示完整耗时。
+交互输入提示会带样式，并显示当前 provider/model 和 permission mode。在支持的终端里可用 `Ctrl-R` 搜索历史，`Ctrl-J` 插入多行换行。在输入提示处按 `Ctrl-C` 只会清空当前输入并保持 REPL；在运行中的 turn 按 `Ctrl-C` 会中断当前 turn 并回到输入提示。每个 turn 结束后会显示完整耗时。
 
 如果多步骤 turn 正在运行，你输入一行并按 Enter，这行会被暂存为补充用户输入，并在同一 turn 的下一次模型调用前加入完整对话上下文。
 
@@ -188,6 +194,7 @@ minimal-agent "Analyze this project"
 /session import .agent/session-export.json
 /memory alpha
 /doctor
+/metrics
 /debug bundle .agent/debug-bundle.zip
 /plan improve test coverage
 /plan show
@@ -326,6 +333,7 @@ Profile 行为：
 --model-price-input-per-1m / --model-price-output-per-1m
 --allow-network  允许明显会访问网络的 shell 命令
 --policy-file    包含 shell policy allow/deny 和写入范围规则的 JSON 文件
+--policy-preset  内置安全策略预设：default 或 strict
 --mcp-config     包含 MCP servers 的 JSON 配置文件
 --plugin         plugins/<name> 下的 plugin manifest，或直接传入 plugin.json 路径
 --no-plugin-discovery 关闭插件自动发现
@@ -396,6 +404,14 @@ src/minimal_cli_agent/
 
 ## 扩展计划
 
+分层文档：
+
+- [快速上手](docs/quickstart.zh-CN.md)
+- [生产部署建议](docs/production.zh-CN.md)
+- [安全模型](docs/security.zh-CN.md)
+- [故障排查](docs/troubleshooting.zh-CN.md)
+- [Provider 测试矩阵](docs/provider-matrix.zh-CN.md)
+
 更完整的架构说明见 [docs/architecture.md](docs/architecture.md)。
 更细的 harness 差距分析和路线图见 [docs/harness-gap-analysis.zh-CN.md](docs/harness-gap-analysis.zh-CN.md)。
 
@@ -441,7 +457,7 @@ src/minimal_cli_agent/
 - `/delegate` 会运行一个 scoped read-only SubAgent，并把结果记录到 workflow state。
 - 上下文压缩会在接近配置的模型上下文预算时触发，并在压缩摘要中保留初始用户目标。
 - 默认启用模型生成式上下文摘要；可用 `--no-summarize-context` 关闭。
-- 交互模式支持 readline 方向键历史和 `/history [number]`。
+- 交互模式支持方向键历史、slash 命令即时候选和 `/history [number]`。
 
 已预留但保持最小实现：
 

@@ -6,8 +6,9 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from minimal_cli_agent.agent import Agent
-from minimal_cli_agent.cli import detect_explicit_options, format_duration, main, render_prompt, run_interactive, run_turn
+from minimal_cli_agent.cli import detect_explicit_options, format_duration, interactive_command_suggestions, main, render_prompt, run_interactive, run_turn
 from minimal_cli_agent.cli_events import parse_events_query
+from minimal_cli_agent.cli_config import load_cli_defaults, validate_cli_defaults
 from minimal_cli_agent.constants import EventKinds, PermissionEventFields
 from minimal_cli_agent.exceptions import ModelRequestError
 from minimal_cli_agent.harness import AgentHarness
@@ -190,7 +191,55 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
-        self.assertIn("Commands: /help, /config, /profile, /permission, /policy, /mcp, /plugin, /plugins, /skill, /skills, /context, /doctor, /debug, /history, /events, /session, /memory, /plan, /workflow, /delegate, /review, /exit", printed)
+        self.assertIn("Commands: /help, /config, /profile, /permission, /policy, /metrics, /mcp, /plugin, /plugins, /skill, /skills, /context, /doctor, /debug, /history, /events, /session, /memory, /plan, /workflow, /delegate, /review, /exit", printed)
+
+    def test_interactive_command_suggestions_show_all_commands_for_slash(self) -> None:
+        suggestions = interactive_command_suggestions("/")
+        commands = [command for command, _ in suggestions]
+
+        self.assertIn("/help", commands)
+        self.assertIn("/profile", commands)
+        self.assertIn("/exit", commands)
+        self.assertNotIn("/", commands)
+
+    def test_interactive_command_suggestions_filter_by_prefix(self) -> None:
+        suggestions = interactive_command_suggestions("/p")
+        commands = [command for command, _ in suggestions]
+
+        self.assertIn("/profile", commands)
+        self.assertIn("/provider", commands)
+        self.assertIn("/permission", commands)
+        self.assertNotIn("/help", commands)
+
+    def test_interactive_command_suggestions_include_command_arguments(self) -> None:
+        suggestions = interactive_command_suggestions("/permission ")
+        commands = [command for command, _ in suggestions]
+
+        self.assertIn("default", commands)
+        self.assertIn("autoEdit", commands)
+        self.assertIn("plan", commands)
+        self.assertIn("yolo", commands)
+
+    def test_interactive_command_suggestions_include_metrics_arguments(self) -> None:
+        suggestions = interactive_command_suggestions("/metrics ")
+        commands = [command for command, _ in suggestions]
+
+        self.assertEqual(commands, ["json"])
+
+    def test_cli_defaults_schema_warns_for_unknown_keys(self) -> None:
+        warnings = validate_cli_defaults({"provider": "ollama", "unknown_key": True})
+
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("unknown_key", warnings[0])
+
+    def test_load_cli_defaults_migrates_deprecated_keys(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".minimal-agent.json").write_text('{"command_timeout": 7}', encoding="utf-8")
+
+            defaults = load_cli_defaults(root)
+
+        self.assertEqual(defaults["timeout"], 7)
 
     def test_detect_explicit_options_supports_space_and_equals_forms(self) -> None:
         explicit = detect_explicit_options([
@@ -525,6 +574,26 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertIn(EventKinds.PERMISSION_DECISION, printed)
+
+    def test_run_interactive_metrics_summarizes_session_events(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            store = JsonSessionStore(Path(tmp) / "session.json")
+            store.append_event(EventRecord(kind=EventKinds.TOOL_EXECUTION, data={"status": "success", "trace_id": "abc"}))
+            store.append_event(EventRecord(kind=EventKinds.TOOL_BATCH, data={"duration_ms": 25, "trace_id": "abc"}))
+            store.append_event(EventRecord(kind=EventKinds.PERMISSION_DECISION, data={PermissionEventFields.DECISION: "allow", "trace_id": "abc"}))
+            config = AgentConfig(permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=store))
+
+            with patch("builtins.input", side_effect=["/metrics", "/metrics json", "/quit"]), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, ChatContext(), session_store=store)
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("events: 3", printed)
+        self.assertIn("traces: 1", printed)
+        self.assertIn("tool_batch_avg_ms: 25", printed)
+        self.assertIn('"permission_allows": 1', printed)
         self.assertIn("allow", printed)
 
     def test_run_interactive_events_filters_pages_and_outputs_json(self) -> None:
@@ -593,6 +662,7 @@ class CliTest(unittest.TestCase):
                 json.dumps({"mcpServers": {"coffee": {"url": "https://example.test/${TOKEN}"}}}),
                 encoding="utf-8",
             )
+            (root / ".minimal-agent.json").write_text('{"unknown_key": true}', encoding="utf-8")
             store = JsonSessionStore(root / "session.json")
             config = AgentConfig(
                 cwd=root,
@@ -612,6 +682,7 @@ class CliTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("overall: warn", printed)
         self.assertIn("warn: model - openai-compatible usually requires an API key", printed)
+        self.assertIn("Unknown config key", printed)
         self.assertIn("unresolved environment placeholders", printed)
         self.assertIn('"overall": "warn"', printed)
         self.assertNotIn("super-secret-token", printed)

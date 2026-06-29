@@ -162,6 +162,7 @@ class HarnessTest(unittest.TestCase):
             (root / "b.txt").write_text("beta", encoding="utf-8")
             store = JsonSessionStore(root / "session.json")
             harness = AgentHarness(AgentConfig(cwd=root, permission_mode="plan"), session_store=store)
+            harness.trace_id = "trace-123"
 
             harness.execute_tools(
                 [
@@ -175,6 +176,7 @@ class HarnessTest(unittest.TestCase):
         self.assertTrue(events[0].data["parallel"])
         self.assertEqual(events[0].data["status"], "ok")
         self.assertEqual(events[0].data["actions"], [Tools.READ_FILE, Tools.READ_FILE])
+        self.assertEqual(events[0].data["trace_id"], "trace-123")
 
     def test_execute_tools_records_parallel_error_metrics(self) -> None:
         with TemporaryDirectory() as tmp:

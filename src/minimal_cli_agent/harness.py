@@ -60,6 +60,7 @@ class AgentHarness:
         self.model = model or ModelGateway(config)
         self.context_manager = context_manager or CompactingContextManager(config, summarizer=self.model)
         self.session_store = session_store
+        self.trace_id: str | None = None
         self.policy = ShellPermissionPolicy(config, audit_recorder=self.record_event, confirmation_handler=confirmation_handler)
         self.environment = LocalEnvironment(config)
         self.file_environment = FileToolEnvironment(config)
@@ -176,6 +177,8 @@ class AgentHarness:
 
     def record_event(self, kind: str, data: dict) -> None:
         if self.session_store:
+            if self.trace_id and "trace_id" not in data:
+                data = {**data, "trace_id": self.trace_id}
             self.session_store.append_event(EventRecord(kind=kind, data=data))
 
     def prepare_context(self, messages: list[Message]) -> list[Message]:

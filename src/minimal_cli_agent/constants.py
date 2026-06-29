@@ -58,6 +58,12 @@ class PermissionModes:
     ALL: Final = (DEFAULT, AUTO_EDIT, PLAN, YOLO)
 
 
+class PolicyPresets:
+    DEFAULT: Final = "default"
+    STRICT: Final = "strict"
+    ALL: Final = (DEFAULT, STRICT)
+
+
 class ToolDecisionKinds:
     ALLOW: Final = ToolDecisionKind.ALLOW.value
     ASK: Final = ToolDecisionKind.ASK.value
@@ -173,6 +179,7 @@ class PolicyDefaults:
 class PolicyFileFields:
     DENY_COMMAND_TOKENS: Final = "deny_command_tokens"
     ALLOW_COMMAND_PREFIXES: Final = "allow_command_prefixes"
+    ALLOW_COMMAND_PREFIX_FILES: Final = "allow_command_prefix_files"
     WRITE_ALLOW_PATHS: Final = "write_allow_paths"
     WRITE_DENY_PATHS: Final = "write_deny_paths"
     SENSITIVE_PATH_TOKENS: Final = "sensitive_path_tokens"
@@ -287,6 +294,7 @@ class InteractiveCommands:
     BASE_URL: Final = "/base-url"
     PERMISSION: Final = "/permission"
     POLICY: Final = "/policy"
+    METRICS: Final = "/metrics"
     NETWORK: Final = "/network"
     SUMMARIZE: Final = "/summarize"
     CONTEXT: Final = "/context"
@@ -319,6 +327,7 @@ class InteractiveCommands:
         BASE_URL: "Switch provider base URL. Usage: /base-url <url>",
         PERMISSION: "Switch permission mode. Usage: /permission default|autoEdit|plan|yolo",
         POLICY: "Show active permission policy and session approvals. Usage: /policy [json]|explain <tool> <payload>",
+        METRICS: "Show session metrics from persisted events. Usage: /metrics [json]",
         NETWORK: "Toggle network shell commands. Usage: /network on|off",
         SUMMARIZE: "Toggle model context summaries. Usage: /summarize on|off",
         CONTEXT: "Manage context. Usage: /context status|compact|clear",
@@ -351,6 +360,7 @@ class InteractiveCommands:
         BASE_URL,
         PERMISSION,
         POLICY,
+        METRICS,
         NETWORK,
         SUMMARIZE,
         CONTEXT,

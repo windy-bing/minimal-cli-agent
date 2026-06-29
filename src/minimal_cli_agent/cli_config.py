@@ -6,13 +6,74 @@ import os
 from pathlib import Path
 from typing import Any
 
-from minimal_cli_agent.constants import Defaults, PermissionModes, Profiles, Providers, SandboxKinds
+from minimal_cli_agent.constants import Defaults, PermissionModes, PolicyPresets, Profiles, Providers, SandboxKinds
 from minimal_cli_agent.exceptions import ConfigurationError
 from minimal_cli_agent.logging_utils import get_logger
 from minimal_cli_agent.memory import JsonSessionStore, SQLiteSessionStore
 from minimal_cli_agent.types import ModelRoute
 
 logger = get_logger("cli_config")
+
+CONFIG_SCHEMA_VERSION = 1
+CONFIG_SCHEMA_VERSION_KEY = "config_schema_version"
+CONFIG_KEYS = frozenset(
+    {
+        CONFIG_SCHEMA_VERSION_KEY,
+        "allow_network",
+        "api_key",
+        "base_url",
+        "bill_failed_requests",
+        "context_compression_ratio",
+        "cwd",
+        "daily_cost_limit",
+        "daily_token_limit",
+        "max_input_tokens",
+        "max_output_tokens",
+        "max_request_cost",
+        "max_request_tokens",
+        "max_steps",
+        "mcp_config",
+        "model",
+        "model_circuit_cooldown",
+        "model_circuit_failure_threshold",
+        "model_context_tokens",
+        "model_fallback",
+        "model_max_concurrency",
+        "model_max_retries",
+        "model_price_input_per_1m",
+        "model_price_output_per_1m",
+        "model_queue_timeout",
+        "model_timeout",
+        "monthly_cost_limit",
+        "monthly_token_limit",
+        "permission",
+        "plugin",
+        "plugin_discovery",
+        "policy_file",
+        "policy_preset",
+        "profile",
+        "prompt_version",
+        "provider",
+        "sandbox",
+        "sandbox_image",
+        "sandbox_network",
+        "sandbox_read_only",
+        "session",
+        "session_db",
+        "shell",
+        "skill",
+        "summarize_context",
+        "timeout",
+        "usage_ledger",
+        "usage_subject",
+        "usage_tenant",
+    }
+)
+DEPRECATED_CONFIG_KEYS = {
+    "command_timeout": "timeout",
+    "model_context_window": "model_context_tokens",
+    "session_path": "session",
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,6 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--bill-failed-requests", action="store_true", help="Count failed model attempts against usage budgets.")
     parser.add_argument("--allow-network", action="store_true", help="Allow shell commands with obvious network access.")
     parser.add_argument("--policy-file", type=Path, help="JSON file with additional shell policy deny tokens.")
+    parser.add_argument("--policy-preset", choices=PolicyPresets.ALL, default=os.getenv("AGENT_POLICY_PRESET", PolicyPresets.DEFAULT), help="Built-in safety preset: default or strict.")
     parser.add_argument("--mcp-config", type=Path, help="JSON config file with MCP servers.")
     parser.add_argument("--plugin", action="append", default=[], help="Load a plugin manifest by path or by name under plugins/<name>.")
     plugin_discovery_group = parser.add_mutually_exclusive_group()
@@ -95,11 +157,39 @@ def load_cli_defaults(cwd: Path, explicit_config_file: Path | None = None) -> di
             raise ConfigurationError(f"Config file must be valid JSON: {path}") from exc
         if not isinstance(data, dict):
             raise ConfigurationError(f"Config file must contain a JSON object: {path}")
+        data = migrate_cli_defaults(data, path)
+        for warning in validate_cli_defaults(data, path):
+            logger.warning(warning)
         overwritten = sorted(set(merged).intersection(data))
         if overwritten:
             logger.info("Config %s overrides keys from earlier config files: %s", path, ", ".join(overwritten))
         merged.update(data)
     return merged
+
+
+def migrate_cli_defaults(data: dict[str, Any], path: Path | None = None) -> dict[str, Any]:
+    migrated = dict(data)
+    for old_key, new_key in DEPRECATED_CONFIG_KEYS.items():
+        if old_key not in migrated or new_key in migrated:
+            continue
+        migrated[new_key] = migrated[old_key]
+        location = f" in {path}" if path is not None else ""
+        logger.warning("Config key %s%s is deprecated; use %s.", old_key, location, new_key)
+    return migrated
+
+
+def validate_cli_defaults(data: dict[str, Any], path: Path | None = None) -> list[str]:
+    location = f" in {path}" if path is not None else ""
+    warnings: list[str] = []
+    unknown = sorted(set(data) - CONFIG_KEYS - set(DEPRECATED_CONFIG_KEYS))
+    if unknown:
+        warnings.append(f"Unknown config key(s){location}: {', '.join(unknown)}")
+    version = data.get(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION)
+    if not isinstance(version, int):
+        warnings.append(f"Config schema version{location} must be an integer.")
+    elif version > CONFIG_SCHEMA_VERSION:
+        warnings.append(f"Config schema version{location} is newer than this CLI supports: {version}>{CONFIG_SCHEMA_VERSION}")
+    return warnings
 
 
 def default_user_config_path() -> Path:
@@ -282,6 +372,7 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
         "--prompt-version": "prompt_version",
         "--permission": "permission",
         "--policy-file": "policy_file",
+        "--policy-preset": "policy_preset",
         "--mcp-config": "mcp_config",
         "--plugin": "plugin",
         "--skill": "skill",
