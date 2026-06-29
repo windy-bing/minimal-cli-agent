@@ -63,6 +63,21 @@ class MultiActionThenExitModel:
         return "Done.\n```bash-action\nexit\n```"
 
 
+class DuplicateReadThenExitModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, messages: list[Message]) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            return (
+                "Read twice.\n"
+                '```tool-action\n{"tool":"read_file","path":"input.txt"}\n```\n'
+                '```tool-action\n{"tool":"read_file","path":"input.txt"}\n```'
+            )
+        return "Done.\n```bash-action\nexit\n```"
+
+
 class RecordingBatchHarness(AgentHarness):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -103,6 +118,26 @@ class AgentTest(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(events[0].type, LoopEventTypes.STEP_START)
         self.assertEqual(events[-1].type, LoopEventTypes.DONE)
+
+    def test_chat_stream_deduplicates_identical_read_only_actions_before_events(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "input.txt").write_text("alpha", encoding="utf-8")
+            config = AgentConfig(cwd=root, permission_mode="plan")
+            harness = RecordingBatchHarness(config=config, model=DuplicateReadThenExitModel())
+            agent = Agent(config=config, harness=harness)
+
+            stream = agent.chat_stream("read", ChatContext())
+            events = []
+            while True:
+                try:
+                    events.append(next(stream))
+                except StopIteration:
+                    break
+
+        starts = [event for event in events if event.type == LoopEventTypes.TOOL_CALL_START]
+        self.assertEqual(len(starts), 1)
+        self.assertEqual(harness.batches[0], ["read_file"])
 
     def test_strict_chat_stream_keeps_format_recovery(self) -> None:
         config = AgentConfig(permission_mode="plan", max_steps=1)

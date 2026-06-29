@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from minimal_cli_agent.constants import EventKinds, Tools
-from minimal_cli_agent.harness import AgentHarness, Observation, bucket_tool_calls
+from minimal_cli_agent.harness import AgentHarness, Observation, bucket_tool_calls, canonical_payload
 from minimal_cli_agent.memory import JsonSessionStore
 from minimal_cli_agent.types import AgentConfig, CommandResult, ToolCall
 
@@ -128,6 +128,27 @@ class HarnessTest(unittest.TestCase):
 
         self.assertEqual([observation.action for observation in observations], ["read", "read_file"])
         self.assertEqual([observation.result.output for observation in observations], ["alpha", "beta"])
+
+    def test_consolidate_tool_calls_deduplicates_identical_read_only_calls(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="plan"))
+        calls = [
+            ToolCall(name="read", payload=json.dumps({"path": "a.txt"})),
+            ToolCall(name=Tools.READ_FILE, payload=json.dumps({"path": "a.txt"})),
+            ToolCall(name=Tools.READ_FORWARD, payload=json.dumps({"path": "a.txt", "offset": 0, "limit": 10})),
+            ToolCall(name=Tools.READ_FORWARD, payload=json.dumps({"limit": 10, "offset": 0, "path": "a.txt"})),
+            ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": "a.txt", "content": "x"})),
+            ToolCall(name=Tools.WRITE_FILE, payload=json.dumps({"path": "a.txt", "content": "x"})),
+        ]
+
+        consolidated = harness.consolidate_tool_calls(calls)
+
+        self.assertEqual([call.name for call in consolidated], ["read", Tools.READ_FORWARD, Tools.WRITE_FILE, Tools.WRITE_FILE])
+
+    def test_canonical_payload_normalizes_json_key_order(self) -> None:
+        left = canonical_payload('{"path":"a.txt","offset":0,"limit":10}')
+        right = canonical_payload('{"limit":10,"offset":0,"path":"a.txt"}')
+
+        self.assertEqual(left, right)
 
     def test_execute_tools_runs_parallel_safe_reads_concurrently(self) -> None:
         harness = SlowReadHarness(AgentConfig(permission_mode="plan"))

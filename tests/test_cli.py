@@ -8,6 +8,7 @@ from unittest.mock import patch
 from minimal_cli_agent.agent import Agent
 from minimal_cli_agent.cli import detect_explicit_options, format_duration, interactive_command_suggestions, main, render_prompt, run_interactive, run_turn
 from minimal_cli_agent.cli_events import parse_events_query
+from minimal_cli_agent.cli_format import summarize_observation
 from minimal_cli_agent.cli_config import load_cli_defaults, validate_cli_defaults
 from minimal_cli_agent.constants import EventKinds, PermissionEventFields
 from minimal_cli_agent.exceptions import ModelRequestError
@@ -359,6 +360,22 @@ class CliTest(unittest.TestCase):
         self.assertEqual(format_duration(0.25), "250ms")
         self.assertEqual(format_duration(1.5), "1.50s")
         self.assertEqual(format_duration(65), "1m5.0s")
+
+    def test_compact_observation_does_not_treat_read_file_content_as_plan_skip(self) -> None:
+        observation = (
+            "Command finished with exit code 0:\n"
+            "status: success\n"
+            "exit_code: 0\n"
+            "command:\n```text\nread_file src/minimal_cli_agent/policy.py\n```\n"
+            "output:\n```text\nif self.config.permission_mode == PermissionModes.PLAN:\n"
+            "    return ToolDecision(kind=ToolDecisionKinds.SKIP, reason=\"plan mode does not execute shell\")\n```"
+        )
+
+        summary = summarize_observation(observation)
+
+        self.assertIn("read_file", summary)
+        self.assertIn("status=success", summary)
+        self.assertNotIn("skipped:", summary)
 
     def test_run_turn_includes_supplemental_input_before_next_model_call(self) -> None:
         model = MultiStepCaptureModel()

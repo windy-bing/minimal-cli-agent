@@ -68,14 +68,14 @@ def summarize_tool_call(tool: str, payload: str) -> str:
 def summarize_observation(observation: str) -> str:
     if observation.startswith("Model request failed:"):
         return first_line(observation)
-    if is_plan_mode_block(observation):
-        reason = extract_output_block(observation).strip() or "plan mode blocked execution"
-        return f"skipped: {reason}"
 
     status = extract_field(observation, "status")
     exit_code = extract_field(observation, "exit_code")
     command = extract_command_block(observation)
     output = extract_output_block(observation)
+    if status == "skipped" and is_plan_mode_block(output):
+        reason = output.strip() or "plan mode blocked execution"
+        return f"skipped: {first_line(reason)}"
     prefix = summarize_command(command)
     metrics = summarize_output(output)
     pieces = [piece for piece in (prefix, f"status={status}" if status else "", f"exit={exit_code}" if exit_code else "", metrics) if piece]

@@ -57,7 +57,7 @@ class Agent:
 
             observations: list[str] = []
             try:
-                calls = parse_actions(output)
+                calls = self.harness.consolidate_tool_calls(parse_actions(output))
             except AgentFinished as exc:
                 yield LoopEvent(type=LoopEventTypes.DONE, data={LoopEventData.REASON: str(exc)})
                 result = LoopResult(success=True, final_messages=messages)

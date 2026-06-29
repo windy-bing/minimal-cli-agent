@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+import json
 import time
 
 from minimal_cli_agent.context import CompactingContextManager
@@ -200,6 +201,30 @@ class AgentHarness:
             observations.extend(self._execute_batch(batch))
         return observations
 
+    def consolidate_tool_calls(self, calls: list[ToolCall]) -> list[ToolCall]:
+        consolidated: list[ToolCall] = []
+        seen_read_keys: set[tuple[str, str]] = set()
+        for call in calls:
+            key = self.read_only_dedupe_key(call)
+            if key is not None:
+                if key in seen_read_keys:
+                    continue
+                seen_read_keys.add(key)
+            consolidated.append(call)
+        return consolidated
+
+    def read_only_dedupe_key(self, call: ToolCall) -> tuple[str, str] | None:
+        try:
+            spec = self.tool_registry.require(call.name)
+        except KeyError:
+            return None
+        if spec.name not in Tools.READ_ONLY:
+            return None
+        if spec.validate(call.payload) is not None:
+            return None
+        prepared = spec.prepare_payload(call.payload)
+        return (spec.name, canonical_payload(prepared))
+
     def _execute_batch(self, calls: list[ToolCall]) -> list[Observation]:
         started = time.monotonic()
         parallel = len(calls) > 1
@@ -270,3 +295,11 @@ def bucket_tool_calls(
     if read_bucket:
         buckets.append(read_bucket)
     return buckets
+
+
+def canonical_payload(payload: str) -> str:
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        return payload
+    return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
