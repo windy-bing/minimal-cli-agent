@@ -351,6 +351,7 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
         "--sandbox-image": "sandbox_image",
         "--sandbox-network": "sandbox_network",
         "--model-timeout": "model_timeout",
+        "--model-fallback": "model_fallback",
         "--model-max-retries": "model_max_retries",
         "--model-max-concurrency": "model_max_concurrency",
         "--model-queue-timeout": "model_queue_timeout",

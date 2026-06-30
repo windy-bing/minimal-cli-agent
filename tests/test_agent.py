@@ -6,7 +6,8 @@ from minimal_cli_agent.agent import Agent
 from minimal_cli_agent.constants import LoopEventTypes
 from minimal_cli_agent.exceptions import ModelRequestError
 from minimal_cli_agent.harness import AgentHarness, Observation
-from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message, ToolCall
+from minimal_cli_agent.model_gateway import ModelGateway
+from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message, ModelRoute, ToolCall
 import minimal_cli_agent
 
 
@@ -23,6 +24,18 @@ class PlainTextModel:
 class FailingModel:
     def complete(self, messages: list[Message]) -> str:
         raise ModelRequestError("timeout")
+
+
+class RouteModel:
+    def __init__(self, model: str, calls: list[str]) -> None:
+        self.model = model
+        self.calls = calls
+
+    def complete(self, messages: list[Message]) -> str:
+        self.calls.append(self.model)
+        if self.model == "primary":
+            raise ModelRequestError("primary unavailable")
+        return "fallback done\n```bash-action\nexit\n```"
 
 
 class WriteThenExitModel:
@@ -119,6 +132,23 @@ class AgentTest(unittest.TestCase):
         self.assertEqual(events[0].type, LoopEventTypes.STEP_START)
         self.assertEqual(events[1].type, LoopEventTypes.MODEL_WAIT)
         self.assertEqual(events[-1].type, LoopEventTypes.DONE)
+
+    def test_chat_stream_reports_actual_fallback_model_route(self) -> None:
+        calls: list[str] = []
+        config = AgentConfig(
+            permission_mode="plan",
+            model="primary",
+            model_fallbacks=(ModelRoute(provider="ollama", model="fallback", base_url="http://fallback"),),
+        )
+        gateway = ModelGateway(config, model_factory=lambda route_config: RouteModel(route_config.model, calls))
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=gateway))
+
+        events = list(agent.chat_stream("hello", ChatContext()))
+        route_event = next(event for event in events if event.type == LoopEventTypes.MODEL_ROUTE)
+
+        self.assertEqual(calls, ["primary", "fallback"])
+        self.assertEqual(route_event.data["model"], "fallback")
+        self.assertEqual(route_event.data["fallback_index"], 1)
 
     def test_chat_stream_deduplicates_identical_read_only_actions_before_events(self) -> None:
         with TemporaryDirectory() as tmp:

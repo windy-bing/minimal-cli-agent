@@ -53,6 +53,17 @@ class Agent:
                 result = LoopResult(success=False, final_messages=messages)
                 self.harness.trace_id = previous_trace_id
                 return result
+            if model_record := self.harness.latest_model_record():
+                yield LoopEvent(
+                    type=LoopEventTypes.MODEL_ROUTE,
+                    data={
+                        LoopEventData.PROVIDER: model_record.provider,
+                        LoopEventData.MODEL: model_record.model,
+                        LoopEventData.STATUS: model_record.status,
+                        LoopEventData.FALLBACK_INDEX: model_record.fallback_index,
+                        LoopEventData.ATTEMPT: model_record.attempt,
+                    },
+                )
             yield LoopEvent(type=LoopEventTypes.MODEL_OUTPUT, data={LoopEventData.CONTENT: output})
             messages.append(Message(role="assistant", content=output))
 
@@ -156,6 +167,8 @@ def print_event(event: LoopEvent) -> None:
         print(f"\n--- step {event.data[LoopEventData.STEP]}/{event.data[LoopEventData.MAX_STEPS]} ---")
     elif event.type == LoopEventTypes.MODEL_WAIT:
         print(f"[thinking] {event.data[LoopEventData.CONTENT]}...")
+    elif event.type == LoopEventTypes.MODEL_ROUTE:
+        print(format_model_route_event(event))
     elif event.type == LoopEventTypes.MODEL_OUTPUT:
         print(event.data[LoopEventData.CONTENT])
     elif event.type == LoopEventTypes.TOOL_CALL_START:
@@ -170,6 +183,15 @@ def print_event(event: LoopEvent) -> None:
         print(f"\n[max_steps] {event.data[LoopEventData.MAX_STEPS]}")
     else:
         print(f"\n[event:{event.type}] {event.data}")
+
+
+def format_model_route_event(event: LoopEvent) -> str:
+    fallback_index = int(event.data[LoopEventData.FALLBACK_INDEX])
+    route = "primary" if fallback_index == 0 else f"fallback#{fallback_index}"
+    return (
+        f"[model] {event.data[LoopEventData.PROVIDER]}/{event.data[LoopEventData.MODEL]} "
+        f"status={event.data[LoopEventData.STATUS]} route={route} attempt={event.data[LoopEventData.ATTEMPT]}"
+    )
 
 
 def append_observation(observations: list[str], observation: str, max_chars: int) -> None:

@@ -28,7 +28,7 @@ from minimal_cli_agent.file_tools import (
     write_file_validator,
 )
 from minimal_cli_agent.interfaces import ContextManager, Model, SessionStore
-from minimal_cli_agent.model_gateway import ModelGateway
+from minimal_cli_agent.model_gateway import ModelGateway, UsageRecord
 from minimal_cli_agent.mcp_tools import load_mcp_config, register_mcp_tools
 from minimal_cli_agent.policy import ConfirmationHandler, ShellPermissionPolicy
 from minimal_cli_agent.plugins import load_plugin_mcp_configs
@@ -187,6 +187,11 @@ class AgentHarness:
 
     def complete(self, messages: list[Message]) -> str:
         return self.model.complete(messages)
+
+    def latest_model_record(self) -> UsageRecord | None:
+        if isinstance(self.model, ModelGateway):
+            return self.model.last_record
+        return None
 
     def execute_shell(self, command: str) -> Observation:
         call = ToolCall(name=Tools.SHELL, payload=command)

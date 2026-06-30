@@ -217,6 +217,7 @@ class ModelGateway:
         self._semaphore_lock = threading.Lock()
         self._model_lock = threading.Lock()
         self._key_pool = KeyPool(tuple(key.strip() for key in (config.api_key or "").split(",") if key.strip()))
+        self.last_record: UsageRecord | None = None
 
     def complete(self, messages: list[Message]) -> str:
         input_tokens = estimate_message_tokens(messages)
@@ -347,25 +348,25 @@ class ModelGateway:
     ) -> None:
         output_tokens = estimate_tokens(output)
         total_tokens = input_tokens + output_tokens
-        self.ledger.append(
-            UsageRecord(
-                request_id=request_id,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                subject=self.config.usage_subject,
-                tenant=self.config.usage_tenant,
-                provider=route.provider,
-                model=route.model,
-                base_url=route.base_url,
-                prompt_version=self.config.prompt_version,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=total_tokens,
-                estimated_cost=estimate_cost(input_tokens, output_tokens, route),
-                latency_ms=latency_ms,
-                status=status,
-                error=error,
-                fallback_index=fallback_index,
-                attempt=attempt,
-                billable=billable,
-            )
+        record = UsageRecord(
+            request_id=request_id,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            subject=self.config.usage_subject,
+            tenant=self.config.usage_tenant,
+            provider=route.provider,
+            model=route.model,
+            base_url=route.base_url,
+            prompt_version=self.config.prompt_version,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            estimated_cost=estimate_cost(input_tokens, output_tokens, route),
+            latency_ms=latency_ms,
+            status=status,
+            error=error,
+            fallback_index=fallback_index,
+            attempt=attempt,
+            billable=billable,
         )
+        self.last_record = record
+        self.ledger.append(record)

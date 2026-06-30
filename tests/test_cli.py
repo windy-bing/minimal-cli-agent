@@ -260,6 +260,8 @@ class CliTest(unittest.TestCase):
             "--profile",
             "ollama",
             "--model=model-a",
+            "--model-fallback",
+            '{"provider":"ollama","model":"fallback","base_url":"http://fallback"}',
             "--base-url",
             "http://localhost:11434",
             "--no-session",
@@ -271,6 +273,7 @@ class CliTest(unittest.TestCase):
 
         self.assertIn("profile", explicit)
         self.assertIn("model", explicit)
+        self.assertIn("model_fallback", explicit)
         self.assertIn("base_url", explicit)
         self.assertIn("no_session", explicit)
         self.assertIn("plugin_discovery", explicit)

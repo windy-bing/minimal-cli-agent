@@ -17,6 +17,8 @@ def print_compact_event(event: LoopEvent) -> None:
         print(f"\n--- step {event.data[LoopEventData.STEP]}/{event.data[LoopEventData.MAX_STEPS]} ---")
     elif event.type == LoopEventTypes.MODEL_WAIT:
         print(f"[thinking] {event.data[LoopEventData.CONTENT]}...")
+    elif event.type == LoopEventTypes.MODEL_ROUTE:
+        print(format_model_route_event(event))
     elif event.type == LoopEventTypes.MODEL_OUTPUT:
         print_compact_model_output(str(event.data[LoopEventData.CONTENT]))
     elif event.type == LoopEventTypes.TOOL_CALL_START:
@@ -29,6 +31,15 @@ def print_compact_event(event: LoopEvent) -> None:
         print(f"[done] {event.data[LoopEventData.REASON]}")
     elif event.type == LoopEventTypes.MAX_STEPS:
         print(f"[max_steps] {event.data[LoopEventData.MAX_STEPS]}")
+
+
+def format_model_route_event(event: LoopEvent) -> str:
+    fallback_index = int(event.data[LoopEventData.FALLBACK_INDEX])
+    route = "primary" if fallback_index == 0 else f"fallback#{fallback_index}"
+    return (
+        f"[model] {event.data[LoopEventData.PROVIDER]}/{event.data[LoopEventData.MODEL]} "
+        f"status={event.data[LoopEventData.STATUS]} route={route} attempt={event.data[LoopEventData.ATTEMPT]}"
+    )
 
 
 def print_compact_model_output(content: str) -> None:
