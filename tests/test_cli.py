@@ -233,6 +233,7 @@ class CliTest(unittest.TestCase):
 
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertIn("model requested 1 action(s)", printed)
+        self.assertIn("- search: . for 'README'", printed)
         self.assertNotIn("tool-action", printed)
 
     def test_run_interactive_slash_shows_quick_hint(self) -> None:

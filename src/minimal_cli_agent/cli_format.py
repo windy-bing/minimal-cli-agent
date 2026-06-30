@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 from minimal_cli_agent.constants import LoopEventData, LoopEventTypes, Tools
+from minimal_cli_agent.exceptions import AgentFinished, FormatError
+from minimal_cli_agent.parser import parse_actions
 from minimal_cli_agent.types import AgentConfig, LoopEvent
 
 
@@ -16,6 +18,7 @@ _compact_stream_pending = ""
 _compact_stream_in_action_block = False
 _compact_stream_action_count = 0
 _compact_stream_printed_text = False
+_compact_stream_raw = ""
 
 
 def print_compact_event(event: LoopEvent) -> None:
@@ -61,12 +64,13 @@ def print_compact_model_output(content: str) -> None:
     if stripped:
         print(stripped)
     elif action_count:
-        print(f"model requested {action_count} action(s)")
+        print_action_summary(content, action_count)
 
 
 def print_compact_model_output_chunk(content: str) -> None:
-    global _compact_stream_pending
+    global _compact_stream_pending, _compact_stream_raw
     _compact_stream_pending += content
+    _compact_stream_raw += content
     drain_compact_stream_filter(flush=False)
 
 
@@ -75,11 +79,12 @@ def flush_compact_stream_filter() -> None:
 
 
 def reset_compact_stream_filter() -> None:
-    global _compact_stream_action_count, _compact_stream_in_action_block, _compact_stream_pending, _compact_stream_printed_text
+    global _compact_stream_action_count, _compact_stream_in_action_block, _compact_stream_pending, _compact_stream_printed_text, _compact_stream_raw
     _compact_stream_pending = ""
     _compact_stream_in_action_block = False
     _compact_stream_action_count = 0
     _compact_stream_printed_text = False
+    _compact_stream_raw = ""
 
 
 def drain_compact_stream_filter(flush: bool) -> None:
@@ -129,10 +134,22 @@ def next_action_block_start(content: str) -> int:
 
 
 def print_action_count_if_needed() -> None:
-    global _compact_stream_action_count
+    global _compact_stream_action_count, _compact_stream_raw
     if _compact_stream_action_count and not _compact_stream_printed_text:
-        print(f"model requested {_compact_stream_action_count} action(s)")
+        print_action_summary(_compact_stream_raw, _compact_stream_action_count)
     _compact_stream_action_count = 0
+    _compact_stream_raw = ""
+
+
+def print_action_summary(content: str, fallback_count: int) -> None:
+    try:
+        calls = parse_actions(content)
+    except (AgentFinished, FormatError):
+        calls = []
+    count = len(calls) if calls else fallback_count
+    print(f"model requested {count} action(s)")
+    for call in calls:
+        print(f"- {summarize_tool_call(call.name, call.payload)}")
 
 
 def summarize_tool_call(tool: str, payload: str) -> str:
