@@ -117,6 +117,7 @@ class AgentTest(unittest.TestCase):
 
         self.assertTrue(result.success)
         self.assertEqual(events[0].type, LoopEventTypes.STEP_START)
+        self.assertEqual(events[1].type, LoopEventTypes.MODEL_WAIT)
         self.assertEqual(events[-1].type, LoopEventTypes.DONE)
 
     def test_chat_stream_deduplicates_identical_read_only_actions_before_events(self) -> None:

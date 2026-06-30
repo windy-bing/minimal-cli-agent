@@ -15,6 +15,8 @@ ACTION_BLOCK_PATTERN = re.compile(r"```(?:bash-action|tool-action)\n.*?```", re.
 def print_compact_event(event: LoopEvent) -> None:
     if event.type == LoopEventTypes.STEP_START:
         print(f"\n--- step {event.data[LoopEventData.STEP]}/{event.data[LoopEventData.MAX_STEPS]} ---")
+    elif event.type == LoopEventTypes.MODEL_WAIT:
+        print(f"[thinking] {event.data[LoopEventData.CONTENT]}...")
     elif event.type == LoopEventTypes.MODEL_OUTPUT:
         print_compact_model_output(str(event.data[LoopEventData.CONTENT]))
     elif event.type == LoopEventTypes.TOOL_CALL_START:

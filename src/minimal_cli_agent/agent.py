@@ -43,6 +43,7 @@ class Agent:
                 type=LoopEventTypes.STEP_START,
                 data={LoopEventData.STEP: step, LoopEventData.MAX_STEPS: format_max_steps(self.config.max_steps)},
             )
+            yield LoopEvent(type=LoopEventTypes.MODEL_WAIT, data={LoopEventData.CONTENT: "waiting for model response"})
             try:
                 output = self.harness.complete(messages)
             except ModelRequestError as exc:
@@ -153,6 +154,8 @@ def format_max_steps(max_steps: int) -> int | str:
 def print_event(event: LoopEvent) -> None:
     if event.type == LoopEventTypes.STEP_START:
         print(f"\n--- step {event.data[LoopEventData.STEP]}/{event.data[LoopEventData.MAX_STEPS]} ---")
+    elif event.type == LoopEventTypes.MODEL_WAIT:
+        print(f"[thinking] {event.data[LoopEventData.CONTENT]}...")
     elif event.type == LoopEventTypes.MODEL_OUTPUT:
         print(event.data[LoopEventData.CONTENT])
     elif event.type == LoopEventTypes.TOOL_CALL_START:
