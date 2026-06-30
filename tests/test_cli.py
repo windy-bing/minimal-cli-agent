@@ -211,6 +211,30 @@ class CliTest(unittest.TestCase):
         self.assertIn("[action] read_file: README.md", printed)
         self.assertNotIn("tool-action", printed)
 
+    def test_compact_stream_output_reports_pure_action_blocks(self) -> None:
+        events = [
+            LoopEvent(type=LoopEventTypes.STEP_START, data={LoopEventData.STEP: 1, LoopEventData.MAX_STEPS: "unlimited"}),
+            LoopEvent(type=LoopEventTypes.MODEL_OUTPUT_CHUNK, data={LoopEventData.CONTENT: '```tool-action\n{"tool":"search","pattern":"README","path":"."}\n```\n'}),
+            LoopEvent(
+                type=LoopEventTypes.MODEL_ROUTE,
+                data={
+                    LoopEventData.PROVIDER: "ollama",
+                    LoopEventData.MODEL: "qwen",
+                    LoopEventData.STATUS: "success",
+                    LoopEventData.FALLBACK_INDEX: 0,
+                    LoopEventData.ATTEMPT: 1,
+                },
+            ),
+        ]
+
+        with patch("builtins.print") as print_mock:
+            for event in events:
+                print_compact_event(event)
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertIn("model requested 1 action(s)", printed)
+        self.assertNotIn("tool-action", printed)
+
     def test_run_interactive_slash_shows_quick_hint(self) -> None:
         model = CountingModel()
         config = AgentConfig(permission_mode="plan")

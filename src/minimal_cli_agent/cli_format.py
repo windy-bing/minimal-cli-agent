@@ -14,6 +14,8 @@ ACTION_BLOCK_STARTS = ("```bash-action", "```tool-action")
 MAX_ACTION_BLOCK_START_LENGTH = max(len(marker) for marker in ACTION_BLOCK_STARTS)
 _compact_stream_pending = ""
 _compact_stream_in_action_block = False
+_compact_stream_action_count = 0
+_compact_stream_printed_text = False
 
 
 def print_compact_event(event: LoopEvent) -> None:
@@ -73,19 +75,22 @@ def flush_compact_stream_filter() -> None:
 
 
 def reset_compact_stream_filter() -> None:
-    global _compact_stream_pending, _compact_stream_in_action_block
+    global _compact_stream_action_count, _compact_stream_in_action_block, _compact_stream_pending, _compact_stream_printed_text
     _compact_stream_pending = ""
     _compact_stream_in_action_block = False
+    _compact_stream_action_count = 0
+    _compact_stream_printed_text = False
 
 
 def drain_compact_stream_filter(flush: bool) -> None:
-    global _compact_stream_pending, _compact_stream_in_action_block
+    global _compact_stream_action_count, _compact_stream_in_action_block, _compact_stream_pending, _compact_stream_printed_text
     while _compact_stream_pending:
         if _compact_stream_in_action_block:
             end_index = _compact_stream_pending.find("```")
             if end_index == -1:
                 if flush:
                     _compact_stream_pending = ""
+                    print_action_count_if_needed()
                 else:
                     _compact_stream_pending = _compact_stream_pending[-2:]
                 return
@@ -104,18 +109,30 @@ def drain_compact_stream_filter(flush: bool) -> None:
                 _compact_stream_pending = _compact_stream_pending[-keep:] if keep else ""
             if printable:
                 print(printable, end="", flush=True)
+                _compact_stream_printed_text = _compact_stream_printed_text or bool(printable.strip())
+            if flush:
+                print_action_count_if_needed()
             return
 
         printable = _compact_stream_pending[:start_index]
         if printable:
             print(printable, end="", flush=True)
+            _compact_stream_printed_text = _compact_stream_printed_text or bool(printable.strip())
         _compact_stream_pending = _compact_stream_pending[start_index + 3 :]
         _compact_stream_in_action_block = True
+        _compact_stream_action_count += 1
 
 
 def next_action_block_start(content: str) -> int:
     indices = [index for marker in ACTION_BLOCK_STARTS if (index := content.find(marker)) != -1]
     return min(indices) if indices else -1
+
+
+def print_action_count_if_needed() -> None:
+    global _compact_stream_action_count
+    if _compact_stream_action_count and not _compact_stream_printed_text:
+        print(f"model requested {_compact_stream_action_count} action(s)")
+    _compact_stream_action_count = 0
 
 
 def summarize_tool_call(tool: str, payload: str) -> str:
