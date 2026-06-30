@@ -8,7 +8,7 @@ from unittest.mock import patch
 from minimal_cli_agent.agent import Agent
 from minimal_cli_agent.cli import InteractiveSession, detect_explicit_options, format_duration, interactive_command_suggestions, main, rebuild_agent, render_prompt, run_interactive, run_turn
 from minimal_cli_agent.cli_events import parse_events_query
-from minimal_cli_agent.cli_format import print_compact_event, summarize_observation
+from minimal_cli_agent.cli_format import print_compact_event, summarize_observation, summarize_tool_call
 from minimal_cli_agent.cli_config import load_cli_defaults, validate_cli_defaults
 from minimal_cli_agent.constants import EventKinds, LoopEventData, LoopEventTypes, PermissionEventFields
 from minimal_cli_agent.exceptions import ModelRequestError
@@ -235,6 +235,11 @@ class CliTest(unittest.TestCase):
         self.assertIn("model requested 1 action(s)", printed)
         self.assertIn("- search: . for 'README'", printed)
         self.assertNotIn("tool-action", printed)
+
+    def test_summarize_tool_call_includes_read_forward_paging(self) -> None:
+        summary = summarize_tool_call("read_forward", '{"path":"src/app.py","offset":24000,"limit":12000}')
+
+        self.assertEqual(summary, "read_forward: src/app.py offset 24000 limit 12000")
 
     def test_run_interactive_slash_shows_quick_hint(self) -> None:
         model = CountingModel()

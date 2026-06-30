@@ -162,8 +162,15 @@ def summarize_tool_call(tool: str, payload: str) -> str:
     if not isinstance(data, dict):
         return f"{tool}: {first_line(payload)}"
 
-    if tool in {Tools.READ_FILE, Tools.READ_TAIL, Tools.READ_FORWARD, Tools.FILE_INFO}:
+    if tool in {Tools.READ_FILE, Tools.FILE_INFO}:
         return f"{tool}: {compact_path(str(data.get('path', '<missing>')))}"
+    if tool == Tools.READ_TAIL:
+        return f"read_tail: {compact_path(str(data.get('path', '<missing>')))} last {data.get('lines', '?')} lines"
+    if tool == Tools.READ_FORWARD:
+        path = compact_path(str(data.get("path", "<missing>")))
+        if data.get("mode") == "lines":
+            return f"read_forward: {path} lines from {data.get('line_offset', '?')} limit {data.get('line_limit', '?')}"
+        return f"read_forward: {path} offset {data.get('offset', 0)} limit {data.get('limit', '?')}"
     if tool == Tools.SEARCH:
         pattern = str(data.get("pattern", ""))
         path = compact_path(str(data.get("path", ".")))

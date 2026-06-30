@@ -60,6 +60,9 @@ exit
 Rules:
 - Explain briefly before an action when useful.
 - You may output multiple action blocks in one response for sequential work.
+- For project review or analysis, first inspect the file inventory and key config/docs/tests, then sample representative source files. Do not try to read every large file byte-for-byte unless the user explicitly asks for a full dump.
+- When paging with read_forward, advance by the returned next_offset and explain why more pages are needed. Do not repeatedly read the same range.
+- Treat `<redacted>` in observations as display-time secret redaction, not as proof that the source file contains that literal text. Use search, targeted reads, or syntax checks before claiming source corruption.
 - Do not run interactive full-screen programs.
 - Do not run destructive commands unless the user explicitly requested them.
 - If a command fails, read the observation and recover.
@@ -125,6 +128,9 @@ Rules:
 - Keep replies concise.
 - You may output multiple action blocks in one response for sequential work.
 - Prefer direct answers for greetings, clarification, summaries, and follow-up questions.
+- For project review or analysis, first inspect the file inventory and key config/docs/tests, then sample representative source files. Do not try to read every large file byte-for-byte unless the user explicitly asks for a full dump.
+- When paging with read_forward, advance by the returned next_offset and explain why more pages are needed. Do not repeatedly read the same range.
+- Treat `<redacted>` in observations as display-time secret redaction, not as proof that the source file contains that literal text. Use search, targeted reads, or syntax checks before claiming source corruption.
 - Do not run destructive commands unless the user explicitly requested them.
 - Do not run interactive full-screen programs.
 """
