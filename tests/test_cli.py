@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from minimal_cli_agent.agent import Agent
-from minimal_cli_agent.cli import detect_explicit_options, format_duration, interactive_command_suggestions, main, render_prompt, run_interactive, run_turn
+from minimal_cli_agent.cli import InteractiveSession, detect_explicit_options, format_duration, interactive_command_suggestions, main, rebuild_agent, render_prompt, run_interactive, run_turn
 from minimal_cli_agent.cli_events import parse_events_query
 from minimal_cli_agent.cli_format import summarize_observation
 from minimal_cli_agent.cli_config import load_cli_defaults, validate_cli_defaults
@@ -14,6 +14,7 @@ from minimal_cli_agent.constants import EventKinds, PermissionEventFields
 from minimal_cli_agent.exceptions import ModelRequestError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import JsonSessionStore
+from minimal_cli_agent.model_gateway import ModelGateway
 from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact, extract_plan_paths
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message
 from minimal_cli_agent.types import EventRecord
@@ -537,6 +538,34 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(agent.config.model, "new-model")
+
+    def test_rebuild_agent_recreates_model_gateway_after_model_change(self) -> None:
+        config = AgentConfig(permission_mode="plan", model="old-model")
+        agent = Agent(config=config, harness=AgentHarness(config=config))
+        session = InteractiveSession(agent=agent, context=ChatContext())
+        old_model = session.agent.harness.model
+
+        session.agent.config.model = "new-model"
+        rebuild_agent(session)
+
+        self.assertIsInstance(old_model, ModelGateway)
+        new_model = session.agent.harness.model
+        if not isinstance(new_model, ModelGateway):
+            self.fail(f"expected ModelGateway, got {type(new_model).__name__}")
+        self.assertIsNot(new_model, old_model)
+        self.assertEqual(new_model.config.model, "new-model")
+
+    def test_rebuild_agent_preserves_injected_model(self) -> None:
+        model = CountingModel()
+        config = AgentConfig(permission_mode="plan", model="old-model")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
+        session = InteractiveSession(agent=agent, context=ChatContext())
+
+        session.agent.config.model = "new-model"
+        rebuild_agent(session)
+
+        self.assertIs(session.agent.harness.model, model)
+        self.assertEqual(session.agent.config.model, "new-model")
 
     def test_run_interactive_context_status_and_clear(self) -> None:
         model = CountingModel()

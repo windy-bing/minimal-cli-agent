@@ -54,6 +54,7 @@ from minimal_cli_agent.memory import JsonSessionStore, SQLiteSessionStore
 
 SessionStoreType = SessionStore | None
 from minimal_cli_agent.mcp_tools import load_mcp_config
+from minimal_cli_agent.model_gateway import ModelGateway
 from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact, build_plan_prompt, create_plan_artifact, extract_plan_paths, format_plan_artifact, format_plan_execution_context
 from minimal_cli_agent.plugins import (
     discover_plugin_paths,
@@ -1711,7 +1712,9 @@ def save_workflow(session: InteractiveSession, workflow: WorkflowArtifact) -> No
 
 def rebuild_agent(session: InteractiveSession, config: AgentConfig | None = None) -> None:
     config = replace(config or session.agent.config)
-    session.agent = Agent(config=config, harness=AgentHarness(config=config, model=session.agent.harness.model, session_store=session.session_store))
+    current_model = session.agent.harness.model
+    model = None if isinstance(current_model, ModelGateway) else current_model
+    session.agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=session.session_store))
 
 
 def print_config(config: AgentConfig) -> None:
