@@ -76,6 +76,7 @@ class LoopEventTypes:
     STEP_START: Final = "step_start"
     MODEL_WAIT: Final = "model_wait"
     MODEL_ROUTE: Final = "model_route"
+    MODEL_OUTPUT_CHUNK: Final = "model_output_chunk"
     MODEL_OUTPUT: Final = "model_output"
     TOOL_CALL_START: Final = "tool_call_start"
     TOOL_CALL_RESULT: Final = "tool_call_result"

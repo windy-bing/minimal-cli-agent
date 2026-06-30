@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import json
 import time
+from typing import cast
 
 from minimal_cli_agent.context import CompactingContextManager
 from minimal_cli_agent.constants import EventKinds, Tools
@@ -187,6 +188,15 @@ class AgentHarness:
 
     def complete(self, messages: list[Message]) -> str:
         return self.model.complete(messages)
+
+    def stream_complete(self, messages: list[Message]) -> Iterator[str] | None:
+        supports_streaming = getattr(self.model, "supports_streaming", None)
+        if callable(supports_streaming) and not supports_streaming():
+            return None
+        stream_method = getattr(self.model, "stream_complete", None)
+        if callable(stream_method):
+            return cast(Callable[[list[Message]], Iterator[str]], stream_method)(messages)
+        return None
 
     def latest_model_record(self) -> UsageRecord | None:
         if isinstance(self.model, ModelGateway):

@@ -8,15 +8,15 @@ from unittest.mock import patch
 from minimal_cli_agent.agent import Agent
 from minimal_cli_agent.cli import InteractiveSession, detect_explicit_options, format_duration, interactive_command_suggestions, main, rebuild_agent, render_prompt, run_interactive, run_turn
 from minimal_cli_agent.cli_events import parse_events_query
-from minimal_cli_agent.cli_format import summarize_observation
+from minimal_cli_agent.cli_format import print_compact_event, summarize_observation
 from minimal_cli_agent.cli_config import load_cli_defaults, validate_cli_defaults
-from minimal_cli_agent.constants import EventKinds, PermissionEventFields
+from minimal_cli_agent.constants import EventKinds, LoopEventData, LoopEventTypes, PermissionEventFields
 from minimal_cli_agent.exceptions import ModelRequestError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import JsonSessionStore
 from minimal_cli_agent.model_gateway import ModelGateway
 from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact, extract_plan_paths
-from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message
+from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, Message
 from minimal_cli_agent.types import EventRecord
 from minimal_cli_agent.workflow import WORKFLOW_METADATA_KEY
 
@@ -193,6 +193,23 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertIn("[thinking] waiting for model response...", printed)
+
+    def test_compact_stream_output_filters_action_blocks(self) -> None:
+        events = [
+            LoopEvent(type=LoopEventTypes.STEP_START, data={LoopEventData.STEP: 1, LoopEventData.MAX_STEPS: "unlimited"}),
+            LoopEvent(type=LoopEventTypes.MODEL_OUTPUT_CHUNK, data={LoopEventData.CONTENT: "I will read.\n```tool"}),
+            LoopEvent(type=LoopEventTypes.MODEL_OUTPUT_CHUNK, data={LoopEventData.CONTENT: '-action\n{"tool":"read_file","path":"README.md"}\n```'}),
+            LoopEvent(type=LoopEventTypes.TOOL_CALL_START, data={LoopEventData.TOOL: "read_file", LoopEventData.PAYLOAD: '{"tool":"read_file","path":"README.md"}'}),
+        ]
+
+        with patch("builtins.print") as print_mock:
+            for event in events:
+                print_compact_event(event)
+
+        printed = "".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertIn("I will read.", printed)
+        self.assertIn("[action] read_file: README.md", printed)
+        self.assertNotIn("tool-action", printed)
 
     def test_run_interactive_slash_shows_quick_hint(self) -> None:
         model = CountingModel()

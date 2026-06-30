@@ -1,4 +1,5 @@
 import unittest
+from collections.abc import Iterator
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -19,6 +20,18 @@ class FakeModel:
 class PlainTextModel:
     def complete(self, messages: list[Message]) -> str:
         return "你好，我可以帮你看代码、改文件或排查问题。"
+
+
+class StreamingModel:
+    def complete(self, messages: list[Message]) -> str:
+        return "Done.\n```bash-action\nexit\n```"
+
+    def supports_streaming(self) -> bool:
+        return True
+
+    def stream_complete(self, messages: list[Message]) -> Iterator[str]:
+        yield "Done."
+        yield "\n```bash-action\nexit\n```"
 
 
 class FailingModel:
@@ -149,6 +162,24 @@ class AgentTest(unittest.TestCase):
         self.assertEqual(calls, ["primary", "fallback"])
         self.assertEqual(route_event.data["model"], "fallback")
         self.assertEqual(route_event.data["fallback_index"], 1)
+
+    def test_chat_stream_emits_model_output_chunks_when_streaming(self) -> None:
+        config = AgentConfig(permission_mode="plan")
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=StreamingModel()))
+
+        stream = agent.chat_stream("finish", ChatContext())
+        events = []
+        while True:
+            try:
+                events.append(next(stream))
+            except StopIteration as exc:
+                result = exc.value
+                break
+
+        chunks = [event.data["content"] for event in events if event.type == LoopEventTypes.MODEL_OUTPUT_CHUNK]
+        self.assertTrue(result.success)
+        self.assertEqual("".join(chunks).strip(), "Done.\n```bash-action\nexit\n```")
+        self.assertFalse(any(event.type == LoopEventTypes.MODEL_OUTPUT for event in events))
 
     def test_chat_stream_deduplicates_identical_read_only_actions_before_events(self) -> None:
         with TemporaryDirectory() as tmp:

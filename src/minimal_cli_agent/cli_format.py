@@ -10,26 +10,37 @@ from minimal_cli_agent.types import AgentConfig, LoopEvent
 
 
 ACTION_BLOCK_PATTERN = re.compile(r"```(?:bash-action|tool-action)\n.*?```", re.DOTALL)
+ACTION_BLOCK_STARTS = ("```bash-action", "```tool-action")
+MAX_ACTION_BLOCK_START_LENGTH = max(len(marker) for marker in ACTION_BLOCK_STARTS)
+_compact_stream_pending = ""
+_compact_stream_in_action_block = False
 
 
 def print_compact_event(event: LoopEvent) -> None:
     if event.type == LoopEventTypes.STEP_START:
+        reset_compact_stream_filter()
         print(f"\n--- step {event.data[LoopEventData.STEP]}/{event.data[LoopEventData.MAX_STEPS]} ---")
     elif event.type == LoopEventTypes.MODEL_WAIT:
         print(f"[thinking] {event.data[LoopEventData.CONTENT]}...")
     elif event.type == LoopEventTypes.MODEL_ROUTE:
+        flush_compact_stream_filter()
         print(format_model_route_event(event))
+    elif event.type == LoopEventTypes.MODEL_OUTPUT_CHUNK:
+        print_compact_model_output_chunk(str(event.data[LoopEventData.CONTENT]))
     elif event.type == LoopEventTypes.MODEL_OUTPUT:
         print_compact_model_output(str(event.data[LoopEventData.CONTENT]))
     elif event.type == LoopEventTypes.TOOL_CALL_START:
+        flush_compact_stream_filter()
         print(f"[action] {summarize_tool_call(str(event.data[LoopEventData.TOOL]), str(event.data[LoopEventData.PAYLOAD]))}")
     elif event.type == LoopEventTypes.TOOL_CALL_RESULT:
         summary = summarize_observation(str(event.data[LoopEventData.OBSERVATION]))
         if summary:
             print(f"[observation] {summary}")
     elif event.type == LoopEventTypes.DONE:
+        flush_compact_stream_filter()
         print(f"[done] {event.data[LoopEventData.REASON]}")
     elif event.type == LoopEventTypes.MAX_STEPS:
+        flush_compact_stream_filter()
         print(f"[max_steps] {event.data[LoopEventData.MAX_STEPS]}")
 
 
@@ -49,6 +60,62 @@ def print_compact_model_output(content: str) -> None:
         print(stripped)
     elif action_count:
         print(f"model requested {action_count} action(s)")
+
+
+def print_compact_model_output_chunk(content: str) -> None:
+    global _compact_stream_pending
+    _compact_stream_pending += content
+    drain_compact_stream_filter(flush=False)
+
+
+def flush_compact_stream_filter() -> None:
+    drain_compact_stream_filter(flush=True)
+
+
+def reset_compact_stream_filter() -> None:
+    global _compact_stream_pending, _compact_stream_in_action_block
+    _compact_stream_pending = ""
+    _compact_stream_in_action_block = False
+
+
+def drain_compact_stream_filter(flush: bool) -> None:
+    global _compact_stream_pending, _compact_stream_in_action_block
+    while _compact_stream_pending:
+        if _compact_stream_in_action_block:
+            end_index = _compact_stream_pending.find("```")
+            if end_index == -1:
+                if flush:
+                    _compact_stream_pending = ""
+                else:
+                    _compact_stream_pending = _compact_stream_pending[-2:]
+                return
+            _compact_stream_pending = _compact_stream_pending[end_index + 3 :]
+            _compact_stream_in_action_block = False
+            continue
+
+        start_index = next_action_block_start(_compact_stream_pending)
+        if start_index == -1:
+            if flush:
+                printable = _compact_stream_pending
+                _compact_stream_pending = ""
+            else:
+                keep = min(len(_compact_stream_pending), MAX_ACTION_BLOCK_START_LENGTH - 1)
+                printable = _compact_stream_pending[:-keep] if keep else _compact_stream_pending
+                _compact_stream_pending = _compact_stream_pending[-keep:] if keep else ""
+            if printable:
+                print(printable, end="", flush=True)
+            return
+
+        printable = _compact_stream_pending[:start_index]
+        if printable:
+            print(printable, end="", flush=True)
+        _compact_stream_pending = _compact_stream_pending[start_index + 3 :]
+        _compact_stream_in_action_block = True
+
+
+def next_action_block_start(content: str) -> int:
+    indices = [index for marker in ACTION_BLOCK_STARTS if (index := content.find(marker)) != -1]
+    return min(indices) if indices else -1
 
 
 def summarize_tool_call(tool: str, payload: str) -> str:

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import json
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
+from minimal_cli_agent.constants import Providers
 from minimal_cli_agent.exceptions import ConfigurationError, ModelRequestError
 from minimal_cli_agent.interfaces import Model
 from minimal_cli_agent.model import ChatModel
@@ -287,6 +288,97 @@ class ModelGateway:
                         attempt=attempt,
                         billable=self.config.bill_failed_requests,
                     )
+                finally:
+                    semaphore.release()
+        if last_error is not None:
+            raise ModelRequestError(f"All model routes failed: {last_error}") from last_error
+        raise ModelRequestError("All model routes failed.")
+
+    def supports_streaming(self) -> bool:
+        return any(route.provider in {Providers.OLLAMA, Providers.OPENAI_COMPATIBLE, Providers.ANTHROPIC, Providers.GEMINI} for route in self._routes())
+
+    def stream_complete(self, messages: list[Message]) -> Iterator[str]:
+        input_tokens = estimate_message_tokens(messages)
+        routes = self._routes()
+        if not routes:
+            raise ConfigurationError("No model routes configured.")
+
+        request_id = str(uuid4())
+        last_error: Exception | None = None
+        for fallback_index, route in enumerate(routes):
+            if not self.circuit_breaker.allow(route):
+                last_error = ModelRequestError(f"Model route circuit is open: {route.provider}/{route.model}")
+                continue
+            self.limiter.check(input_tokens, route)
+            retries = max(0, route.max_retries)
+            for attempt in range(1, retries + 2):
+                semaphore = self._semaphore(route)
+                acquired = semaphore.acquire(timeout=self.config.model_queue_timeout)
+                if not acquired:
+                    last_error = ModelRequestError(f"Model route concurrency limit reached: {route.provider}/{route.model}")
+                    self._record(
+                        request_id=request_id,
+                        route=route,
+                        input_tokens=input_tokens,
+                        output="",
+                        latency_ms=int(self.config.model_queue_timeout * 1000),
+                        status="queue_timeout",
+                        error=str(last_error),
+                        fallback_index=fallback_index,
+                        attempt=attempt,
+                        billable=False,
+                    )
+                    continue
+                started = time.monotonic()
+                output_parts: list[str] = []
+                try:
+                    model = self._model_for(route)
+                    stream_method = getattr(model, "stream_complete", None)
+                    if not callable(stream_method):
+                        output = model.complete(messages)
+                        output_parts.append(output)
+                        if output:
+                            yield output
+                    else:
+                        for chunk in cast(Callable[[list[Message]], Iterator[str]], stream_method)(messages):
+                            output_parts.append(chunk)
+                            yield chunk
+                    output = "".join(output_parts)
+                    if self.config.validate_non_empty_model_output and not output.strip():
+                        raise ModelRequestError("Model returned an empty response.")
+                    latency_ms = int((time.monotonic() - started) * 1000)
+                    self.circuit_breaker.record_success(route)
+                    self._record(
+                        request_id=request_id,
+                        route=route,
+                        input_tokens=input_tokens,
+                        output=output,
+                        latency_ms=latency_ms,
+                        status="success",
+                        fallback_index=fallback_index,
+                        attempt=attempt,
+                        billable=True,
+                    )
+                    return
+                except ModelRequestError as exc:
+                    last_error = exc
+                    latency_ms = int((time.monotonic() - started) * 1000)
+                    self.circuit_breaker.record_failure(route)
+                    output = "".join(output_parts)
+                    self._record(
+                        request_id=request_id,
+                        route=route,
+                        input_tokens=input_tokens,
+                        output=output,
+                        latency_ms=latency_ms,
+                        status="error",
+                        error=str(exc),
+                        fallback_index=fallback_index,
+                        attempt=attempt,
+                        billable=self.config.bill_failed_requests,
+                    )
+                    if output_parts:
+                        raise ModelRequestError(f"Model stream failed after partial output: {exc}") from exc
                 finally:
                     semaphore.release()
         if last_error is not None:

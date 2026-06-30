@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any, Protocol
 
 from minimal_cli_agent.types import CommandResult, EventRecord, Message, ToolDecision
@@ -7,6 +8,11 @@ from minimal_cli_agent.types import CommandResult, EventRecord, Message, ToolDec
 
 class Model(Protocol):
     def complete(self, messages: list[Message]) -> str:
+        raise NotImplementedError
+
+
+class StreamingModel(Protocol):
+    def stream_complete(self, messages: list[Message]) -> Iterator[str]:
         raise NotImplementedError
 
 

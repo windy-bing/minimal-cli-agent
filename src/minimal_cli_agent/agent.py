@@ -45,7 +45,7 @@ class Agent:
             )
             yield LoopEvent(type=LoopEventTypes.MODEL_WAIT, data={LoopEventData.CONTENT: "waiting for model response"})
             try:
-                output = self.harness.complete(messages)
+                output, streamed = yield from self._complete_model(messages)
             except ModelRequestError as exc:
                 observation = f"Model request failed: {exc}"
                 messages.append(Message(role="user", content=observation))
@@ -64,7 +64,8 @@ class Agent:
                         LoopEventData.ATTEMPT: model_record.attempt,
                     },
                 )
-            yield LoopEvent(type=LoopEventTypes.MODEL_OUTPUT, data={LoopEventData.CONTENT: output})
+            if not streamed:
+                yield LoopEvent(type=LoopEventTypes.MODEL_OUTPUT, data={LoopEventData.CONTENT: output})
             messages.append(Message(role="assistant", content=output))
 
             observations: list[str] = []
@@ -127,6 +128,21 @@ class Agent:
             except StopIteration as exc:
                 return exc.value
 
+    def _complete_model(self, messages: list[Message]) -> Generator[LoopEvent, None, tuple[str, bool]]:
+        stream = self.harness.stream_complete(messages)
+        if stream is None:
+            return self.harness.complete(messages), False
+        chunks: list[str] = []
+        for chunk in stream:
+            if not chunk:
+                continue
+            chunks.append(chunk)
+            yield LoopEvent(type=LoopEventTypes.MODEL_OUTPUT_CHUNK, data={LoopEventData.CONTENT: chunk})
+        output = "".join(chunks)
+        if output and not output.endswith("\n"):
+            yield LoopEvent(type=LoopEventTypes.MODEL_OUTPUT_CHUNK, data={LoopEventData.CONTENT: "\n"})
+        return output, True
+
     def run(self, task: str) -> list[Message]:
         context = ChatContext(messages=self.harness.load_messages())
         stream = self.chat_stream(task, context)
@@ -169,6 +185,8 @@ def print_event(event: LoopEvent) -> None:
         print(f"[thinking] {event.data[LoopEventData.CONTENT]}...")
     elif event.type == LoopEventTypes.MODEL_ROUTE:
         print(format_model_route_event(event))
+    elif event.type == LoopEventTypes.MODEL_OUTPUT_CHUNK:
+        print(event.data[LoopEventData.CONTENT], end="", flush=True)
     elif event.type == LoopEventTypes.MODEL_OUTPUT:
         print(event.data[LoopEventData.CONTENT])
     elif event.type == LoopEventTypes.TOOL_CALL_START:
