@@ -240,7 +240,7 @@ class AgentTest(unittest.TestCase):
 
     def test_chat_stream_allows_unlimited_steps_when_max_steps_is_zero(self) -> None:
         model = LongRunningThenExitModel(exit_after=25)
-        config = AgentConfig(permission_mode="plan", max_steps=0)
+        config = AgentConfig(permission_mode="plan", max_steps=0, summarize_context=False)
         harness = AgentHarness(config=config, model=model)
         agent = Agent(config=config, harness=harness)
 

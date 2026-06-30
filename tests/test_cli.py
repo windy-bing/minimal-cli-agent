@@ -282,6 +282,10 @@ class CliTest(unittest.TestCase):
             "--model-streaming",
             "--model-output-segment-chars",
             "600",
+            "--max-context-chars",
+            "12000",
+            "--context-tail-messages",
+            "4",
             "--ollama-options",
             '{"num_ctx":4096,"think":false}',
             "--base-url",
@@ -298,6 +302,8 @@ class CliTest(unittest.TestCase):
         self.assertIn("model_fallback", explicit)
         self.assertIn("model_streaming", explicit)
         self.assertIn("model_output_segment_chars", explicit)
+        self.assertIn("max_context_chars", explicit)
+        self.assertIn("context_tail_messages", explicit)
         self.assertIn("ollama_options", explicit)
         self.assertIn("base_url", explicit)
         self.assertIn("no_session", explicit)
@@ -316,7 +322,7 @@ class CliTest(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / ".minimal-agent.json").write_text(
-                '{"provider":"openai-compatible","model":"configured-model","base_url":"http://configured","permission":"plan","ollama_options":{"num_ctx":4096}}',
+                '{"provider":"openai-compatible","model":"configured-model","base_url":"http://configured","permission":"plan","max_context_chars":12000,"context_tail_messages":4,"ollama_options":{"num_ctx":4096}}',
                 encoding="utf-8",
             )
 
@@ -328,6 +334,8 @@ class CliTest(unittest.TestCase):
         self.assertIn("provider: openai-compatible", printed)
         self.assertIn("model: configured-model", printed)
         self.assertIn('"num_ctx": 4096', printed)
+        self.assertIn("max_context_chars: 12000", printed)
+        self.assertIn("context_tail_messages: 4", printed)
         self.assertIn(f"session: {(root / '.agent' / 'session.json').resolve()}", printed)
 
     def test_main_can_disable_default_session(self) -> None:
@@ -390,7 +398,7 @@ class CliTest(unittest.TestCase):
         model = CountingModel()
         config = AgentConfig(permission_mode="plan", ollama_options={"think": False})
         agent = Agent(config=config, harness=AgentHarness(config=config, model=model))
-        context = ChatContext(messages=[Message(role="user", content="previous question")])
+        context = ChatContext(messages=[Message(role="user", content="previous question" + ("x" * 2000)) for _ in range(10)])
 
         with patch("builtins.input", side_effect=["/debug prompt 你好", "/quit"]), patch("builtins.print") as print_mock:
             exit_code = run_interactive(agent, context)
@@ -399,6 +407,8 @@ class CliTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(model.calls, 0)
         self.assertIn("prompt_messages:", printed)
+        self.assertIn("raw_prompt_messages:", printed)
+        self.assertIn("context_would_compact: True", printed)
         self.assertIn("prompt_estimated_tokens:", printed)
         self.assertIn("system_chars:", printed)
         self.assertIn('"think": false', printed)

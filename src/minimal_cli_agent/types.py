@@ -109,7 +109,7 @@ class AgentConfig:
     summarize_context: bool = True
     context_tail_messages: int = int(Defaults.CONTEXT_TAIL_MESSAGES)
     max_output_chars: int = 12000
-    max_context_chars: int = 60000
+    max_context_chars: int = 16000
     model_context_tokens: int | None = None
     context_compression_ratio: float = float(Defaults.CONTEXT_COMPRESSION_RATIO)
     model_fallbacks: tuple[ModelRoute, ...] = field(default_factory=tuple)

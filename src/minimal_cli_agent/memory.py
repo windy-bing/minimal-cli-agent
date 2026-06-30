@@ -476,13 +476,13 @@ def is_event_record(item) -> bool:
     )
 
 
-def compact_messages(messages: list[Message], max_chars: int) -> list[Message]:
+def compact_messages(messages: list[Message], max_chars: int, tail_messages: int = 8) -> list[Message]:
     total = sum(len(message.content) for message in messages)
     if total <= max_chars or len(messages) <= 4:
         return messages
 
     system = [message for message in messages if message.role == "system"][:1]
-    tail = messages[-8:]
+    tail = messages[-max(1, tail_messages) :]
     omitted = len(messages) - len(system) - len(tail)
     initial_goal = first_user_content(messages)
     goal_text = f" Initial user goal: {initial_goal}" if initial_goal else ""

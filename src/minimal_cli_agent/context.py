@@ -21,13 +21,13 @@ class CompactingContextManager:
         if not should_compact_context(messages, self.config):
             return messages
         if not self.config.summarize_context or self.summarizer is None:
-            return compact_messages(messages, self.config.max_context_chars)
+            return compact_messages(messages, self.config.max_context_chars, self.config.context_tail_messages)
 
         system = [message for message in messages if message.role == "system"][:1]
         tail = messages[-self.config.context_tail_messages :]
         older = messages[len(system) : max(len(system), len(messages) - len(tail))]
         if not older:
-            return compact_messages(messages, self.config.max_context_chars)
+            return compact_messages(messages, self.config.max_context_chars, self.config.context_tail_messages)
 
         cache_key = context_cache_key(older)
         summary = self.summary_cache.get(cache_key)
@@ -36,7 +36,7 @@ class CompactingContextManager:
             try:
                 summary_text = self.summarizer.complete(build_summary_prompt(older))
             except Exception:
-                return compact_messages(messages, self.config.max_context_chars)
+                return compact_messages(messages, self.config.max_context_chars, self.config.context_tail_messages)
             summary = Message(role="user", content=build_summary_message(summary_text, initial_goal))
             self.summary_cache[cache_key] = summary
             self.summary_cache.move_to_end(cache_key)

@@ -16,6 +16,19 @@ class SummaryModel:
 
 
 class ContextTest(unittest.TestCase):
+    def test_default_context_budget_compacts_large_local_history(self) -> None:
+        model = SummaryModel()
+        config = AgentConfig(summarize_context=False)
+        manager = CompactingContextManager(config, summarizer=model)
+        messages = [Message(role="system", content="system")]
+        messages.extend(Message(role="user", content=f"old {index} " + ("x" * 1200)) for index in range(20))
+
+        prepared = manager.prepare(messages)
+
+        self.assertEqual(model.calls, 0)
+        self.assertLess(sum(len(message.content) for message in prepared), sum(len(message.content) for message in messages))
+        self.assertIn("Context was compacted locally", prepared[1].content)
+
     def test_model_summary_context_is_opt_in(self) -> None:
         model = SummaryModel()
         config = AgentConfig(max_context_chars=10, summarize_context=False)

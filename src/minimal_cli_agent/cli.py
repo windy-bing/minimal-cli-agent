@@ -45,7 +45,7 @@ from minimal_cli_agent.cli_config import (
 from minimal_cli_agent.cli_events import parse_events_query
 from minimal_cli_agent.cli_format import format_duration, is_plan_mode_write_block, print_compact_event, render_prompt
 from minimal_cli_agent.constants import Defaults, EventKinds, InteractiveCommands, LoopEventData, LoopEventTypes, PermissionModes, PolicyPresets, Profiles, Providers, ToolDecisionKinds, ToolPayloadFields, Tools
-from minimal_cli_agent.context import estimate_context_tokens, total_message_chars
+from minimal_cli_agent.context import estimate_context_tokens, should_compact_context, total_message_chars
 from minimal_cli_agent.exceptions import AgentError, ConfigurationError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.interfaces import SessionStore
@@ -181,6 +181,8 @@ def main(argv: list[str] | None = None) -> int:
             plugin_paths=plugin_paths,
             skill_paths=merge_paths(resolve_skill_paths(skill_inputs, cwd.resolve()), plugin_skill_paths),
             summarize_context=summarize_context,
+            context_tail_messages=max(1, int(choose_config_value("context_tail_messages", args.context_tail_messages, local_defaults, explicit_options, ("AGENT_CONTEXT_TAIL_MESSAGES",)))),
+            max_context_chars=max(1, int(choose_config_value("max_context_chars", args.max_context_chars, local_defaults, explicit_options, ("AGENT_MAX_CONTEXT_CHARS",)))),
             model_context_tokens=optional_int(choose_config_value("model_context_tokens", args.model_context_tokens, local_defaults, explicit_options, ("AGENT_MODEL_CONTEXT_TOKENS",))),
             context_compression_ratio=float(choose_config_value("context_compression_ratio", args.context_compression_ratio, local_defaults, explicit_options, ("AGENT_CONTEXT_COMPRESSION_RATIO",))),
         ), profile, explicit_options=explicit_options)
@@ -207,6 +209,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"usage_subject: {config.usage_subject}")
             print(f"usage_tenant: {config.usage_tenant}")
             print(f"model_context_tokens: {config.model_context_tokens or '<none>'}")
+            print(f"max_context_chars: {config.max_context_chars}")
+            print(f"context_tail_messages: {config.context_tail_messages}")
             print(f"context_compression_ratio: {config.context_compression_ratio}")
             print(f"session: {session_path or '<none>'}")
             print(f"session_db: {session_db_path or '<none>'}")
@@ -1107,7 +1111,8 @@ def handle_debug_command(session: InteractiveSession, argument: str) -> None:
 
 
 def print_prompt_debug_report(session: InteractiveSession, message: str) -> None:
-    messages = build_prompt_debug_messages(session, message)
+    raw_messages = build_prompt_debug_messages(session, message)
+    messages = compact_messages(raw_messages, session.agent.config.max_context_chars, session.agent.config.context_tail_messages) if should_compact_context(raw_messages, session.agent.config) else raw_messages
     role_counts: dict[str, int] = {}
     role_chars: dict[str, int] = {}
     for item in messages:
@@ -1116,6 +1121,10 @@ def print_prompt_debug_report(session: InteractiveSession, message: str) -> None
     system = messages[0].content if messages and messages[0].role == "system" else ""
     user_tail = next((item.content for item in reversed(messages) if item.role == "user"), "")
 
+    print(f"raw_prompt_messages: {len(raw_messages)}")
+    print(f"raw_prompt_chars: {sum(len(item.content) for item in raw_messages)}")
+    print(f"raw_prompt_estimated_tokens: {estimate_message_tokens(raw_messages)}")
+    print(f"context_would_compact: {should_compact_context(raw_messages, session.agent.config)}")
     print(f"prompt_messages: {len(messages)}")
     print(f"prompt_chars: {sum(len(item.content) for item in messages)}")
     print(f"prompt_estimated_tokens: {estimate_message_tokens(messages)}")
@@ -1126,6 +1135,8 @@ def print_prompt_debug_report(session: InteractiveSession, message: str) -> None
     print(f"last_user_preview: {preview_debug_text(user_tail)}")
     print(f"model_streaming: {session.agent.config.model_streaming}")
     print(f"model_output_segment_chars: {session.agent.config.model_output_segment_chars}")
+    print(f"max_context_chars: {session.agent.config.max_context_chars}")
+    print(f"context_tail_messages: {session.agent.config.context_tail_messages}")
     print(f"ollama_options: {redact_text(json.dumps(session.agent.config.ollama_options, ensure_ascii=False, sort_keys=True)) if session.agent.config.ollama_options else '{}'}")
 
 
@@ -1378,7 +1389,11 @@ def handle_context_command(session: InteractiveSession, action: str) -> None:
     if action == "compact":
         before_messages = len(session.context.messages)
         before_chars = total_message_chars(session.context.messages)
-        session.context.messages = compact_messages(session.context.messages, max(1, session.agent.config.max_context_chars // 2))
+        session.context.messages = compact_messages(
+            session.context.messages,
+            max(1, session.agent.config.max_context_chars // 2),
+            session.agent.config.context_tail_messages,
+        )
         if session.session_store:
             session.session_store.save(session.context.messages)
         print(
@@ -1810,6 +1825,8 @@ def print_config(config: AgentConfig) -> None:
     print(f"usage_subject: {config.usage_subject}")
     print(f"usage_tenant: {config.usage_tenant}")
     print(f"model_context_tokens: {config.model_context_tokens or '<none>'}")
+    print(f"max_context_chars: {config.max_context_chars}")
+    print(f"context_tail_messages: {config.context_tail_messages}")
     print(f"context_compression_ratio: {config.context_compression_ratio}")
     print(f"mcp_config: {config.mcp_config or '<none>'}")
     plugins = ", ".join(path.parent.name for path in config.plugin_paths) if config.plugin_paths else "<none>"
@@ -1838,6 +1855,8 @@ def save_cli_config(path: Path, session: InteractiveSession) -> None:
         "model_output_segment_chars": config.model_output_segment_chars,
         "max_steps": config.max_steps,
         "model_timeout": config.model_timeout,
+        "max_context_chars": config.max_context_chars,
+        "context_tail_messages": config.context_tail_messages,
         "context_compression_ratio": config.context_compression_ratio,
         "prompt_version": config.prompt_version,
     }

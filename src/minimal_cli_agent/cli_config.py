@@ -24,10 +24,12 @@ CONFIG_KEYS = frozenset(
         "base_url",
         "bill_failed_requests",
         "context_compression_ratio",
+        "context_tail_messages",
         "cwd",
         "daily_cost_limit",
         "daily_token_limit",
         "max_input_tokens",
+        "max_context_chars",
         "max_output_tokens",
         "max_request_cost",
         "max_request_tokens",
@@ -139,6 +141,8 @@ def build_parser() -> argparse.ArgumentParser:
     summarize_group.add_argument("--no-summarize-context", action="store_false", dest="summarize_context", help="Disable model context summaries.")
     parser.add_argument("--model-context-tokens", type=int, default=parse_optional_int_env("AGENT_MODEL_CONTEXT_TOKENS"), help="Approximate model context window. Context is compacted near this budget.")
     parser.add_argument("--context-compression-ratio", type=float, default=float(os.getenv("AGENT_CONTEXT_COMPRESSION_RATIO", Defaults.CONTEXT_COMPRESSION_RATIO)), help="Fraction of model context tokens that triggers compaction.")
+    parser.add_argument("--max-context-chars", type=int, default=int(os.getenv("AGENT_MAX_CONTEXT_CHARS", "16000")), help="Compact local session context when total message characters exceed this budget.")
+    parser.add_argument("--context-tail-messages", type=int, default=int(os.getenv("AGENT_CONTEXT_TAIL_MESSAGES", Defaults.CONTEXT_TAIL_MESSAGES)), help="Number of latest messages to keep after context compaction.")
     parser.add_argument("--show-config", action="store_true", help="Print resolved provider/model/base URL without secrets.")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logs for diagnostics.")
     parser.add_argument("--quiet", action="store_true", help="Only show error logs; CLI output is unchanged.")
@@ -368,6 +372,7 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
         "--api-key": "api_key",
         "--cwd": "cwd",
         "--max-steps": "max_steps",
+        "--max-context-chars": "max_context_chars",
         "--timeout": "timeout",
         "--shell": "shell",
         "--sandbox": "sandbox",
@@ -375,6 +380,7 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
         "--sandbox-network": "sandbox_network",
         "--model-timeout": "model_timeout",
         "--model-output-segment-chars": "model_output_segment_chars",
+        "--context-tail-messages": "context_tail_messages",
         "--ollama-options": "ollama_options",
         "--model-fallback": "model_fallback",
         "--model-max-retries": "model_max_retries",

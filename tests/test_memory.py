@@ -29,6 +29,14 @@ class MemoryTest(unittest.TestCase):
 
         self.assertIn("Initial user goal: original task: implement history", compacted[1].content)
 
+    def test_compact_messages_uses_configured_tail_size(self) -> None:
+        messages = [Message("system", "system")]
+        messages += [Message("user", str(i) * 20) for i in range(12)]
+
+        compacted = compact_messages(messages, max_chars=80, tail_messages=3)
+
+        self.assertEqual([message.content for message in compacted[-3:]], [messages[-3].content, messages[-2].content, messages[-1].content])
+
     def test_json_session_store_reads_legacy_message_list(self) -> None:
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "session.json"
