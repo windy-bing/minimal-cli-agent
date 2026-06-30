@@ -164,7 +164,7 @@ class AgentTest(unittest.TestCase):
         self.assertEqual(route_event.data["fallback_index"], 1)
 
     def test_chat_stream_emits_model_output_chunks_when_streaming(self) -> None:
-        config = AgentConfig(permission_mode="plan")
+        config = AgentConfig(permission_mode="plan", model_streaming=True)
         agent = Agent(config=config, harness=AgentHarness(config=config, model=StreamingModel()))
 
         stream = agent.chat_stream("finish", ChatContext())
@@ -180,6 +180,25 @@ class AgentTest(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual("".join(chunks).strip(), "Done.\n```bash-action\nexit\n```")
         self.assertFalse(any(event.type == LoopEventTypes.MODEL_OUTPUT for event in events))
+
+    def test_chat_stream_segments_complete_output_by_default(self) -> None:
+        config = AgentConfig(permission_mode="plan", model_output_segment_chars=5)
+        agent = Agent(config=config, harness=AgentHarness(config=config, model=FakeModel()))
+
+        stream = agent.chat_stream("finish", ChatContext())
+        events = []
+        while True:
+            try:
+                events.append(next(stream))
+            except StopIteration as exc:
+                result = exc.value
+                break
+
+        chunks = [event.data["content"] for event in events if event.type == LoopEventTypes.MODEL_OUTPUT_CHUNK]
+        self.assertTrue(result.success)
+        self.assertFalse(config.model_streaming)
+        self.assertGreater(len(chunks), 1)
+        self.assertEqual("".join(chunks).strip(), "Done.\n```bash-action\nexit\n```")
 
     def test_chat_stream_deduplicates_identical_read_only_actions_before_events(self) -> None:
         with TemporaryDirectory() as tmp:

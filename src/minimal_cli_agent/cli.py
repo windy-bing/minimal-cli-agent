@@ -148,6 +148,8 @@ def main(argv: list[str] | None = None) -> int:
             sandbox_network=str(choose_config_value("sandbox_network", args.sandbox_network, local_defaults, explicit_options, ("AGENT_SANDBOX_NETWORK",))),
             sandbox_read_only=bool_config_value(choose_config_value("sandbox_read_only", args.sandbox_read_only, local_defaults, explicit_options, ("AGENT_SANDBOX_READ_ONLY",)), default=False),
             model_timeout=int(choose_config_value("model_timeout", args.model_timeout, local_defaults, explicit_options, ("AGENT_MODEL_TIMEOUT",))),
+            model_streaming=bool_config_value(choose_config_value("model_streaming", args.model_streaming, local_defaults, explicit_options, ("AGENT_MODEL_STREAMING",)), default=False),
+            model_output_segment_chars=max(0, int(choose_config_value("model_output_segment_chars", args.model_output_segment_chars, local_defaults, explicit_options, ("AGENT_MODEL_OUTPUT_SEGMENT_CHARS",)))),
             model_fallbacks=parse_model_routes(normalize_model_fallbacks(fallback_values)),
             model_max_retries=int(choose_config_value("model_max_retries", args.model_max_retries, local_defaults, explicit_options, ("AGENT_MODEL_MAX_RETRIES",))),
             model_max_concurrency=int(choose_config_value("model_max_concurrency", args.model_max_concurrency, local_defaults, explicit_options, ("AGENT_MODEL_MAX_CONCURRENCY",))),
@@ -194,6 +196,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"sandbox_network: {config.sandbox_network}")
             print(f"sandbox_read_only: {config.sandbox_read_only}")
             print(f"policy_preset: {config.policy_preset}")
+            print(f"model_streaming: {config.model_streaming}")
+            print(f"model_output_segment_chars: {config.model_output_segment_chars}")
             print(f"model_price_input_per_1m: {config.model_price_input_per_1m}")
             print(f"model_price_output_per_1m: {config.model_price_output_per_1m}")
             print(f"usage_ledger: {config.usage_ledger_path or '<none>'}")
@@ -1730,6 +1734,8 @@ def print_config(config: AgentConfig) -> None:
     print(f"sandbox_read_only: {config.sandbox_read_only}")
     print(f"allow_network: {config.allow_network}")
     print(f"summarize_context: {config.summarize_context}")
+    print(f"model_streaming: {config.model_streaming}")
+    print(f"model_output_segment_chars: {config.model_output_segment_chars}")
     print(f"fallback_routes: {len(config.model_fallbacks)}")
     print(f"model_price_input_per_1m: {config.model_price_input_per_1m}")
     print(f"model_price_output_per_1m: {config.model_price_output_per_1m}")
@@ -1761,6 +1767,8 @@ def save_cli_config(path: Path, session: InteractiveSession) -> None:
         "sandbox_read_only": config.sandbox_read_only,
         "allow_network": config.allow_network,
         "summarize_context": config.summarize_context,
+        "model_streaming": config.model_streaming,
+        "model_output_segment_chars": config.model_output_segment_chars,
         "max_steps": config.max_steps,
         "model_timeout": config.model_timeout,
         "context_compression_ratio": config.context_compression_ratio,

@@ -95,6 +95,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sandbox-network", default=os.getenv("AGENT_SANDBOX_NETWORK", Defaults.SANDBOX_NETWORK), help="Docker network mode used by the command sandbox.")
     parser.add_argument("--sandbox-read-only", action="store_true", help="Mount the workspace read-only in the Docker command sandbox.")
     parser.add_argument("--model-timeout", type=int, default=int(os.getenv("AGENT_MODEL_TIMEOUT", Defaults.MODEL_TIMEOUT)))
+    streaming_group = parser.add_mutually_exclusive_group()
+    streaming_group.add_argument("--model-streaming", action="store_true", default=None, help="Stream model tokens when the provider supports it.")
+    streaming_group.add_argument("--no-model-streaming", action="store_false", dest="model_streaming", help="Disable provider streaming and wait for complete responses.")
+    parser.add_argument("--model-output-segment-chars", type=int, default=int(os.getenv("AGENT_MODEL_OUTPUT_SEGMENT_CHARS", "1200")), help="When not streaming, print complete model output in chunks of this many characters. 0 disables segmentation.")
     parser.add_argument("--model-fallback", action="append", default=parse_model_fallback_env(), help="JSON fallback route. Example: '{\"provider\":\"ollama\",\"model\":\"qwen3:1.7b\",\"base_url\":\"http://localhost:11434\"}'")
     parser.add_argument("--model-max-retries", type=int, default=int(os.getenv("AGENT_MODEL_MAX_RETRIES", "0")))
     parser.add_argument("--model-max-concurrency", type=int, default=int(os.getenv("AGENT_MODEL_MAX_CONCURRENCY", "4")))
@@ -351,6 +355,7 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
         "--sandbox-image": "sandbox_image",
         "--sandbox-network": "sandbox_network",
         "--model-timeout": "model_timeout",
+        "--model-output-segment-chars": "model_output_segment_chars",
         "--model-fallback": "model_fallback",
         "--model-max-retries": "model_max_retries",
         "--model-max-concurrency": "model_max_concurrency",
@@ -389,6 +394,8 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
         "--quiet": "quiet",
         "--summarize-context": "summarize_context",
         "--no-summarize-context": "summarize_context",
+        "--model-streaming": "model_streaming",
+        "--no-model-streaming": "model_streaming",
         "--plugin-discovery": "plugin_discovery",
         "--no-plugin-discovery": "plugin_discovery",
         "--no-session": "no_session",

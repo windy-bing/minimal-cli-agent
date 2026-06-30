@@ -129,9 +129,15 @@ class Agent:
                 return exc.value
 
     def _complete_model(self, messages: list[Message]) -> Generator[LoopEvent, None, tuple[str, bool]]:
+        if not self.config.model_streaming:
+            output = self.harness.complete(messages)
+            yield from self._emit_segmented_model_output(output)
+            return output, True
         stream = self.harness.stream_complete(messages)
         if stream is None:
-            return self.harness.complete(messages), False
+            output = self.harness.complete(messages)
+            yield from self._emit_segmented_model_output(output)
+            return output, True
         chunks: list[str] = []
         for chunk in stream:
             if not chunk:
@@ -142,6 +148,16 @@ class Agent:
         if output and not output.endswith("\n"):
             yield LoopEvent(type=LoopEventTypes.MODEL_OUTPUT_CHUNK, data={LoopEventData.CONTENT: "\n"})
         return output, True
+
+    def _emit_segmented_model_output(self, output: str) -> Generator[LoopEvent, None, None]:
+        segment_chars = self.config.model_output_segment_chars
+        if segment_chars <= 0:
+            yield LoopEvent(type=LoopEventTypes.MODEL_OUTPUT, data={LoopEventData.CONTENT: output})
+            return
+        for start in range(0, len(output), segment_chars):
+            yield LoopEvent(type=LoopEventTypes.MODEL_OUTPUT_CHUNK, data={LoopEventData.CONTENT: output[start : start + segment_chars]})
+        if output and not output.endswith("\n"):
+            yield LoopEvent(type=LoopEventTypes.MODEL_OUTPUT_CHUNK, data={LoopEventData.CONTENT: "\n"})
 
     def run(self, task: str) -> list[Message]:
         context = ChatContext(messages=self.harness.load_messages())

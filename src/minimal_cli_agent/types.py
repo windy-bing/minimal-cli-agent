@@ -96,6 +96,8 @@ class AgentConfig:
     sandbox_network: str = Defaults.SANDBOX_NETWORK
     sandbox_read_only: bool = False
     model_timeout: int = int(Defaults.MODEL_TIMEOUT)
+    model_streaming: bool = False
+    model_output_segment_chars: int = 1200
     permission_mode: PermissionMode = PermissionModes.DEFAULT
     allow_network: bool = False
     policy_file: Path | None = None
