@@ -175,6 +175,8 @@ def summarize_tool_call(tool: str, payload: str) -> str:
         pattern = str(data.get("pattern", ""))
         path = compact_path(str(data.get("path", ".")))
         return f"search: {path} for {pattern!r}"
+    if tool == Tools.GET_CONTEXT_REMAINING:
+        return "get_context_remaining"
     if tool == Tools.WRITE_FILE:
         content = str(data.get("content", ""))
         return f"write_file: {compact_path(str(data.get('path', '<missing>')))} ({len(content)} chars)"

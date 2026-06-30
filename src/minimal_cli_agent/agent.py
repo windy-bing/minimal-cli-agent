@@ -8,7 +8,8 @@ from minimal_cli_agent.exceptions import AgentFinished, FormatError, ModelReques
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.parser import parse_actions
 from minimal_cli_agent.prompts import SYSTEM_PROMPT
-from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, LoopResult, Message
+from minimal_cli_agent.tool_ledger import ToolCallLedger
+from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, LoopResult, Message, ToolCall
 
 OBSERVATION_TRUNCATED_MESSAGE = "Observation output truncated because the per-step budget was reached."
 
@@ -36,9 +37,11 @@ class Agent:
         if not messages:
             messages.append(Message(role="system", content=options.system_prompt or SYSTEM_PROMPT))
         messages.append(Message(role="user", content=message))
+        tool_ledger = ToolCallLedger()
 
         for step in iter_steps(self.config.max_steps):
             messages = self.harness.prepare_context(messages)
+            self.harness.update_context_budget(messages)
             yield LoopEvent(
                 type=LoopEventTypes.STEP_START,
                 data={LoopEventData.STEP: step, LoopEventData.MAX_STEPS: format_max_steps(self.config.max_steps)},
@@ -86,19 +89,28 @@ class Agent:
                 append_observation(observations, observation, self.config.max_output_chars)
                 yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
             else:
+                calls, skipped_calls = tool_ledger.filter_before_execution(calls)
                 for call in calls:
                     yield LoopEvent(
                         type=LoopEventTypes.TOOL_CALL_START,
                         data={LoopEventData.TOOL: call.name, LoopEventData.PAYLOAD: call.payload},
                     )
+                for skipped in skipped_calls:
+                    observation = skipped.result.as_observation()
+                    append_observation(observations, observation, self.config.max_output_chars)
+                    yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
                 try:
-                    tool_observations = self.harness.execute_tools(calls)
+                    tool_observations = self.harness.execute_tools(calls) if calls else []
                 except NonTerminatingAgentError as exc:
                     observation = str(exc)
                     append_observation(observations, observation, self.config.max_output_chars)
                     yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
                 else:
                     for tool_observation in tool_observations:
+                        tool_ledger.record_result(
+                            ToolCall(name=tool_observation.action, payload=tool_observation.payload),
+                            tool_observation.result,
+                        )
                         observation = tool_observation.to_message().content
                         append_observation(observations, observation, self.config.max_output_chars)
                         yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})

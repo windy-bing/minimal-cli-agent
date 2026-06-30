@@ -7,7 +7,7 @@ import json
 import time
 from typing import cast
 
-from minimal_cli_agent.context import CompactingContextManager
+from minimal_cli_agent.context import CompactingContextManager, estimate_context_tokens, total_message_chars
 from minimal_cli_agent.constants import EventKinds, Tools
 from minimal_cli_agent.environment import LocalEnvironment
 from minimal_cli_agent.file_tools import (
@@ -37,6 +37,11 @@ from minimal_cli_agent.tool_pipeline import ToolExecutionPipeline
 from minimal_cli_agent.tool_registry import ToolRegistry, ToolSpec
 from minimal_cli_agent.types import AgentConfig, CommandResult, EventRecord, Message, ToolCall
 
+GET_CONTEXT_REMAINING_SCHEMA = {
+    "type": "object",
+    "properties": {},
+}
+
 
 @dataclass
 class Observation:
@@ -63,6 +68,7 @@ class AgentHarness:
         self.context_manager = context_manager or CompactingContextManager(config, summarizer=self.model)
         self.session_store = session_store
         self.trace_id: str | None = None
+        self.context_budget_snapshot: dict[str, object] = {}
         self.policy = ShellPermissionPolicy(config, audit_recorder=self.record_event, confirmation_handler=confirmation_handler)
         self.environment = LocalEnvironment(config)
         self.file_environment = FileToolEnvironment(config)
@@ -135,6 +141,16 @@ class AgentHarness:
         )
         self.tool_registry.register(
             ToolSpec(
+                name=Tools.GET_CONTEXT_REMAINING,
+                description="Report the current model-visible context budget estimate.",
+                handler=self.get_context_remaining,
+                expected_format=Tools.GET_CONTEXT_REMAINING_EXPECTED_FORMAT,
+                aliases=Tools.GET_CONTEXT_REMAINING_ALIASES,
+                parameters_schema=GET_CONTEXT_REMAINING_SCHEMA,
+            )
+        )
+        self.tool_registry.register(
+            ToolSpec(
                 name=Tools.WRITE_FILE,
                 description="Write a UTF-8 text file inside the configured workspace.",
                 handler=self.file_environment.write_file,
@@ -185,6 +201,41 @@ class AgentHarness:
 
     def prepare_context(self, messages: list[Message]) -> list[Message]:
         return self.context_manager.prepare(messages)
+
+    def update_context_budget(self, messages: list[Message]) -> None:
+        chars_used = total_message_chars(messages)
+        estimated_tokens_used = estimate_context_tokens(messages)
+        snapshot: dict[str, object] = {
+            "chars_used": chars_used,
+            "max_context_chars": self.config.max_context_chars,
+            "chars_remaining": max(0, self.config.max_context_chars - chars_used),
+            "estimated_tokens_used": estimated_tokens_used,
+        }
+        if self.config.model_context_tokens is not None:
+            snapshot["model_context_tokens"] = self.config.model_context_tokens
+            snapshot["estimated_tokens_remaining"] = max(0, self.config.model_context_tokens - estimated_tokens_used)
+        self.context_budget_snapshot = snapshot
+
+    def get_context_remaining(self, payload: str) -> CommandResult:
+        if payload.strip():
+            try:
+                data = json.loads(payload)
+            except json.JSONDecodeError:
+                return CommandResult(command=f"{Tools.GET_CONTEXT_REMAINING} {payload}", exit_code=1, output="payload must be a JSON object")
+            if not isinstance(data, dict):
+                return CommandResult(command=f"{Tools.GET_CONTEXT_REMAINING} {payload}", exit_code=1, output="payload must be a JSON object")
+        snapshot = self.context_budget_snapshot or {
+            "chars_used": 0,
+            "max_context_chars": self.config.max_context_chars,
+            "chars_remaining": self.config.max_context_chars,
+            "estimated_tokens_used": 0,
+        }
+        return CommandResult(
+            command=Tools.GET_CONTEXT_REMAINING,
+            exit_code=0,
+            output=json.dumps(snapshot, ensure_ascii=False, indent=2),
+            metadata=snapshot,
+        )
 
     def complete(self, messages: list[Message]) -> str:
         return self.model.complete(messages)

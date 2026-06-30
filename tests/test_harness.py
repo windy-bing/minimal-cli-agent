@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from minimal_cli_agent.constants import EventKinds, Tools
 from minimal_cli_agent.harness import AgentHarness, Observation, bucket_tool_calls, canonical_payload
 from minimal_cli_agent.memory import JsonSessionStore
-from minimal_cli_agent.types import AgentConfig, CommandResult, ToolCall
+from minimal_cli_agent.types import AgentConfig, CommandResult, Message, ToolCall
 
 
 class SlowReadHarness(AgentHarness):
@@ -96,6 +96,18 @@ class HarnessTest(unittest.TestCase):
             )
 
         self.assertEqual(observation.result.output, "cde")
+
+    def test_get_context_remaining_reports_latest_budget_snapshot(self) -> None:
+        harness = AgentHarness(AgentConfig(permission_mode="plan", max_context_chars=100, model_context_tokens=50))
+        harness.update_context_budget([Message("system", "system"), Message("user", "hello")])
+
+        observation = harness.execute_tool(ToolCall(name=Tools.GET_CONTEXT_REMAINING, payload="{}"))
+        data = json.loads(observation.result.output)
+
+        self.assertEqual(observation.result.exit_code, 0)
+        self.assertEqual(data["max_context_chars"], 100)
+        self.assertIn("chars_remaining", data)
+        self.assertIn("estimated_tokens_remaining", data)
 
     def test_bucket_tool_calls_groups_reads_around_write_barriers(self) -> None:
         calls = [

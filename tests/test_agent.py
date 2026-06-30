@@ -104,6 +104,17 @@ class DuplicateReadThenExitModel:
         return "Done.\n```bash-action\nexit\n```"
 
 
+class RepeatReadForwardThenExitModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, messages: list[Message]) -> str:
+        self.calls += 1
+        if self.calls in {1, 2}:
+            return '```tool-action\n{"tool":"read_forward","path":"input.txt","offset":0,"limit":5}\n```'
+        return "Done.\n```bash-action\nexit\n```"
+
+
 class RecordingBatchHarness(AgentHarness):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -219,6 +230,22 @@ class AgentTest(unittest.TestCase):
         starts = [event for event in events if event.type == LoopEventTypes.TOOL_CALL_START]
         self.assertEqual(len(starts), 1)
         self.assertEqual(harness.batches[0], ["read_file"])
+
+    def test_chat_stream_skips_repeated_read_forward_range_across_steps(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "input.txt").write_text("alpha beta", encoding="utf-8")
+            config = AgentConfig(cwd=root, permission_mode="plan")
+            harness = RecordingBatchHarness(config=config, model=RepeatReadForwardThenExitModel())
+            agent = Agent(config=config, harness=harness)
+
+            events = list(agent.chat_stream("read", ChatContext()))
+
+        starts = [event for event in events if event.type == LoopEventTypes.TOOL_CALL_START]
+        observations = [event.data.get("observation", "") for event in events if event.type == LoopEventTypes.TOOL_CALL_RESULT]
+        self.assertEqual(len(starts), 1)
+        self.assertEqual(harness.batches, [["read_forward"]])
+        self.assertTrue(any("Repeated read_forward range skipped" in observation for observation in observations))
 
     def test_strict_chat_stream_keeps_format_recovery(self) -> None:
         config = AgentConfig(permission_mode="plan", max_steps=1)

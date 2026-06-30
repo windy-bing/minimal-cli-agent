@@ -260,13 +260,16 @@ class Tools:
     SEARCH: Final = "search"
     SEARCH_ALIASES: Final = ("grep", "rg")
     SEARCH_EXPECTED_FORMAT: Final = '{"pattern":"needle","path":".","top_k":20,"max_files":200,"timeout_ms":2000}'
+    GET_CONTEXT_REMAINING: Final = "get_context_remaining"
+    GET_CONTEXT_REMAINING_ALIASES: Final = ("context_remaining",)
+    GET_CONTEXT_REMAINING_EXPECTED_FORMAT: Final = "{}"
     WRITE_FILE: Final = "write_file"
     WRITE_FILE_ALIASES: Final = ("write", "writeFile")
     WRITE_FILE_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt","content":"new file content"}'
     EDIT_FILE: Final = "edit_file"
     EDIT_FILE_ALIASES: Final = ("edit", "patch_file", "patchFile")
     EDIT_FILE_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt","start_line":10,"end_line":12,"content":"replacement"}'
-    READ_ONLY: Final = (READ_FILE, READ_TAIL, READ_FORWARD, FILE_INFO, SEARCH)
+    READ_ONLY: Final = (READ_FILE, READ_TAIL, READ_FORWARD, FILE_INFO, SEARCH, GET_CONTEXT_REMAINING)
     WRITERS: Final = (WRITE_FILE, EDIT_FILE)
 
 
