@@ -35,6 +35,7 @@ from minimal_cli_agent.cli_config import (
     optional_float,
     optional_int,
     optional_str,
+    parse_json_object,
     parse_model_routes,
     resolve_default_session_path,
     resolve_optional_path,
@@ -54,7 +55,7 @@ from minimal_cli_agent.memory import JsonSessionStore, SQLiteSessionStore
 
 SessionStoreType = SessionStore | None
 from minimal_cli_agent.mcp_tools import load_mcp_config
-from minimal_cli_agent.model_gateway import ModelGateway
+from minimal_cli_agent.model_gateway import ModelGateway, estimate_message_tokens
 from minimal_cli_agent.plan import PLAN_METADATA_KEY, PlanArtifact, build_plan_prompt, create_plan_artifact, extract_plan_paths, format_plan_artifact, format_plan_execution_context
 from minimal_cli_agent.plugins import (
     discover_plugin_paths,
@@ -150,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
             model_timeout=int(choose_config_value("model_timeout", args.model_timeout, local_defaults, explicit_options, ("AGENT_MODEL_TIMEOUT",))),
             model_streaming=bool_config_value(choose_config_value("model_streaming", args.model_streaming, local_defaults, explicit_options, ("AGENT_MODEL_STREAMING",)), default=False),
             model_output_segment_chars=max(0, int(choose_config_value("model_output_segment_chars", args.model_output_segment_chars, local_defaults, explicit_options, ("AGENT_MODEL_OUTPUT_SEGMENT_CHARS",)))),
+            ollama_options=parse_json_object(choose_config_value("ollama_options", args.ollama_options, local_defaults, explicit_options, ("AGENT_OLLAMA_OPTIONS",)), "ollama_options"),
             model_fallbacks=parse_model_routes(normalize_model_fallbacks(fallback_values)),
             model_max_retries=int(choose_config_value("model_max_retries", args.model_max_retries, local_defaults, explicit_options, ("AGENT_MODEL_MAX_RETRIES",))),
             model_max_concurrency=int(choose_config_value("model_max_concurrency", args.model_max_concurrency, local_defaults, explicit_options, ("AGENT_MODEL_MAX_CONCURRENCY",))),
@@ -198,6 +200,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"policy_preset: {config.policy_preset}")
             print(f"model_streaming: {config.model_streaming}")
             print(f"model_output_segment_chars: {config.model_output_segment_chars}")
+            print(f"ollama_options: {redact_text(json.dumps(config.ollama_options, ensure_ascii=False, sort_keys=True)) if config.ollama_options else '{}'}")
             print(f"model_price_input_per_1m: {config.model_price_input_per_1m}")
             print(f"model_price_output_per_1m: {config.model_price_output_per_1m}")
             print(f"usage_ledger: {config.usage_ledger_path or '<none>'}")
@@ -571,7 +574,7 @@ def interactive_argument_suggestions(command: str) -> list[tuple[str, str]]:
         InteractiveCommands.SUMMARIZE: [("on", "Enable model context summaries."), ("off", "Disable model context summaries.")],
         InteractiveCommands.CONTEXT: [("status", "Show context size."), ("compact", "Compact context."), ("clear", "Clear context.")],
         InteractiveCommands.DOCTOR: [("json", "Print JSON health report.")],
-        InteractiveCommands.DEBUG: [("bundle", "Write redacted diagnostic bundle.")],
+        InteractiveCommands.DEBUG: [("prompt", "Show next prompt size."), ("bundle", "Write redacted diagnostic bundle.")],
         InteractiveCommands.METRICS: [("json", "Print JSON metrics report.")],
         InteractiveCommands.SESSION: [("stats", "Show session stats."), ("export", "Export session."), ("import", "Import session.")],
         InteractiveCommands.PLAN: [("show", "Show active plan."), ("clear", "Clear active plan.")],
@@ -1089,14 +1092,74 @@ def handle_doctor_command(session: InteractiveSession, argument: str) -> None:
 
 def handle_debug_command(session: InteractiveSession, argument: str) -> None:
     parts = argument.split(maxsplit=1)
+    if parts and parts[0] == "prompt":
+        message = parts[1] if len(parts) > 1 else "<next user message>"
+        print_prompt_debug_report(session, message)
+        return
     if not parts or parts[0] != "bundle":
-        print(f"Usage: {InteractiveCommands.DEBUG} bundle [path]")
+        print(f"Usage: {InteractiveCommands.DEBUG} prompt [message]|bundle [path]")
         return
     default_path = session.agent.config.cwd / ".agent" / "debug-bundle.json"
     output_path = resolve_path_option(parts[1], session.agent.config.cwd) if len(parts) > 1 else default_path
     bundle = build_debug_bundle(session)
     write_debug_bundle(output_path, bundle)
     print(f"debug_bundle: {output_path}")
+
+
+def print_prompt_debug_report(session: InteractiveSession, message: str) -> None:
+    messages = build_prompt_debug_messages(session, message)
+    role_counts: dict[str, int] = {}
+    role_chars: dict[str, int] = {}
+    for item in messages:
+        role_counts[item.role] = role_counts.get(item.role, 0) + 1
+        role_chars[item.role] = role_chars.get(item.role, 0) + len(item.content)
+    system = messages[0].content if messages and messages[0].role == "system" else ""
+    user_tail = next((item.content for item in reversed(messages) if item.role == "user"), "")
+
+    print(f"prompt_messages: {len(messages)}")
+    print(f"prompt_chars: {sum(len(item.content) for item in messages)}")
+    print(f"prompt_estimated_tokens: {estimate_message_tokens(messages)}")
+    print(f"roles: {format_role_report(role_counts, role_chars)}")
+    print(f"system_chars: {len(system)}")
+    print(f"system_preview: {preview_debug_text(system)}")
+    print(f"last_user_chars: {len(user_tail)}")
+    print(f"last_user_preview: {preview_debug_text(user_tail)}")
+    print(f"model_streaming: {session.agent.config.model_streaming}")
+    print(f"model_output_segment_chars: {session.agent.config.model_output_segment_chars}")
+    print(f"ollama_options: {redact_text(json.dumps(session.agent.config.ollama_options, ensure_ascii=False, sort_keys=True)) if session.agent.config.ollama_options else '{}'}")
+
+
+def build_prompt_debug_messages(session: InteractiveSession, message: str) -> list[Message]:
+    options = LoopOptions(
+        allow_final_text=True,
+        system_prompt=INTERACTIVE_SYSTEM_PROMPT,
+        interrupt_input_reader=read_supplemental_stdin,
+    )
+    options = with_configured_skills(session.agent.config, options)
+    options = with_active_plan_context(session.context, options)
+    messages = list(session.context.messages)
+    if options.system_prompt:
+        if messages and messages[0].role == "system":
+            messages[0] = Message(role="system", content=options.system_prompt)
+        else:
+            messages.insert(0, Message(role="system", content=options.system_prompt))
+    if message:
+        messages.append(Message(role="user", content=message))
+    return messages
+
+
+def format_role_report(role_counts: dict[str, int], role_chars: dict[str, int]) -> str:
+    parts = []
+    for role in sorted(role_counts):
+        parts.append(f"{role}={role_counts[role]}({role_chars.get(role, 0)} chars)")
+    return ", ".join(parts) if parts else "<none>"
+
+
+def preview_debug_text(text: str, limit: int = 180) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return redact_text(compact)
+    return redact_text(compact[: limit - 3] + "...")
 
 
 def build_debug_bundle(session: InteractiveSession) -> dict[str, Any]:
@@ -1121,6 +1184,9 @@ def build_debug_bundle(session: InteractiveSession) -> dict[str, Any]:
             "sandbox_image": config.sandbox_image,
             "sandbox_network": config.sandbox_network,
             "sandbox_read_only": config.sandbox_read_only,
+            "model_streaming": config.model_streaming,
+            "model_output_segment_chars": config.model_output_segment_chars,
+            "ollama_options": redact_debug_value(config.ollama_options),
             "mcp_config": str(config.mcp_config) if config.mcp_config else None,
             "plugins": [str(path) for path in config.plugin_paths],
             "skills": [str(path) for path in config.skill_paths],
@@ -1736,6 +1802,7 @@ def print_config(config: AgentConfig) -> None:
     print(f"summarize_context: {config.summarize_context}")
     print(f"model_streaming: {config.model_streaming}")
     print(f"model_output_segment_chars: {config.model_output_segment_chars}")
+    print(f"ollama_options: {redact_text(json.dumps(config.ollama_options, ensure_ascii=False, sort_keys=True)) if config.ollama_options else '{}'}")
     print(f"fallback_routes: {len(config.model_fallbacks)}")
     print(f"model_price_input_per_1m: {config.model_price_input_per_1m}")
     print(f"model_price_output_per_1m: {config.model_price_output_per_1m}")
@@ -1776,6 +1843,8 @@ def save_cli_config(path: Path, session: InteractiveSession) -> None:
     }
     if config.api_key:
         data["api_key"] = config.api_key
+    if config.ollama_options:
+        data["ollama_options"] = config.ollama_options
     if config.policy_file:
         data["policy_file"] = relative_or_absolute_path(config.policy_file, config.cwd)
     if config.mcp_config:

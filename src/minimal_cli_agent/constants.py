@@ -340,7 +340,7 @@ class InteractiveCommands:
         SUMMARIZE: "Toggle model context summaries. Usage: /summarize on|off",
         CONTEXT: "Manage context. Usage: /context status|compact|clear",
         DOCTOR: "Run local health checks for config, workspace, session, policy, MCP, and plugins. Usage: /doctor [json]",
-        DEBUG: "Export a redacted diagnostic bundle. Usage: /debug bundle [path]",
+        DEBUG: "Inspect diagnostics. Usage: /debug prompt [message]|bundle [path]",
         HISTORY: "Show or replay user prompt history. Usage: /history [number]",
         EVENTS: "Show persisted session events. Usage: /events [kind] [limit] [offset] [format=json]",
         SESSION: "Export, import, or inspect session state. Usage: /session stats|export [path]|import <path>",

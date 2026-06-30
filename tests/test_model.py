@@ -48,6 +48,29 @@ class ChatModelTest(unittest.TestCase):
         self.assertEqual(chunks, ["hel", "lo"])
         self.assertTrue(captured["payload"]["stream"])
 
+    def test_ollama_sends_configured_options(self) -> None:
+        captured: dict = {}
+
+        def fake_post_json(url: str, payload: dict, headers: dict | None = None, timeout: int = 120) -> dict:
+            captured["payload"] = payload
+            return {"message": {"content": "ok"}}
+
+        config = AgentConfig(
+            provider="ollama",
+            model="qwen",
+            base_url="http://ollama",
+            max_output_tokens=64,
+            ollama_options={"num_ctx": 4096, "think": False},
+        )
+
+        with patch("minimal_cli_agent.model.post_json", fake_post_json):
+            output = ChatModel(config).complete([Message(role="user", content="hello")])
+
+        self.assertEqual(output, "ok")
+        self.assertEqual(captured["payload"]["options"]["num_ctx"], 4096)
+        self.assertEqual(captured["payload"]["options"]["num_predict"], 64)
+        self.assertIs(captured["payload"]["options"]["think"], False)
+
     def test_openai_compatible_streams_delta_chunks(self) -> None:
         def fake_stream_sse_json(url: str, payload: dict, headers: dict | None = None, timeout: int = 120):
             yield {"choices": [{"delta": {"content": "hel"}}]}

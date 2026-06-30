@@ -60,8 +60,11 @@ class ChatModel:
             "messages": [message.to_dict() for message in messages],
             "stream": False,
         }
+        options = dict(self.config.ollama_options)
         if self.config.max_output_tokens:
-            payload["options"] = {"num_predict": self.config.max_output_tokens}
+            options["num_predict"] = self.config.max_output_tokens
+        if options:
+            payload["options"] = options
         data = post_json(url, payload, timeout=self.config.model_timeout)
         return str(data.get("message", {}).get("content", ""))
 
@@ -72,8 +75,11 @@ class ChatModel:
             "messages": [message.to_dict() for message in messages],
             "stream": True,
         }
+        options = dict(self.config.ollama_options)
         if self.config.max_output_tokens:
-            payload["options"] = {"num_predict": self.config.max_output_tokens}
+            options["num_predict"] = self.config.max_output_tokens
+        if options:
+            payload["options"] = options
         for data in stream_json(url, payload, timeout=self.config.model_timeout):
             message = data.get("message")
             if isinstance(message, dict):

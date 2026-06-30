@@ -40,10 +40,13 @@ CONFIG_KEYS = frozenset(
         "model_fallback",
         "model_max_concurrency",
         "model_max_retries",
+        "model_output_segment_chars",
         "model_price_input_per_1m",
         "model_price_output_per_1m",
         "model_queue_timeout",
+        "model_streaming",
         "model_timeout",
+        "ollama_options",
         "monthly_cost_limit",
         "monthly_token_limit",
         "permission",
@@ -99,6 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
     streaming_group.add_argument("--model-streaming", action="store_true", default=None, help="Stream model tokens when the provider supports it.")
     streaming_group.add_argument("--no-model-streaming", action="store_false", dest="model_streaming", help="Disable provider streaming and wait for complete responses.")
     parser.add_argument("--model-output-segment-chars", type=int, default=int(os.getenv("AGENT_MODEL_OUTPUT_SEGMENT_CHARS", "1200")), help="When not streaming, print complete model output in chunks of this many characters. 0 disables segmentation.")
+    parser.add_argument("--ollama-options", default=os.getenv("AGENT_OLLAMA_OPTIONS", ""), help='JSON object passed to Ollama API "options", e.g. \'{"num_ctx":4096,"think":false}\'.')
     parser.add_argument("--model-fallback", action="append", default=parse_model_fallback_env(), help="JSON fallback route. Example: '{\"provider\":\"ollama\",\"model\":\"qwen3:1.7b\",\"base_url\":\"http://localhost:11434\"}'")
     parser.add_argument("--model-max-retries", type=int, default=int(os.getenv("AGENT_MODEL_MAX_RETRIES", "0")))
     parser.add_argument("--model-max-concurrency", type=int, default=int(os.getenv("AGENT_MODEL_MAX_CONCURRENCY", "4")))
@@ -327,6 +331,21 @@ def normalize_model_fallbacks(value: Any) -> list[str]:
     return [str(value)]
 
 
+def parse_json_object(value: Any, name: str) -> dict[str, Any]:
+    if value is None or value == "":
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ConfigurationError(f"{name} must be a JSON object: {exc}") from exc
+        if isinstance(parsed, dict):
+            return parsed
+    raise ConfigurationError(f"{name} must be a JSON object")
+
+
 def merge_paths(*groups: tuple[Path, ...]) -> tuple[Path, ...]:
     seen: set[Path] = set()
     merged: list[Path] = []
@@ -356,6 +375,7 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
         "--sandbox-network": "sandbox_network",
         "--model-timeout": "model_timeout",
         "--model-output-segment-chars": "model_output_segment_chars",
+        "--ollama-options": "ollama_options",
         "--model-fallback": "model_fallback",
         "--model-max-retries": "model_max_retries",
         "--model-max-concurrency": "model_max_concurrency",
