@@ -336,6 +336,7 @@ class CliTest(unittest.TestCase):
         self.assertIn('"num_ctx": 4096', printed)
         self.assertIn("max_context_chars: 12000", printed)
         self.assertIn("context_tail_messages: 4", printed)
+        self.assertIn("summarize_context: False", printed)
         self.assertIn(f"session: {(root / '.agent' / 'session.json').resolve()}", printed)
 
     def test_main_can_disable_default_session(self) -> None:

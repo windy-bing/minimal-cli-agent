@@ -133,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
                 explicit_options,
                 ("AGENT_SUMMARIZE_CONTEXT",),
             ),
-            default=True,
+            default=False,
         )
         config = resolve_profile(AgentConfig(
             provider=str(choose_config_value("provider", args.provider, local_defaults, explicit_options, ("AGENT_PROVIDER",))),
@@ -203,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"model_streaming: {config.model_streaming}")
             print(f"model_output_segment_chars: {config.model_output_segment_chars}")
             print(f"ollama_options: {redact_text(json.dumps(config.ollama_options, ensure_ascii=False, sort_keys=True)) if config.ollama_options else '{}'}")
+            print(f"summarize_context: {config.summarize_context}")
             print(f"model_price_input_per_1m: {config.model_price_input_per_1m}")
             print(f"model_price_output_per_1m: {config.model_price_output_per_1m}")
             print(f"usage_ledger: {config.usage_ledger_path or '<none>'}")

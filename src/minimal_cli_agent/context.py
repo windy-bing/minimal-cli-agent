@@ -93,8 +93,15 @@ def build_summary_message(summary: str, initial_goal: str = "") -> str:
     return f"{goal}Context summary from earlier messages:\n{summary.strip()}"
 
 
-def first_user_content(messages: list[Message]) -> str:
+def first_user_content(messages: list[Message], limit: int = 500) -> str:
     for message in messages:
         if message.role == "user" and message.content.strip():
-            return message.content
+            content = " ".join(message.content.split())
+            if is_compacted_context_message(content):
+                continue
+            return content if len(content) <= limit else content[: limit - 3] + "..."
     return ""
+
+
+def is_compacted_context_message(content: str) -> bool:
+    return content.startswith(("Context was compacted locally.", "Initial user goal:", "Context summary from earlier messages:"))

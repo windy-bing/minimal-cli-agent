@@ -18,7 +18,7 @@ class SummaryModel:
 class ContextTest(unittest.TestCase):
     def test_default_context_budget_compacts_large_local_history(self) -> None:
         model = SummaryModel()
-        config = AgentConfig(summarize_context=False)
+        config = AgentConfig()
         manager = CompactingContextManager(config, summarizer=model)
         messages = [Message(role="system", content="system")]
         messages.extend(Message(role="user", content=f"old {index} " + ("x" * 1200)) for index in range(20))
@@ -52,6 +52,24 @@ class ContextTest(unittest.TestCase):
         self.assertIn("tests kept green", prepared[1].content)
         self.assertEqual([message.content for message in prepared[-2:]], ["recent user", "recent assistant"])
         self.assertIn("Summarize this prior transcript", model.last_messages[-1].content)
+
+    def test_model_summary_context_skips_prior_summary_as_initial_goal(self) -> None:
+        model = SummaryModel()
+        config = AgentConfig(max_context_chars=10, summarize_context=True, context_tail_messages=2)
+        manager = CompactingContextManager(config, summarizer=model)
+        messages = [
+            Message(role="system", content="system prompt"),
+            Message(role="user", content="Initial user goal:\nold nested summary"),
+            Message(role="user", content="real task"),
+            Message(role="assistant", content="old assistant " * 10),
+            Message(role="user", content="recent user"),
+            Message(role="assistant", content="recent assistant"),
+        ]
+
+        prepared = manager.prepare(messages)
+
+        self.assertIn("Initial user goal:\nreal task", prepared[1].content)
+        self.assertNotIn("old nested summary", prepared[1].content)
 
     def test_model_summary_context_uses_cache_for_same_older_messages(self) -> None:
         model = SummaryModel()

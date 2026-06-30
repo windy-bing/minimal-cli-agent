@@ -69,7 +69,7 @@ ls -la
 - 支持产品化权限模式：`default`、`autoEdit`、`plan`、`yolo`。
 - 默认把最近 session messages、active plan、typed workflow state 和权限审计事件持久化到 `.agent/session.json`，并使用 lock 文件和原子替换写入。
 - transcript 接近配置的上下文预算时，才会触发上下文压缩。
-- 默认在压缩旧上下文时使用模型生成摘要；可用 `--no-summarize-context` 关闭。
+- 默认在压缩旧上下文时使用本地截断摘要，避免为压缩额外请求模型；可用 `--summarize-context` 开启模型生成摘要。
 - 上下文压缩会保留初始用户目标，降低压缩后忘记原任务的风险。
 - 交互模式支持方向键历史、slash 命令即时候选，以及 `/history [number]` 查看和重放用户问题。
 - 支持 `/events` 查看持久化 session 事件。
@@ -338,7 +338,8 @@ Profile 行为：
 --plugin         plugins/<name> 下的 plugin manifest，或直接传入 plugin.json 路径
 --no-plugin-discovery 关闭插件自动发现
 --skill          skills/<name> 下的技能名，或直接传入 SKILL.md 路径
---no-summarize-context 关闭默认模型上下文摘要
+--summarize-context 开启模型上下文摘要
+--no-summarize-context 关闭模型上下文摘要
 --model-context-tokens 用于触发压缩的近似模型上下文窗口
 --context-compression-ratio 触发上下文压缩的预算比例
 --interactive    启动多轮交互 CLI 会话
@@ -456,7 +457,7 @@ src/minimal_cli_agent/
 - `/workflow` 会创建和更新 typed workflow state，可查看、清除，并可持久化到 session 文件。
 - `/delegate` 会运行一个 scoped read-only SubAgent，并把结果记录到 workflow state。
 - 上下文压缩会在接近配置的模型上下文预算时触发，并在压缩摘要中保留初始用户目标。
-- 默认启用模型生成式上下文摘要；可用 `--no-summarize-context` 关闭。
+- 默认使用本地上下文压缩；可用 `--summarize-context` 开启模型生成式上下文摘要。
 - 交互模式支持方向键历史、slash 命令即时候选和 `/history [number]`。
 
 已预留但保持最小实现：

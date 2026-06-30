@@ -29,6 +29,17 @@ class MemoryTest(unittest.TestCase):
 
         self.assertIn("Initial user goal: original task: implement history", compacted[1].content)
 
+    def test_compact_messages_skips_prior_compaction_as_initial_goal(self) -> None:
+        messages = [Message("system", "system")]
+        messages.append(Message("user", "Initial user goal:\nold nested summary"))
+        messages.append(Message("user", "real task"))
+        messages += [Message("assistant", str(i) * 20) for i in range(20)]
+
+        compacted = compact_messages(messages, max_chars=80)
+
+        self.assertIn("Initial user goal: real task", compacted[1].content)
+        self.assertNotIn("old nested summary", compacted[1].content)
+
     def test_compact_messages_uses_configured_tail_size(self) -> None:
         messages = [Message("system", "system")]
         messages += [Message("user", str(i) * 20) for i in range(12)]
