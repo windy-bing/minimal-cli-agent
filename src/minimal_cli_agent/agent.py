@@ -92,17 +92,24 @@ class Agent:
                 append_observation(model_observations, observation, self.config.max_output_chars)
                 yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
             else:
+                calls = assign_tool_call_ids(calls, trace_id=self.harness.trace_id or "trace", step=step)
                 calls, skipped_calls = tool_ledger.filter_before_execution(calls)
                 for call in calls:
                     yield LoopEvent(
                         type=LoopEventTypes.TOOL_CALL_START,
-                        data={LoopEventData.TOOL: call.name, LoopEventData.PAYLOAD: call.payload},
+                        data={LoopEventData.TOOL: call.name, LoopEventData.PAYLOAD: call.payload, LoopEventData.CALL_ID: call.call_id},
                     )
                 for skipped in skipped_calls:
                     observation = skipped.result.as_observation()
-                    model_observation = skipped.result.as_model_observation(self.config.model_observation_output_chars)
+                    model_observation = skipped.result.as_model_observation(
+                        self.config.model_observation_output_chars,
+                        call_id=skipped.call.call_id,
+                    )
                     append_observation(model_observations, model_observation, self.config.max_output_chars)
-                    yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
+                    yield LoopEvent(
+                        type=LoopEventTypes.TOOL_CALL_RESULT,
+                        data={LoopEventData.OBSERVATION: observation, LoopEventData.CALL_ID: skipped.call.call_id},
+                    )
                 try:
                     tool_observations = self.harness.execute_tools(calls) if calls else []
                 except NonTerminatingAgentError as exc:
@@ -112,13 +119,19 @@ class Agent:
                 else:
                     for tool_observation in tool_observations:
                         tool_ledger.record_result(
-                            ToolCall(name=tool_observation.action, payload=tool_observation.payload),
+                            ToolCall(name=tool_observation.action, payload=tool_observation.payload, call_id=tool_observation.call_id),
                             tool_observation.result,
                         )
                         observation = tool_observation.result.as_observation()
-                        model_observation = tool_observation.result.as_model_observation(self.config.model_observation_output_chars)
+                        model_observation = tool_observation.result.as_model_observation(
+                            self.config.model_observation_output_chars,
+                            call_id=tool_observation.call_id,
+                        )
                         append_observation(model_observations, model_observation, self.config.max_output_chars)
-                        yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
+                        yield LoopEvent(
+                            type=LoopEventTypes.TOOL_CALL_RESULT,
+                            data={LoopEventData.OBSERVATION: observation, LoopEventData.CALL_ID: tool_observation.call_id},
+                        )
 
             combined_observation = "\n\n".join(model_observations)
             messages.append(Message(role="user", content=combined_observation))
@@ -194,6 +207,14 @@ def read_supplemental_input(options: LoopOptions) -> str:
         return ""
     value = options.interrupt_input_reader()
     return value.strip() if value else ""
+
+
+def assign_tool_call_ids(calls: list[ToolCall], trace_id: str, step: int) -> list[ToolCall]:
+    assigned: list[ToolCall] = []
+    for index, call in enumerate(calls, start=1):
+        call_id = call.call_id or f"{trace_id}-s{step}-t{index}"
+        assigned.append(ToolCall(name=call.name, payload=call.payload, call_id=call_id))
+    return assigned
 
 
 def iter_steps(max_steps: int) -> Iterator[int]:

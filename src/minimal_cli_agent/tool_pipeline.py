@@ -55,11 +55,11 @@ class ToolExecutionPipeline:
                 suggested_tools=self.registry.suggested_names(call.name),
             )
             return CommandResult(command=call.payload, exit_code=127, output=discovery_error.as_observation(), skipped=True)
-        canonical_call = ToolCall(name=spec.name, payload=call.payload)
+        canonical_call = ToolCall(name=spec.name, payload=call.payload, call_id=call.call_id)
         validation_error = self._validation(canonical_call)
         if validation_error is not None:
             return CommandResult(command=call.payload, exit_code=2, output=validation_error.as_observation(), skipped=True)
-        canonical_call = ToolCall(name=spec.name, payload=spec.prepare_payload(canonical_call.payload))
+        canonical_call = ToolCall(name=spec.name, payload=spec.prepare_payload(canonical_call.payload), call_id=call.call_id)
         decision = self._permission(canonical_call)
         self._pre_hook(canonical_call)
         decision = self._resolve_decision(canonical_call, decision)
@@ -181,6 +181,7 @@ class ToolExecutionPipeline:
             EventKinds.TOOL_EXECUTION,
             {
                 ToolExecutionEventFields.ACTION: call.name,
+                ToolExecutionEventFields.CALL_ID: call.call_id,
                 ToolExecutionEventFields.EXIT_CODE: result.exit_code,
                 ToolExecutionEventFields.STATUS: status,
                 ToolExecutionEventFields.ATTEMPTS: result.metadata.get("attempts", 1),

@@ -1,3 +1,4 @@
+import json
 import unittest
 from collections.abc import Iterator
 from pathlib import Path
@@ -313,11 +314,17 @@ class AgentTest(unittest.TestCase):
 
         event_observations = [event.data.get("observation", "") for event in events if event.type == LoopEventTypes.TOOL_CALL_RESULT]
         model_observations = [message.content for message in result.final_messages if "minimal_cli_agent.tool_observation.v1" in message.content]
+        start_events = [event for event in events if event.type == LoopEventTypes.TOOL_CALL_START]
+        result_events = [event for event in events if event.type == LoopEventTypes.TOOL_CALL_RESULT]
+        payload = json.loads(model_observations[0].split("```json\n", 1)[1].rsplit("\n```", 1)[0])
         self.assertTrue(any(long_output in observation for observation in event_observations))
         self.assertEqual(len(model_observations), 1)
         self.assertNotIn(long_output, model_observations[0])
         self.assertIn("output_truncated_for_model", model_observations[0])
         self.assertIn("truncated for model context", model_observations[0])
+        self.assertEqual(start_events[0].data["call_id"], result_events[0].data["call_id"])
+        self.assertEqual(payload["call_id"], start_events[0].data["call_id"])
+        self.assertEqual(payload["requester"], "model")
 
     def test_strict_chat_stream_keeps_format_recovery(self) -> None:
         config = AgentConfig(permission_mode="plan", max_steps=1)

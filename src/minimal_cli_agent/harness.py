@@ -48,6 +48,7 @@ class Observation:
     action: str
     payload: str
     result: CommandResult
+    call_id: str | None = None
 
     def to_message(self) -> Message:
         return Message(role="user", content=self.result.as_observation())
@@ -259,7 +260,7 @@ class AgentHarness:
         return self.execute_tool(call)
 
     def execute_tool(self, call: ToolCall) -> Observation:
-        return Observation(action=call.name, payload=call.payload, result=self.tool_pipeline.execute(call))
+        return Observation(action=call.name, payload=call.payload, result=self.tool_pipeline.execute(call), call_id=call.call_id)
 
     def execute_tools(self, calls: list[ToolCall]) -> list[Observation]:
         observations: list[Observation] = []

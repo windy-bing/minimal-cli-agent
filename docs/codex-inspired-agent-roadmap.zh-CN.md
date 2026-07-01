@@ -13,6 +13,7 @@
 - [x] Observation compaction：UI 事件保留完整 observation，写回模型上下文的工具输出按预算压缩。
 - [x] Runtime context fragment：每轮维护单条 runtime context 片段，旧片段会被替换而不是堆积。
 - [x] Structured tool observations：写回模型上下文的工具结果使用 JSON schema，UI 仍保留文本 observation。
+- [x] Tool call id trace：每个模型发起的工具调用都有 call_id，并贯穿 start/result/model observation。
 
 ## Codex 对照
 
@@ -20,7 +21,7 @@
 - `context/world_state/*`：Codex 用 snapshot/diff 只注入变化；本项目下一步应先覆盖 cwd、permission、model、plugins、skills。
 - `context_manager/history.rs` 和 `normalize.rs`：Codex 维护结构化 history，补齐缺失 tool output 并移除孤儿 output；本项目已先做模型可见 JSON observation，下一步应补 call id 与 raw artifact 引用。
 - `tools/router.rs` 和 `tools/orchestrator.rs`：Codex 将工具可见性、审批、沙箱、重试和 dispatch trace 分层；本项目已具备 registry/pipeline，下一步应补更完整 trace 和 sandbox attempt 语义。
-- `tools/tool_dispatch_trace.rs`：Codex 将 tool dispatch 开始/结束结构化记录；本项目已有 event ledger，应继续补 call id、requester、预算/跳过原因。
+- `tools/tool_dispatch_trace.rs`：Codex 将 tool dispatch 开始/结束结构化记录；本项目已补 call_id/requester 基础链路，下一步应补更完整 dispatch trace 和 raw artifact。
 - `tools/handlers/get_context_remaining.rs` 与 `new_context_window.rs`：Codex 给模型显式上下文预算和新窗口工具；本项目已实现预算查询，下一步实现新窗口生命周期。
 
 ## 下一批
@@ -28,6 +29,7 @@
 - [ ] Context fragments v2：把 system prompt、权限、环境、项目规则、预算、session 状态进一步拆成多类 typed fragments。
 - [ ] World state diff：只在 cwd、权限、模型、插件、skills、项目规则变化时注入差异，避免每轮重复注入完整状态。
 - [ ] Tool observation artifacts：为大输出保存 raw artifact 引用，让模型只看到摘要和可追踪句柄。
+- [ ] Tool dispatch trace：把 tool start/result、预算跳过、权限决策和重试尝试串成可查询 trace。
 - [ ] Context window lifecycle：支持显式开启新 context window，并把旧窗口状态以结构化摘要迁移。
 - [ ] Integration traces：为重复读取、分页、预算、上下文压缩建立端到端测试，不只测单函数。
 

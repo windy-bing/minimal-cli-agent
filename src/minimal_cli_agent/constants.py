@@ -96,6 +96,7 @@ class LoopEventData:
     ATTEMPT: Final = "attempt"
     TOOL: Final = "tool"
     PAYLOAD: Final = "payload"
+    CALL_ID: Final = "call_id"
     REASON: Final = "reason"
     OBSERVATION: Final = "observation"
 
@@ -142,6 +143,7 @@ class ToolDecisionEventFields:
 
 class ToolExecutionEventFields:
     ACTION: Final = "action"
+    CALL_ID: Final = "call_id"
     EXIT_CODE: Final = "exit_code"
     STATUS: Final = "status"
     ATTEMPTS: Final = "attempts"

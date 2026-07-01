@@ -144,6 +144,7 @@ class AgentConfig:
 class ToolCall:
     name: str
     payload: str
+    call_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -224,11 +225,18 @@ class CommandResult:
             f"```text\n{output}\n```"
         )
 
-    def as_model_observation(self, output_limit: int | None = None) -> str:
+    def as_model_observation(
+        self,
+        output_limit: int | None = None,
+        call_id: str | None = None,
+        requester: str = "model",
+    ) -> str:
         status = "skipped" if self.skipped else "success" if self.exit_code == 0 else "failed"
         output = compact_output_for_observation(self.output, output_limit)
         payload = {
             "schema": "minimal_cli_agent.tool_observation.v1",
+            "call_id": call_id,
+            "requester": requester,
             "status": status,
             "exit_code": self.exit_code,
             "skipped": self.skipped,
