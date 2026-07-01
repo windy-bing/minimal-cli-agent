@@ -37,7 +37,10 @@ class Agent:
         if not messages:
             messages.append(Message(role="system", content=options.system_prompt or SYSTEM_PROMPT))
         messages.append(Message(role="user", content=message))
-        tool_ledger = ToolCallLedger()
+        tool_ledger = ToolCallLedger(
+            max_tool_calls=self.config.max_tool_calls_per_turn,
+            max_read_only_tool_calls=self.config.max_read_only_tool_calls_per_turn,
+        )
 
         for step in iter_steps(self.config.max_steps):
             messages = self.harness.prepare_context(messages)

@@ -115,6 +115,21 @@ class RepeatReadForwardThenExitModel:
         return "Done.\n```bash-action\nexit\n```"
 
 
+class TwoReadsThenExitModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, messages: list[Message]) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            return (
+                "Read two files.\n"
+                '```tool-action\n{"tool":"read_file","path":"one.txt"}\n```\n'
+                '```tool-action\n{"tool":"read_file","path":"two.txt"}\n```'
+            )
+        return "Done.\n```bash-action\nexit\n```"
+
+
 class RecordingBatchHarness(AgentHarness):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -246,6 +261,21 @@ class AgentTest(unittest.TestCase):
         self.assertEqual(len(starts), 1)
         self.assertEqual(harness.batches, [["read_forward"]])
         self.assertTrue(any("Repeated read_forward range skipped" in observation for observation in observations))
+
+    def test_chat_stream_enforces_read_only_tool_budget_before_execution(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "one.txt").write_text("one", encoding="utf-8")
+            (root / "two.txt").write_text("two", encoding="utf-8")
+            config = AgentConfig(cwd=root, permission_mode="plan", max_read_only_tool_calls_per_turn=1)
+            harness = RecordingBatchHarness(config=config, model=TwoReadsThenExitModel())
+            agent = Agent(config=config, harness=harness)
+
+            events = list(agent.chat_stream("read", ChatContext()))
+
+        observations = [event.data.get("observation", "") for event in events if event.type == LoopEventTypes.TOOL_CALL_RESULT]
+        self.assertEqual(harness.batches, [["read_file"]])
+        self.assertTrue(any("Read-only tool call budget reached" in observation for observation in observations))
 
     def test_strict_chat_stream_keeps_format_recovery(self) -> None:
         config = AgentConfig(permission_mode="plan", max_steps=1)

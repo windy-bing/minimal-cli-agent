@@ -209,6 +209,8 @@ class Defaults:
     USER_CONFIG_DIR: Final = ".minimal-agent"
     USER_CONFIG_FILE: Final = "config.json"
     PROJECT_RULES_MAX_CHARS: Final = "8000"
+    MAX_TOOL_CALLS_PER_TURN: Final = "50"
+    MAX_READ_ONLY_TOOL_CALLS_PER_TURN: Final = "20"
     SANDBOX_KIND: Final = "host"
     SANDBOX_IMAGE: Final = "python:3.11-slim"
     SANDBOX_NETWORK: Final = "none"

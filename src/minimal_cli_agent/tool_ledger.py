@@ -22,7 +22,11 @@ class ReadForwardPageState:
 
 
 class ToolCallLedger:
-    def __init__(self) -> None:
+    def __init__(self, max_tool_calls: int = 50, max_read_only_tool_calls: int = 20) -> None:
+        self.max_tool_calls = max(1, max_tool_calls)
+        self.max_read_only_tool_calls = max(1, max_read_only_tool_calls)
+        self.tool_calls_seen = 0
+        self.read_only_tool_calls_seen = 0
         self.successful_read_keys: dict[tuple[str, str], CommandResult] = {}
         self.read_forward_pages: dict[str, ReadForwardPageState] = {}
 
@@ -38,8 +42,24 @@ class ToolCallLedger:
         return allowed, skipped
 
     def skip_reason(self, call: ToolCall) -> CommandResult | None:
+        if self.tool_calls_seen >= self.max_tool_calls:
+            return budget_exceeded_result(
+                call,
+                budget_name="max_tool_calls_per_turn",
+                limit=self.max_tool_calls,
+                message="Tool call budget reached for this turn.",
+            )
+        self.tool_calls_seen += 1
         if call.name not in Tools.READ_ONLY:
             return None
+        if self.read_only_tool_calls_seen >= self.max_read_only_tool_calls:
+            return budget_exceeded_result(
+                call,
+                budget_name="max_read_only_tool_calls_per_turn",
+                limit=self.max_read_only_tool_calls,
+                message="Read-only tool call budget reached for this turn.",
+            )
+        self.read_only_tool_calls_seen += 1
         if call.name == Tools.READ_FORWARD:
             result = self.skip_repeated_read_forward(call)
             if result is not None:
@@ -138,3 +158,16 @@ def int_or_default(value: object, default: int) -> int:
         return int(cast(Any, value))
     except (TypeError, ValueError):
         return default
+
+
+def budget_exceeded_result(call: ToolCall, budget_name: str, limit: int, message: str) -> CommandResult:
+    return CommandResult(
+        command=f"{call.name} {call.payload}",
+        exit_code=0,
+        output=(
+            f"{message} {budget_name}={limit}. "
+            "Summarize the evidence already gathered, narrow the next request, or ask the user before continuing."
+        ),
+        skipped=True,
+        metadata={"tool_budget_exceeded": True, "budget": budget_name, "limit": limit},
+    )

@@ -110,6 +110,8 @@ class AgentConfig:
     context_tail_messages: int = int(Defaults.CONTEXT_TAIL_MESSAGES)
     max_output_chars: int = 12000
     max_context_chars: int = 16000
+    max_tool_calls_per_turn: int = int(Defaults.MAX_TOOL_CALLS_PER_TURN)
+    max_read_only_tool_calls_per_turn: int = int(Defaults.MAX_READ_ONLY_TOOL_CALLS_PER_TURN)
     model_context_tokens: int | None = None
     context_compression_ratio: float = float(Defaults.CONTEXT_COMPRESSION_RATIO)
     model_fallbacks: tuple[ModelRoute, ...] = field(default_factory=tuple)
