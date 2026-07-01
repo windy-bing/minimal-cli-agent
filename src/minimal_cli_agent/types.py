@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -221,6 +222,26 @@ class CommandResult:
             f"```text\n{self.command}\n```\n"
             "output:\n"
             f"```text\n{output}\n```"
+        )
+
+    def as_model_observation(self, output_limit: int | None = None) -> str:
+        status = "skipped" if self.skipped else "success" if self.exit_code == 0 else "failed"
+        output = compact_output_for_observation(self.output, output_limit)
+        payload = {
+            "schema": "minimal_cli_agent.tool_observation.v1",
+            "status": status,
+            "exit_code": self.exit_code,
+            "skipped": self.skipped,
+            "command": self.command,
+            "metadata": self.metadata,
+            "output_truncated_for_model": output != self.output,
+            "output": output,
+        }
+        return redact_text(
+            "Tool observation for model context:\n"
+            "```json\n"
+            f"{json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2, default=str)}\n"
+            "```"
         )
 
 

@@ -312,10 +312,11 @@ class AgentTest(unittest.TestCase):
                     break
 
         event_observations = [event.data.get("observation", "") for event in events if event.type == LoopEventTypes.TOOL_CALL_RESULT]
-        model_observations = [message.content for message in result.final_messages if "model_output_truncated: true" in message.content]
+        model_observations = [message.content for message in result.final_messages if "minimal_cli_agent.tool_observation.v1" in message.content]
         self.assertTrue(any(long_output in observation for observation in event_observations))
         self.assertEqual(len(model_observations), 1)
         self.assertNotIn(long_output, model_observations[0])
+        self.assertIn("output_truncated_for_model", model_observations[0])
         self.assertIn("truncated for model context", model_observations[0])
 
     def test_strict_chat_stream_keeps_format_recovery(self) -> None:

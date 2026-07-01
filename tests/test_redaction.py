@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from minimal_cli_agent.redaction import redact_text
@@ -84,6 +85,20 @@ class RedactionTest(unittest.TestCase):
         self.assertIn("aaa", observation)
         self.assertIn("zzz", observation)
         self.assertLess(len(observation), len(result.as_observation()))
+
+    def test_command_result_model_observation_is_structured_json(self) -> None:
+        result = CommandResult(command="read_file big.txt", exit_code=0, output="a" * 80 + "MIDDLE" + "z" * 80, metadata={"path": "big.txt"})
+
+        observation = result.as_model_observation(output_limit=60)
+        payload = json.loads(observation.split("```json\n", 1)[1].rsplit("\n```", 1)[0])
+
+        self.assertEqual(payload["schema"], "minimal_cli_agent.tool_observation.v1")
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["exit_code"], 0)
+        self.assertEqual(payload["metadata"], {"path": "big.txt"})
+        self.assertTrue(payload["output_truncated_for_model"])
+        self.assertIn("truncated for model context", payload["output"])
+        self.assertNotIn("MIDDLE", payload["output"])
 
 
 if __name__ == "__main__":

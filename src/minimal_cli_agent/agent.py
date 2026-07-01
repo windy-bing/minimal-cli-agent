@@ -100,7 +100,7 @@ class Agent:
                     )
                 for skipped in skipped_calls:
                     observation = skipped.result.as_observation()
-                    model_observation = skipped.result.as_observation(self.config.model_observation_output_chars)
+                    model_observation = skipped.result.as_model_observation(self.config.model_observation_output_chars)
                     append_observation(model_observations, model_observation, self.config.max_output_chars)
                     yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
                 try:
@@ -116,7 +116,7 @@ class Agent:
                             tool_observation.result,
                         )
                         observation = tool_observation.result.as_observation()
-                        model_observation = tool_observation.result.as_observation(self.config.model_observation_output_chars)
+                        model_observation = tool_observation.result.as_model_observation(self.config.model_observation_output_chars)
                         append_observation(model_observations, model_observation, self.config.max_output_chars)
                         yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
 
