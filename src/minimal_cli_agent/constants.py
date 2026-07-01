@@ -118,6 +118,7 @@ class EventKinds:
     PERMISSION_DECISION: Final = "permission_decision"
     TOOL_DECISION: Final = "tool_decision"
     TOOL_DECISION_CONFLICT: Final = "tool_decision_conflict"
+    TOOL_DISPATCH: Final = "tool_dispatch"
     TOOL_EXECUTION: Final = "tool_execution"
     TOOL_BATCH: Final = "tool_batch"
     GROUP_SESSION: Final = "group_session"
@@ -151,6 +152,21 @@ class ToolExecutionEventFields:
     OUTPUT_SCHEMA: Final = "output_schema"
     METADATA: Final = "metadata"
     PAYLOAD: Final = "payload"
+
+
+class ToolDispatchEventFields:
+    PHASE: Final = "phase"
+    CALL_ID: Final = "call_id"
+    TOOL: Final = "tool"
+    PAYLOAD: Final = "payload"
+    REQUESTER: Final = "requester"
+    STEP: Final = "step"
+    STATUS: Final = "status"
+    EXIT_CODE: Final = "exit_code"
+    SKIPPED: Final = "skipped"
+    OUTPUT_TRUNCATED_FOR_MODEL: Final = "output_truncated_for_model"
+    OUTPUT_ARTIFACT: Final = "output_artifact"
+    METADATA: Final = "metadata"
 
 
 class PolicyDefaults:

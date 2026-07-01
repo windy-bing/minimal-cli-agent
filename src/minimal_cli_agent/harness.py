@@ -9,7 +9,7 @@ import time
 from typing import cast
 
 from minimal_cli_agent.context import CompactingContextManager, estimate_context_tokens, total_message_chars
-from minimal_cli_agent.constants import EventKinds, Tools
+from minimal_cli_agent.constants import EventKinds, ToolDispatchEventFields, Tools
 from minimal_cli_agent.environment import LocalEnvironment
 from minimal_cli_agent.file_tools import (
     FileToolEnvironment,
@@ -201,6 +201,47 @@ class AgentHarness:
             if self.trace_id and "trace_id" not in data:
                 data = {**data, "trace_id": self.trace_id}
             self.session_store.append_event(EventRecord(kind=kind, data=data))
+
+    def record_tool_dispatch_start(self, call: ToolCall, step: int, requester: str = "model") -> None:
+        self.record_event(
+            EventKinds.TOOL_DISPATCH,
+            {
+                ToolDispatchEventFields.PHASE: "start",
+                ToolDispatchEventFields.CALL_ID: call.call_id,
+                ToolDispatchEventFields.TOOL: call.name,
+                ToolDispatchEventFields.PAYLOAD: redact_text(call.payload),
+                ToolDispatchEventFields.REQUESTER: requester,
+                ToolDispatchEventFields.STEP: step,
+            },
+        )
+
+    def record_tool_dispatch_result(
+        self,
+        call: ToolCall,
+        result: CommandResult,
+        step: int,
+        requester: str = "model",
+        output_artifact: str | None = None,
+        output_limit: int | None = None,
+    ) -> None:
+        status = "skipped" if result.skipped else "success" if result.exit_code == 0 else "failed"
+        self.record_event(
+            EventKinds.TOOL_DISPATCH,
+            {
+                ToolDispatchEventFields.PHASE: "result",
+                ToolDispatchEventFields.CALL_ID: call.call_id,
+                ToolDispatchEventFields.TOOL: call.name,
+                ToolDispatchEventFields.PAYLOAD: redact_text(call.payload),
+                ToolDispatchEventFields.REQUESTER: requester,
+                ToolDispatchEventFields.STEP: step,
+                ToolDispatchEventFields.STATUS: status,
+                ToolDispatchEventFields.EXIT_CODE: result.exit_code,
+                ToolDispatchEventFields.SKIPPED: result.skipped,
+                ToolDispatchEventFields.OUTPUT_TRUNCATED_FOR_MODEL: should_write_observation_artifact(result.output, output_limit),
+                ToolDispatchEventFields.OUTPUT_ARTIFACT: output_artifact,
+                ToolDispatchEventFields.METADATA: result.metadata,
+            },
+        )
 
     def prepare_context(self, messages: list[Message]) -> list[Message]:
         return self.context_manager.prepare(messages)

@@ -5,9 +5,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from minimal_cli_agent.agent import Agent
-from minimal_cli_agent.constants import LoopEventTypes
+from minimal_cli_agent.constants import EventKinds, LoopEventTypes, ToolDispatchEventFields
 from minimal_cli_agent.exceptions import ModelRequestError
 from minimal_cli_agent.harness import AgentHarness, Observation
+from minimal_cli_agent.memory import JsonSessionStore
 from minimal_cli_agent.model_gateway import ModelGateway
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message, ModelRoute, ToolCall
 import minimal_cli_agent
@@ -330,6 +331,63 @@ class AgentTest(unittest.TestCase):
             self.assertEqual(artifact["schema"], "minimal_cli_agent.tool_observation_artifact.v1")
             self.assertEqual(artifact["call_id"], payload["call_id"])
             self.assertEqual(artifact["output"], long_output)
+
+    def test_chat_stream_records_tool_dispatch_trace_for_executed_tool(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            long_output = "a" * 80 + "MIDDLE" + "z" * 80
+            (root / "long.txt").write_text(long_output, encoding="utf-8")
+            store = JsonSessionStore(root / "session.json")
+            config = AgentConfig(
+                cwd=root,
+                permission_mode="plan",
+                model_observation_output_chars=60,
+            )
+            harness = RecordingBatchHarness(config=config, model=LongReadThenExitModel(), session_store=store)
+            agent = Agent(config=config, harness=harness)
+
+            list(agent.chat_stream("read", ChatContext(metadata={"trace_id": "trace-123"})))
+            events = store.query_events(kind=EventKinds.TOOL_DISPATCH, limit=10)
+
+        self.assertEqual([event.data[ToolDispatchEventFields.PHASE] for event in events], ["start", "result"])
+        start, result = events
+        self.assertEqual(start.data[ToolDispatchEventFields.CALL_ID], result.data[ToolDispatchEventFields.CALL_ID])
+        self.assertEqual(start.data[ToolDispatchEventFields.TOOL], "read_file")
+        self.assertEqual(start.data[ToolDispatchEventFields.REQUESTER], "model")
+        self.assertEqual(start.data[ToolDispatchEventFields.STEP], 1)
+        self.assertEqual(start.data["trace_id"], "trace-123")
+        self.assertEqual(result.data[ToolDispatchEventFields.STATUS], "success")
+        self.assertEqual(result.data[ToolDispatchEventFields.EXIT_CODE], 0)
+        self.assertFalse(result.data[ToolDispatchEventFields.SKIPPED])
+        self.assertTrue(result.data[ToolDispatchEventFields.OUTPUT_TRUNCATED_FOR_MODEL])
+        self.assertEqual(
+            result.data[ToolDispatchEventFields.OUTPUT_ARTIFACT],
+            f".agent/artifacts/{result.data[ToolDispatchEventFields.CALL_ID]}.json",
+        )
+
+    def test_chat_stream_records_tool_dispatch_trace_for_budget_skip(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "one.txt").write_text("one", encoding="utf-8")
+            (root / "two.txt").write_text("two", encoding="utf-8")
+            store = JsonSessionStore(root / "session.json")
+            config = AgentConfig(cwd=root, permission_mode="plan", max_read_only_tool_calls_per_turn=1)
+            harness = RecordingBatchHarness(config=config, model=TwoReadsThenExitModel(), session_store=store)
+            agent = Agent(config=config, harness=harness)
+
+            list(agent.chat_stream("read", ChatContext(metadata={"trace_id": "trace-456"})))
+            events = store.query_events(kind=EventKinds.TOOL_DISPATCH, limit=10)
+
+        starts = [event for event in events if event.data[ToolDispatchEventFields.PHASE] == "start"]
+        results = [event for event in events if event.data[ToolDispatchEventFields.PHASE] == "result"]
+        skipped_results = [event for event in results if event.data[ToolDispatchEventFields.STATUS] == "skipped"]
+        self.assertEqual(len(starts), 1)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(len(skipped_results), 1)
+        self.assertEqual(skipped_results[0].data[ToolDispatchEventFields.TOOL], "read_file")
+        self.assertTrue(skipped_results[0].data[ToolDispatchEventFields.SKIPPED])
+        self.assertEqual(skipped_results[0].data["trace_id"], "trace-456")
+        self.assertIn("tool_budget_exceeded", skipped_results[0].data[ToolDispatchEventFields.METADATA])
 
     def test_strict_chat_stream_keeps_format_recovery(self) -> None:
         config = AgentConfig(permission_mode="plan", max_steps=1)

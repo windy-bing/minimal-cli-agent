@@ -95,6 +95,7 @@ class Agent:
                 calls = assign_tool_call_ids(calls, trace_id=self.harness.trace_id or "trace", step=step)
                 calls, skipped_calls = tool_ledger.filter_before_execution(calls)
                 for call in calls:
+                    self.harness.record_tool_dispatch_start(call, step)
                     yield LoopEvent(
                         type=LoopEventTypes.TOOL_CALL_START,
                         data={LoopEventData.TOOL: call.name, LoopEventData.PAYLOAD: call.payload, LoopEventData.CALL_ID: call.call_id},
@@ -110,6 +111,13 @@ class Agent:
                         self.config.model_observation_output_chars,
                         call_id=skipped.call.call_id,
                         output_artifact=output_artifact,
+                    )
+                    self.harness.record_tool_dispatch_result(
+                        skipped.call,
+                        skipped.result,
+                        step,
+                        output_artifact=output_artifact,
+                        output_limit=self.config.model_observation_output_chars,
                     )
                     append_observation(model_observations, model_observation, self.config.max_output_chars)
                     yield LoopEvent(
@@ -138,6 +146,13 @@ class Agent:
                             self.config.model_observation_output_chars,
                             call_id=tool_observation.call_id,
                             output_artifact=output_artifact,
+                        )
+                        self.harness.record_tool_dispatch_result(
+                            ToolCall(name=tool_observation.action, payload=tool_observation.payload, call_id=tool_observation.call_id),
+                            tool_observation.result,
+                            step,
+                            output_artifact=output_artifact,
+                            output_limit=self.config.model_observation_output_chars,
                         )
                         append_observation(model_observations, model_observation, self.config.max_output_chars)
                         yield LoopEvent(
