@@ -121,6 +121,11 @@ class EventKinds:
     TOOL_DISPATCH: Final = "tool_dispatch"
     TOOL_EXECUTION: Final = "tool_execution"
     TOOL_BATCH: Final = "tool_batch"
+    WORLD_STATE_DIFF: Final = "world_state_diff"
+    SANDBOX_ATTEMPT: Final = "sandbox_attempt"
+    CONTEXT_WINDOW_OPENED: Final = "context_window_opened"
+    CONTEXT_WINDOW_CLOSED: Final = "context_window_closed"
+    CONTEXT_WINDOW_SUMMARY: Final = "context_window_summary"
     GROUP_SESSION: Final = "group_session"
     MCP_REGISTRATION: Final = "mcp_registration"
 
@@ -167,6 +172,28 @@ class ToolDispatchEventFields:
     OUTPUT_TRUNCATED_FOR_MODEL: Final = "output_truncated_for_model"
     OUTPUT_ARTIFACT: Final = "output_artifact"
     METADATA: Final = "metadata"
+
+
+class WorldStateEventFields:
+    PREVIOUS_HASH: Final = "previous_hash"
+    CURRENT_HASH: Final = "current_hash"
+    CHANGED: Final = "changed"
+    UNCHANGED_HASH: Final = "unchanged_hash"
+
+
+class SandboxAttemptEventFields:
+    CALL_ID: Final = "call_id"
+    TOOL: Final = "tool"
+    ATTEMPT: Final = "attempt"
+    PHASE: Final = "phase"
+    SANDBOX_KIND: Final = "sandbox_kind"
+    NETWORK: Final = "network"
+    PERMISSION_MODE: Final = "permission_mode"
+    DECISION: Final = "decision"
+    EXIT_CODE: Final = "exit_code"
+    DURATION_MS: Final = "duration_ms"
+    ERROR_CLASS: Final = "error_class"
+    STATUS: Final = "status"
 
 
 class PolicyDefaults:
@@ -284,13 +311,16 @@ class Tools:
     GET_CONTEXT_REMAINING: Final = "get_context_remaining"
     GET_CONTEXT_REMAINING_ALIASES: Final = ("context_remaining",)
     GET_CONTEXT_REMAINING_EXPECTED_FORMAT: Final = "{}"
+    NEW_CONTEXT_WINDOW: Final = "new_context_window"
+    NEW_CONTEXT_WINDOW_ALIASES: Final = ("context_window",)
+    NEW_CONTEXT_WINDOW_EXPECTED_FORMAT: Final = '{"summary":"optional durable facts to carry forward"}'
     WRITE_FILE: Final = "write_file"
     WRITE_FILE_ALIASES: Final = ("write", "writeFile")
     WRITE_FILE_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt","content":"new file content"}'
     EDIT_FILE: Final = "edit_file"
     EDIT_FILE_ALIASES: Final = ("edit", "patch_file", "patchFile")
     EDIT_FILE_EXPECTED_FORMAT: Final = '{"path":"relative/path.txt","start_line":10,"end_line":12,"content":"replacement"}'
-    READ_ONLY: Final = (READ_FILE, READ_TAIL, READ_FORWARD, FILE_INFO, SEARCH, GET_CONTEXT_REMAINING)
+    READ_ONLY: Final = (READ_FILE, READ_TAIL, READ_FORWARD, FILE_INFO, SEARCH, GET_CONTEXT_REMAINING, NEW_CONTEXT_WINDOW)
     WRITERS: Final = (WRITE_FILE, EDIT_FILE)
 
 
@@ -362,7 +392,7 @@ class InteractiveCommands:
         METRICS: "Show session metrics from persisted events. Usage: /metrics [json]",
         NETWORK: "Toggle network shell commands. Usage: /network on|off",
         SUMMARIZE: "Toggle model context summaries. Usage: /summarize on|off",
-        CONTEXT: "Manage context. Usage: /context status|compact|clear",
+        CONTEXT: "Manage context. Usage: /context status|compact|clear|new",
         DOCTOR: "Run local health checks for config, workspace, session, policy, MCP, and plugins. Usage: /doctor [json]",
         DEBUG: "Inspect diagnostics. Usage: /debug prompt [message]|bundle [path]",
         HISTORY: "Show or replay user prompt history. Usage: /history [number]",

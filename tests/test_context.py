@@ -1,6 +1,7 @@
 import unittest
 
-from minimal_cli_agent.context import CompactingContextManager, RUNTIME_CONTEXT_OPEN, is_runtime_context_message
+from minimal_cli_agent.context import CompactingContextManager, RUNTIME_CONTEXT_OPEN, build_runtime_context_fragments, is_runtime_context_message
+from minimal_cli_agent.context_fragments import ContextFragment, assemble_context_fragments, build_context_fragments_message, is_context_fragments_message
 from minimal_cli_agent.types import AgentConfig, Message
 
 
@@ -138,8 +139,9 @@ class ContextTest(unittest.TestCase):
 
         self.assertEqual(prepared[0].content, "system")
         self.assertTrue(is_runtime_context_message(prepared[1]))
+        self.assertTrue(is_context_fragments_message(prepared[1]))
         self.assertIn('"model": "demo-model"', prepared[1].content)
-        self.assertIn('"permission": "plan"', prepared[1].content)
+        self.assertIn('"permission_mode": "plan"', prepared[1].content)
         self.assertEqual(prepared[2].content, "task")
 
     def test_runtime_context_is_replaced_not_duplicated(self) -> None:
@@ -170,6 +172,35 @@ class ContextTest(unittest.TestCase):
 
         summary = next(message.content for message in prepared if "Context summary from earlier messages" in message.content)
         self.assertIn("Initial user goal:\nreal task", summary)
+
+    def test_context_fragments_are_stably_sorted_and_deduplicated(self) -> None:
+        fragments = [
+            ContextFragment(kind="environment_state", id="runtime", content="old", priority=30),
+            ContextFragment(kind="permission_policy", id="runtime", content="policy", priority=20),
+            ContextFragment(kind="environment_state", id="runtime", content="new", priority=10),
+        ]
+
+        assembled = assemble_context_fragments(fragments)
+
+        self.assertEqual([(fragment.kind, fragment.content) for fragment in assembled], [("environment_state", "new"), ("permission_policy", "policy")])
+
+    def test_context_fragment_message_truncates_to_budget(self) -> None:
+        message = build_context_fragments_message(
+            [ContextFragment(kind="project_rules", id="rules", content="x" * 1000, priority=10)],
+            max_chars=220,
+        )
+
+        self.assertIsNotNone(message)
+        if message is None:
+            return
+        self.assertIn("truncated by context fragment budget", message.content)
+
+    def test_runtime_fragments_include_expected_kinds(self) -> None:
+        fragments = build_runtime_context_fragments(AgentConfig(permission_mode="plan"), world_state_delta={"hash": "abc", "changed": {}})
+
+        self.assertIn("permission_policy", {fragment.kind for fragment in fragments})
+        self.assertIn("environment_state", {fragment.kind for fragment in fragments})
+        self.assertIn("context_budget", {fragment.kind for fragment in fragments})
 
 
 def build_messages() -> list[Message]:

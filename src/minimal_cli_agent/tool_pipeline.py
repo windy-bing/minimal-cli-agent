@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import time
 from typing import Callable
 
 from minimal_cli_agent.interfaces import PermissionPolicy
 from minimal_cli_agent.tool_registry import ToolRegistry
 from minimal_cli_agent.exceptions import PermissionDenied
-from minimal_cli_agent.constants import EventKinds, ToolDecisionEventFields, ToolDecisionKinds, ToolExecutionEventFields
+from minimal_cli_agent.constants import EventKinds, SandboxAttemptEventFields, ToolDecisionEventFields, ToolDecisionKinds, ToolExecutionEventFields
 from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.types import CommandResult, ToolCall, ToolDecision, ToolDiscoveryError
 
@@ -39,11 +40,13 @@ class ToolExecutionPipeline:
         permission_policy: PermissionPolicy,
         hooks: ToolPipelineHooks | None = None,
         audit_recorder: AuditRecorder | None = None,
+        sandbox_context: dict[str, object] | None = None,
     ) -> None:
         self.registry = registry
         self.permission_policy = permission_policy
         self.hooks = hooks or ToolPipelineHooks()
         self.audit_recorder = audit_recorder
+        self.sandbox_context = sandbox_context or {}
 
     def execute(self, call: ToolCall) -> CommandResult:
         try:
@@ -54,19 +57,28 @@ class ToolExecutionPipeline:
                 available_tools=self.registry.available_names(),
                 suggested_tools=self.registry.suggested_names(call.name),
             )
-            return CommandResult(command=call.payload, exit_code=127, output=discovery_error.as_observation(), skipped=True)
+            result = CommandResult(command=call.payload, exit_code=127, output=discovery_error.as_observation(), skipped=True)
+            self._record_sandbox_attempt(call, phase="result", status="skipped", exit_code=result.exit_code, error_class="ToolDiscoveryError")
+            return result
         canonical_call = ToolCall(name=spec.name, payload=call.payload, call_id=call.call_id)
         validation_error = self._validation(canonical_call)
         if validation_error is not None:
-            return CommandResult(command=call.payload, exit_code=2, output=validation_error.as_observation(), skipped=True)
+            result = CommandResult(command=call.payload, exit_code=2, output=validation_error.as_observation(), skipped=True)
+            self._record_sandbox_attempt(canonical_call, phase="result", status="skipped", exit_code=result.exit_code, error_class="ToolValidationError")
+            return result
         canonical_call = ToolCall(name=spec.name, payload=spec.prepare_payload(canonical_call.payload), call_id=call.call_id)
         decision = self._permission(canonical_call)
+        self._record_sandbox_attempt(canonical_call, phase="permission", decision=decision.kind, status=decision.kind)
         self._pre_hook(canonical_call)
         decision = self._resolve_decision(canonical_call, decision)
         decision = self._confirmation(canonical_call, decision)
+        self._record_sandbox_attempt(canonical_call, phase="permission_final", decision=decision.kind, status=decision.kind)
         if decision.kind == ToolDecisionKinds.SKIP:
-            return CommandResult(command=call.payload, exit_code=0, output=decision.reason or "tool skipped", skipped=True)
+            result = CommandResult(command=call.payload, exit_code=0, output=decision.reason or "tool skipped", skipped=True)
+            self._record_sandbox_attempt(canonical_call, phase="result", decision=decision.kind, status="skipped", exit_code=result.exit_code)
+            return result
         if decision.kind == ToolDecisionKinds.DENY:
+            self._record_sandbox_attempt(canonical_call, phase="result", decision=decision.kind, status="denied", error_class="PermissionDenied")
             raise PermissionDenied(decision.reason or f"Denied tool call: {call.name}")
         result = self._execution(canonical_call)
         self._post_hook(canonical_call, result)
@@ -141,8 +153,19 @@ class ToolExecutionPipeline:
         total_attempts = max(0, spec.retry_count) + 1
         result: CommandResult | None = None
         for attempt in range(1, total_attempts + 1):
+            started = time.monotonic()
             result = self.registry.execute(call.name, call.payload)
+            duration_ms = int((time.monotonic() - started) * 1000)
             result.metadata.setdefault("attempts", attempt)
+            status = "skipped" if result.skipped else "success" if result.exit_code == 0 else "failed"
+            self._record_sandbox_attempt(
+                call,
+                phase="attempt",
+                attempt=attempt,
+                status=status,
+                exit_code=result.exit_code,
+                duration_ms=duration_ms,
+            )
             if result.exit_code == 0 or result.skipped:
                 return result
             if not should_retry_result(result):
@@ -189,6 +212,37 @@ class ToolExecutionPipeline:
                 ToolExecutionEventFields.OUTPUT_SCHEMA: bool(spec.output_schema),
                 ToolExecutionEventFields.METADATA: result.metadata,
                 ToolExecutionEventFields.PAYLOAD: redact_text(call.payload),
+            },
+        )
+
+    def _record_sandbox_attempt(
+        self,
+        call: ToolCall,
+        phase: str,
+        attempt: int = 1,
+        status: str = "",
+        decision: str | None = None,
+        exit_code: int | None = None,
+        duration_ms: int | None = None,
+        error_class: str | None = None,
+    ) -> None:
+        if not self.audit_recorder:
+            return
+        self.audit_recorder(
+            EventKinds.SANDBOX_ATTEMPT,
+            {
+                SandboxAttemptEventFields.CALL_ID: call.call_id,
+                SandboxAttemptEventFields.TOOL: call.name,
+                SandboxAttemptEventFields.ATTEMPT: attempt,
+                SandboxAttemptEventFields.PHASE: phase,
+                SandboxAttemptEventFields.SANDBOX_KIND: self.sandbox_context.get("sandbox_kind"),
+                SandboxAttemptEventFields.NETWORK: self.sandbox_context.get("network"),
+                SandboxAttemptEventFields.PERMISSION_MODE: self.sandbox_context.get("permission_mode"),
+                SandboxAttemptEventFields.DECISION: decision,
+                SandboxAttemptEventFields.EXIT_CODE: exit_code,
+                SandboxAttemptEventFields.DURATION_MS: duration_ms,
+                SandboxAttemptEventFields.ERROR_CLASS: error_class,
+                SandboxAttemptEventFields.STATUS: status,
             },
         )
 

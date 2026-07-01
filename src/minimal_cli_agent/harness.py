@@ -9,6 +9,7 @@ import time
 from typing import cast
 
 from minimal_cli_agent.context import CompactingContextManager, estimate_context_tokens, total_message_chars
+from minimal_cli_agent.context_window import build_context_window_summary
 from minimal_cli_agent.constants import EventKinds, ToolDispatchEventFields, Tools
 from minimal_cli_agent.environment import LocalEnvironment
 from minimal_cli_agent.file_tools import (
@@ -38,10 +39,18 @@ from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.tool_pipeline import ToolExecutionPipeline
 from minimal_cli_agent.tool_registry import ToolRegistry, ToolSpec
 from minimal_cli_agent.types import AgentConfig, CommandResult, EventRecord, Message, ToolCall
+from minimal_cli_agent.world_state import WORLD_STATE_METADATA_KEY, build_world_state_snapshot, diff_world_state
 
 GET_CONTEXT_REMAINING_SCHEMA = {
     "type": "object",
     "properties": {},
+}
+
+NEW_CONTEXT_WINDOW_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string", "default": ""},
+    },
 }
 
 
@@ -154,6 +163,16 @@ class AgentHarness:
         )
         self.tool_registry.register(
             ToolSpec(
+                name=Tools.NEW_CONTEXT_WINDOW,
+                description="Request a new context window and return a structured summary of persisted session messages.",
+                handler=self.new_context_window,
+                expected_format=Tools.NEW_CONTEXT_WINDOW_EXPECTED_FORMAT,
+                aliases=Tools.NEW_CONTEXT_WINDOW_ALIASES,
+                parameters_schema=NEW_CONTEXT_WINDOW_SCHEMA,
+            )
+        )
+        self.tool_registry.register(
+            ToolSpec(
                 name=Tools.WRITE_FILE,
                 description="Write a UTF-8 text file inside the configured workspace.",
                 handler=self.file_environment.write_file,
@@ -187,6 +206,11 @@ class AgentHarness:
             registry=self.tool_registry,
             permission_policy=self.policy,
             audit_recorder=self.record_event,
+            sandbox_context={
+                "sandbox_kind": config.sandbox_kind,
+                "network": config.sandbox_network if config.allow_network else "none",
+                "permission_mode": config.permission_mode,
+            },
         )
 
     def load_messages(self) -> list[Message]:
@@ -243,8 +267,34 @@ class AgentHarness:
             },
         )
 
-    def prepare_context(self, messages: list[Message]) -> list[Message]:
+    def prepare_context(self, messages: list[Message], metadata: dict[str, object] | None = None) -> list[Message]:
+        metadata = metadata if metadata is not None else {}
+        world_delta = self.update_world_state(metadata)
+        if isinstance(self.context_manager, CompactingContextManager):
+            return self.context_manager.prepare(messages, world_state_delta=world_delta)
         return self.context_manager.prepare(messages)
+
+    def update_world_state(self, metadata: dict[str, object]) -> dict[str, object]:
+        previous_raw = metadata.get(WORLD_STATE_METADATA_KEY)
+        previous = previous_raw if isinstance(previous_raw, dict) else None
+        snapshot = build_world_state_snapshot(self.config)
+        changed = diff_world_state(previous, snapshot)
+        if previous is None or changed:
+            self.record_event(
+                EventKinds.WORLD_STATE_DIFF,
+                {
+                    "previous_hash": previous.get("hash") if previous else None,
+                    "current_hash": snapshot.hash,
+                    "changed": changed,
+                    "unchanged_hash": not bool(changed),
+                },
+            )
+        metadata[WORLD_STATE_METADATA_KEY] = {**snapshot.to_dict(), "hash": snapshot.hash}
+        return {
+            "hash": snapshot.hash,
+            "changed": changed,
+            "unchanged_hash": not bool(changed),
+        }
 
     def update_context_budget(self, messages: list[Message]) -> None:
         chars_used = total_message_chars(messages)
@@ -279,6 +329,26 @@ class AgentHarness:
             exit_code=0,
             output=json.dumps(snapshot, ensure_ascii=False, indent=2),
             metadata=snapshot,
+        )
+
+    def new_context_window(self, payload: str) -> CommandResult:
+        extra_summary = ""
+        if payload.strip():
+            try:
+                data = json.loads(payload)
+            except json.JSONDecodeError:
+                return CommandResult(command=f"{Tools.NEW_CONTEXT_WINDOW} {payload}", exit_code=1, output="payload must be a JSON object")
+            if not isinstance(data, dict):
+                return CommandResult(command=f"{Tools.NEW_CONTEXT_WINDOW} {payload}", exit_code=1, output="payload must be a JSON object")
+            extra_summary = str(data.get("summary", ""))
+        messages = self.load_messages()
+        summary = build_context_window_summary(messages, extra_summary=extra_summary)
+        self.record_event(EventKinds.CONTEXT_WINDOW_SUMMARY, summary.to_dict())
+        return CommandResult(
+            command=Tools.NEW_CONTEXT_WINDOW,
+            exit_code=0,
+            output=json.dumps(summary.to_dict(), ensure_ascii=False, sort_keys=True, indent=2),
+            metadata={"context_window_summary": summary.to_dict(), "requires_user_context_apply": True},
         )
 
     def complete(self, messages: list[Message]) -> str:

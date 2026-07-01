@@ -43,7 +43,8 @@ class Agent:
         )
 
         for step in iter_steps(self.config.max_steps):
-            messages = self.harness.prepare_context(messages)
+            self.harness.update_context_budget(messages)
+            messages = self.harness.prepare_context(messages, context.metadata)
             self.harness.update_context_budget(messages)
             yield LoopEvent(
                 type=LoopEventTypes.STEP_START,

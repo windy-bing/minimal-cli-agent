@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from minimal_cli_agent.constants import EventKinds, PermissionEventFields, PermissionModes, ToolDecisionKinds, Tools
+from minimal_cli_agent.constants import EventKinds, PermissionEventFields, PermissionModes, SandboxAttemptEventFields, ToolDecisionKinds, Tools
 from minimal_cli_agent.exceptions import ConfigurationError, PermissionDenied
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.memory import JsonSessionStore
@@ -35,6 +35,19 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertTrue(observation.result.skipped)
         self.assertIn("plan mode", observation.result.output)
 
+    def test_plan_skip_records_sandbox_attempt_trace(self) -> None:
+        with TemporaryDirectory() as tmp:
+            store = JsonSessionStore(Path(tmp) / "session.json")
+            harness = AgentHarness(AgentConfig(permission_mode="plan"), session_store=store)
+
+            observation = harness.execute_tool(ToolCall(name=Tools.SHELL, payload="printf hello", call_id="call-plan"))
+            events = store.query_events(kind=EventKinds.SANDBOX_ATTEMPT, limit=10)
+
+        self.assertTrue(observation.result.skipped)
+        self.assertEqual(events[-1].data[SandboxAttemptEventFields.CALL_ID], "call-plan")
+        self.assertEqual(events[-1].data[SandboxAttemptEventFields.STATUS], "skipped")
+        self.assertEqual(events[-1].data[SandboxAttemptEventFields.PERMISSION_MODE], "plan")
+
     def test_yolo_mode_executes_shell(self) -> None:
         harness = AgentHarness(AgentConfig(permission_mode="yolo"))
 
@@ -64,6 +77,22 @@ class ToolPipelineTest(unittest.TestCase):
         with self.assertRaisesRegex(PermissionDenied, "hook denied"):
             harness.execute_shell("printf hello")
 
+    def test_permission_deny_records_sandbox_attempt_trace(self) -> None:
+        with TemporaryDirectory() as tmp:
+            store = JsonSessionStore(Path(tmp) / "session.json")
+            harness = AgentHarness(AgentConfig(permission_mode="yolo"), session_store=store)
+            harness.tool_pipeline.hooks.decision_hooks.append(
+                lambda call, decision: ToolDecision(kind=ToolDecisionKinds.DENY, reason="hook denied")
+            )
+
+            with self.assertRaisesRegex(PermissionDenied, "hook denied"):
+                harness.execute_tool(ToolCall(name=Tools.SHELL, payload="printf hello", call_id="call-deny"))
+            events = store.query_events(kind=EventKinds.SANDBOX_ATTEMPT, limit=10)
+
+        self.assertEqual(events[-1].data[SandboxAttemptEventFields.CALL_ID], "call-deny")
+        self.assertEqual(events[-1].data[SandboxAttemptEventFields.STATUS], "denied")
+        self.assertEqual(events[-1].data[SandboxAttemptEventFields.ERROR_CLASS], "PermissionDenied")
+
     def test_decision_hooks_run_by_priority_and_record_conflict(self) -> None:
         with TemporaryDirectory() as tmp:
             store = JsonSessionStore(Path(tmp) / "session.json")
@@ -90,8 +119,8 @@ class ToolPipelineTest(unittest.TestCase):
 
         self.assertEqual(seen, ["first", "second"])
         self.assertEqual(observation.result.output, "hello")
-        self.assertEqual(events[0].kind, EventKinds.TOOL_DECISION_CONFLICT)
-        self.assertEqual(events[0].data["hooks"][0]["name"], "first")
+        conflict = next(event for event in events if event.kind == EventKinds.TOOL_DECISION_CONFLICT)
+        self.assertEqual(conflict.data["hooks"][0]["name"], "first")
 
     def test_schema_defaults_are_applied_before_execution(self) -> None:
         registry = ToolRegistry()
@@ -168,6 +197,32 @@ class ToolPipelineTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertEqual(result.output, "ok")
         self.assertEqual(result.metadata["attempts"], 2)
+
+    def test_retry_records_sandbox_attempts(self) -> None:
+        with TemporaryDirectory() as tmp:
+            store = JsonSessionStore(Path(tmp) / "session.json")
+            registry = ToolRegistry()
+            calls = {"count": 0}
+
+            def flaky(payload: str) -> CommandResult:
+                calls["count"] += 1
+                if calls["count"] == 1:
+                    return CommandResult("flaky", 1, "temporary")
+                return CommandResult("flaky", 0, "ok")
+
+            registry.register(ToolSpec(name="flaky", description="Flaky.", handler=flaky, retry_count=1))
+            harness = AgentHarness(AgentConfig(permission_mode="yolo"), tool_registry=registry, session_store=store)
+            harness.tool_pipeline.hooks.decision_hooks.append(
+                lambda call, decision: ToolDecision(kind=ToolDecisionKinds.ALLOW, reason="test tool")
+            )
+
+            result = harness.tool_pipeline.execute(ToolCall(name="flaky", payload="x", call_id="call-retry"))
+            events = store.query_events(kind=EventKinds.SANDBOX_ATTEMPT, limit=20)
+
+        attempt_events = [event for event in events if event.data[SandboxAttemptEventFields.PHASE] == "attempt"]
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual([event.data[SandboxAttemptEventFields.ATTEMPT] for event in attempt_events], [1, 2])
+        self.assertEqual([event.data[SandboxAttemptEventFields.STATUS] for event in attempt_events], ["failed", "success"])
 
     def test_tool_pipeline_retry_count_zero_runs_once(self) -> None:
         registry = ToolRegistry()
@@ -640,10 +695,10 @@ class ToolPipelineTest(unittest.TestCase):
 
             events = store.load_events()
 
-        self.assertEqual(events[0].kind, EventKinds.PERMISSION_DECISION)
-        self.assertEqual(events[0].data[PermissionEventFields.DECISION], "allow")
-        self.assertEqual(events[0].data[PermissionEventFields.ACTION], Tools.SHELL)
-        self.assertEqual(events[0].data[PermissionEventFields.PERMISSION_MODE], PermissionModes.DEFAULT)
+        permission_event = next(event for event in events if event.kind == EventKinds.PERMISSION_DECISION)
+        self.assertEqual(permission_event.data[PermissionEventFields.DECISION], "allow")
+        self.assertEqual(permission_event.data[PermissionEventFields.ACTION], Tools.SHELL)
+        self.assertEqual(permission_event.data[PermissionEventFields.PERMISSION_MODE], PermissionModes.DEFAULT)
 
 
 if __name__ == "__main__":

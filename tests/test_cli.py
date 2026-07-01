@@ -683,6 +683,31 @@ class CliTest(unittest.TestCase):
         self.assertIn("context_estimated_tokens:", printed)
         self.assertIn("context cleared", printed)
 
+    def test_run_interactive_context_new_opens_summary_window(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = JsonSessionStore(root / "session.json")
+            model = CountingModel()
+            config = AgentConfig(cwd=root, permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=store))
+            context = ChatContext(
+                messages=[
+                    Message(role="system", content="system"),
+                    Message(role="user", content="implement feature"),
+                    Message(role="assistant", content='```tool-action\n{"tool":"read_file","path":"src/app.py"}\n```'),
+                ]
+            )
+
+            with patch("builtins.input", side_effect=["/context new", "/quit"]), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, context, session_store=store)
+            events = store.load_events()
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(context.messages), 2)
+        self.assertIn("context window opened", printed)
+        self.assertEqual([event.kind for event in events[-3:]], [EventKinds.CONTEXT_WINDOW_CLOSED, EventKinds.CONTEXT_WINDOW_SUMMARY, EventKinds.CONTEXT_WINDOW_OPENED])
+
     def test_run_interactive_history_lists_and_replays_prompts(self) -> None:
         model = CountingModel()
         config = AgentConfig(permission_mode="plan")

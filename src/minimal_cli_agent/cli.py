@@ -46,6 +46,7 @@ from minimal_cli_agent.cli_events import parse_events_query
 from minimal_cli_agent.cli_format import format_duration, is_plan_mode_write_block, print_compact_event, render_prompt
 from minimal_cli_agent.constants import Defaults, EventKinds, InteractiveCommands, LoopEventData, LoopEventTypes, PermissionModes, PolicyPresets, Profiles, Providers, ToolDecisionKinds, ToolPayloadFields, Tools
 from minimal_cli_agent.context import estimate_context_tokens, should_compact_context, total_message_chars
+from minimal_cli_agent.context_window import open_context_window
 from minimal_cli_agent.exceptions import AgentError, ConfigurationError
 from minimal_cli_agent.harness import AgentHarness
 from minimal_cli_agent.interfaces import SessionStore
@@ -1412,7 +1413,30 @@ def handle_context_command(session: InteractiveSession, action: str) -> None:
             f"{before_chars}->{total_message_chars(session.context.messages)} chars"
         )
         return
-    print(f"Usage: {InteractiveCommands.CONTEXT} status|compact|clear")
+    if action == "new":
+        before_messages = len(session.context.messages)
+        before_chars = total_message_chars(session.context.messages)
+        new_messages, summary = open_context_window(session.context.messages)
+        if session.session_store:
+            session.agent.harness.record_event(
+                EventKinds.CONTEXT_WINDOW_CLOSED,
+                {"source_message_count": before_messages, "source_chars": before_chars},
+            )
+            session.agent.harness.record_event(EventKinds.CONTEXT_WINDOW_SUMMARY, summary.to_dict())
+        session.context.messages = new_messages
+        if session.session_store:
+            session.session_store.save(session.context.messages)
+            session.agent.harness.record_event(
+                EventKinds.CONTEXT_WINDOW_OPENED,
+                {"message_count": len(session.context.messages), "summary_source_message_count": summary.source_message_count},
+            )
+        print(
+            "context window opened: "
+            f"{before_messages}->{len(session.context.messages)} messages, "
+            f"{before_chars}->{total_message_chars(session.context.messages)} chars"
+        )
+        return
+    print(f"Usage: {InteractiveCommands.CONTEXT} status|compact|clear|new")
 
 
 def handle_history_command(session: InteractiveSession, argument: str) -> str | None:

@@ -11,6 +11,7 @@ from minimal_cli_agent.harness import AgentHarness, Observation
 from minimal_cli_agent.memory import JsonSessionStore
 from minimal_cli_agent.model_gateway import ModelGateway
 from minimal_cli_agent.types import AgentConfig, ChatContext, LoopOptions, Message, ModelRoute, ToolCall
+from trace_assertions import TraceAsserter
 import minimal_cli_agent
 
 
@@ -388,6 +389,39 @@ class AgentTest(unittest.TestCase):
         self.assertTrue(skipped_results[0].data[ToolDispatchEventFields.SKIPPED])
         self.assertEqual(skipped_results[0].data["trace_id"], "trace-456")
         self.assertIn("tool_budget_exceeded", skipped_results[0].data[ToolDispatchEventFields.METADATA])
+
+    def test_chat_stream_records_world_state_diff_only_when_state_changes(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = JsonSessionStore(root / "session.json")
+            config = AgentConfig(cwd=root, permission_mode="plan")
+            context = ChatContext(metadata={"trace_id": "trace-world"})
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=FakeModel(), session_store=store))
+
+            agent.chat("first", context)
+            agent.chat("second", context)
+            events = store.query_events(kind=EventKinds.WORLD_STATE_DIFF, limit=10)
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].data["previous_hash"], None)
+        self.assertIn("cwd", events[0].data["changed"])
+        self.assertFalse(events[0].data["unchanged_hash"])
+
+    def test_integration_trace_records_budget_skip_and_dispatch_reason(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "one.txt").write_text("one", encoding="utf-8")
+            (root / "two.txt").write_text("two", encoding="utf-8")
+            store = JsonSessionStore(root / "session.json")
+            config = AgentConfig(cwd=root, permission_mode="plan", max_read_only_tool_calls_per_turn=1)
+            harness = RecordingBatchHarness(config=config, model=TwoReadsThenExitModel(), session_store=store)
+            agent = Agent(config=config, harness=harness)
+
+            list(agent.chat_stream("read", ChatContext(metadata={"trace_id": "trace-integration"})))
+            trace = TraceAsserter(store)
+            skipped = trace.require_event(EventKinds.TOOL_DISPATCH, phase="result", status="skipped")
+
+        self.assertIn("tool_budget_exceeded", skipped.data["metadata"])
 
     def test_strict_chat_stream_keeps_format_recovery(self) -> None:
         config = AgentConfig(permission_mode="plan", max_steps=1)

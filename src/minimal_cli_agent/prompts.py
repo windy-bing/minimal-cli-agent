@@ -31,6 +31,10 @@ When you need to read or write files, output one or more tool action blocks in t
 ```
 
 ```tool-action
+{"tool":"new_context_window","summary":"optional durable facts to carry forward"}
+```
+
+```tool-action
 {"tool":"write_file","path":"relative/path.txt","content":"new file content"}
 ```
 
@@ -100,6 +104,10 @@ When you need to read or write files, output one or more tool action blocks in t
 
 ```tool-action
 {"tool":"get_context_remaining"}
+```
+
+```tool-action
+{"tool":"new_context_window","summary":"optional durable facts to carry forward"}
 ```
 
 ```tool-action
