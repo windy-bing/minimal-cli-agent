@@ -185,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
             max_context_chars=max(1, int(choose_config_value("max_context_chars", args.max_context_chars, local_defaults, explicit_options, ("AGENT_MAX_CONTEXT_CHARS",)))),
             max_tool_calls_per_turn=max(1, int(choose_config_value("max_tool_calls_per_turn", args.max_tool_calls_per_turn, local_defaults, explicit_options, ("AGENT_MAX_TOOL_CALLS_PER_TURN",)))),
             max_read_only_tool_calls_per_turn=max(1, int(choose_config_value("max_read_only_tool_calls_per_turn", args.max_read_only_tool_calls_per_turn, local_defaults, explicit_options, ("AGENT_MAX_READ_ONLY_TOOL_CALLS_PER_TURN",)))),
+            model_observation_output_chars=max(0, int(choose_config_value("model_observation_output_chars", args.model_observation_output_chars, local_defaults, explicit_options, ("AGENT_MODEL_OBSERVATION_OUTPUT_CHARS",)))),
             model_context_tokens=optional_int(choose_config_value("model_context_tokens", args.model_context_tokens, local_defaults, explicit_options, ("AGENT_MODEL_CONTEXT_TOKENS",))),
             context_compression_ratio=float(choose_config_value("context_compression_ratio", args.context_compression_ratio, local_defaults, explicit_options, ("AGENT_CONTEXT_COMPRESSION_RATIO",))),
         ), profile, explicit_options=explicit_options)
@@ -216,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"context_tail_messages: {config.context_tail_messages}")
             print(f"max_tool_calls_per_turn: {config.max_tool_calls_per_turn}")
             print(f"max_read_only_tool_calls_per_turn: {config.max_read_only_tool_calls_per_turn}")
+            print(f"model_observation_output_chars: {config.model_observation_output_chars}")
             print(f"context_compression_ratio: {config.context_compression_ratio}")
             print(f"session: {session_path or '<none>'}")
             print(f"session_db: {session_db_path or '<none>'}")
@@ -1144,6 +1146,7 @@ def print_prompt_debug_report(session: InteractiveSession, message: str) -> None
     print(f"context_tail_messages: {session.agent.config.context_tail_messages}")
     print(f"max_tool_calls_per_turn: {session.agent.config.max_tool_calls_per_turn}")
     print(f"max_read_only_tool_calls_per_turn: {session.agent.config.max_read_only_tool_calls_per_turn}")
+    print(f"model_observation_output_chars: {session.agent.config.model_observation_output_chars}")
     print(f"ollama_options: {redact_text(json.dumps(session.agent.config.ollama_options, ensure_ascii=False, sort_keys=True)) if session.agent.config.ollama_options else '{}'}")
 
 
@@ -1836,6 +1839,7 @@ def print_config(config: AgentConfig) -> None:
     print(f"context_tail_messages: {config.context_tail_messages}")
     print(f"max_tool_calls_per_turn: {config.max_tool_calls_per_turn}")
     print(f"max_read_only_tool_calls_per_turn: {config.max_read_only_tool_calls_per_turn}")
+    print(f"model_observation_output_chars: {config.model_observation_output_chars}")
     print(f"context_compression_ratio: {config.context_compression_ratio}")
     print(f"mcp_config: {config.mcp_config or '<none>'}")
     plugins = ", ".join(path.parent.name for path in config.plugin_paths) if config.plugin_paths else "<none>"
@@ -1868,6 +1872,7 @@ def save_cli_config(path: Path, session: InteractiveSession) -> None:
         "context_tail_messages": config.context_tail_messages,
         "max_tool_calls_per_turn": config.max_tool_calls_per_turn,
         "max_read_only_tool_calls_per_turn": config.max_read_only_tool_calls_per_turn,
+        "model_observation_output_chars": config.model_observation_output_chars,
         "context_compression_ratio": config.context_compression_ratio,
         "prompt_version": config.prompt_version,
     }

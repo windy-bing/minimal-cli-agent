@@ -130,6 +130,17 @@ class TwoReadsThenExitModel:
         return "Done.\n```bash-action\nexit\n```"
 
 
+class LongReadThenExitModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, messages: list[Message]) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            return '```tool-action\n{"tool":"read_file","path":"long.txt"}\n```'
+        return "Done.\n```bash-action\nexit\n```"
+
+
 class RecordingBatchHarness(AgentHarness):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -276,6 +287,36 @@ class AgentTest(unittest.TestCase):
         observations = [event.data.get("observation", "") for event in events if event.type == LoopEventTypes.TOOL_CALL_RESULT]
         self.assertEqual(harness.batches, [["read_file"]])
         self.assertTrue(any("Read-only tool call budget reached" in observation for observation in observations))
+
+    def test_chat_stream_compacts_tool_output_only_for_model_context(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            long_output = "a" * 80 + "MIDDLE" + "z" * 80
+            (root / "long.txt").write_text(long_output, encoding="utf-8")
+            config = AgentConfig(
+                cwd=root,
+                permission_mode="plan",
+                max_output_chars=1000,
+                model_observation_output_chars=60,
+            )
+            harness = RecordingBatchHarness(config=config, model=LongReadThenExitModel())
+            agent = Agent(config=config, harness=harness)
+
+            stream = agent.chat_stream("read", ChatContext())
+            events = []
+            while True:
+                try:
+                    events.append(next(stream))
+                except StopIteration as exc:
+                    result = exc.value
+                    break
+
+        event_observations = [event.data.get("observation", "") for event in events if event.type == LoopEventTypes.TOOL_CALL_RESULT]
+        model_observations = [message.content for message in result.final_messages if "model_output_truncated: true" in message.content]
+        self.assertTrue(any(long_output in observation for observation in event_observations))
+        self.assertEqual(len(model_observations), 1)
+        self.assertNotIn(long_output, model_observations[0])
+        self.assertIn("truncated for model context", model_observations[0])
 
     def test_strict_chat_stream_keeps_format_recovery(self) -> None:
         config = AgentConfig(permission_mode="plan", max_steps=1)

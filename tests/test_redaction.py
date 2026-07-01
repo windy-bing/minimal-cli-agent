@@ -74,6 +74,17 @@ class RedactionTest(unittest.TestCase):
         self.assertIn("status: skipped", observation)
         self.assertIn("output:\n```text\nplan mode\n```", observation)
 
+    def test_command_result_can_compact_output_for_model_context(self) -> None:
+        result = CommandResult(command="read_file big.txt", exit_code=0, output="a" * 80 + "MIDDLE" + "z" * 80)
+
+        observation = result.as_observation(output_limit=60)
+
+        self.assertIn("model_output_truncated: true", observation)
+        self.assertIn("truncated for model context", observation)
+        self.assertIn("aaa", observation)
+        self.assertIn("zzz", observation)
+        self.assertLess(len(observation), len(result.as_observation()))
+
 
 if __name__ == "__main__":
     unittest.main()

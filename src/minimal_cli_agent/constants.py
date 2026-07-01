@@ -211,6 +211,7 @@ class Defaults:
     PROJECT_RULES_MAX_CHARS: Final = "8000"
     MAX_TOOL_CALLS_PER_TURN: Final = "50"
     MAX_READ_ONLY_TOOL_CALLS_PER_TURN: Final = "20"
+    MODEL_OBSERVATION_OUTPUT_CHARS: Final = "4000"
     SANDBOX_KIND: Final = "host"
     SANDBOX_IMAGE: Final = "python:3.11-slim"
     SANDBOX_NETWORK: Final = "none"

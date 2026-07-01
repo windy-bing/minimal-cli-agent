@@ -74,7 +74,7 @@ class Agent:
                 yield LoopEvent(type=LoopEventTypes.MODEL_OUTPUT, data={LoopEventData.CONTENT: output})
             messages.append(Message(role="assistant", content=output))
 
-            observations: list[str] = []
+            model_observations: list[str] = []
             try:
                 calls = self.harness.consolidate_tool_calls(parse_actions(output))
             except AgentFinished as exc:
@@ -89,7 +89,7 @@ class Agent:
                     self.harness.trace_id = previous_trace_id
                     return result
                 observation = str(exc)
-                append_observation(observations, observation, self.config.max_output_chars)
+                append_observation(model_observations, observation, self.config.max_output_chars)
                 yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
             else:
                 calls, skipped_calls = tool_ledger.filter_before_execution(calls)
@@ -100,13 +100,14 @@ class Agent:
                     )
                 for skipped in skipped_calls:
                     observation = skipped.result.as_observation()
-                    append_observation(observations, observation, self.config.max_output_chars)
+                    model_observation = skipped.result.as_observation(self.config.model_observation_output_chars)
+                    append_observation(model_observations, model_observation, self.config.max_output_chars)
                     yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
                 try:
                     tool_observations = self.harness.execute_tools(calls) if calls else []
                 except NonTerminatingAgentError as exc:
                     observation = str(exc)
-                    append_observation(observations, observation, self.config.max_output_chars)
+                    append_observation(model_observations, observation, self.config.max_output_chars)
                     yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
                 else:
                     for tool_observation in tool_observations:
@@ -114,11 +115,12 @@ class Agent:
                             ToolCall(name=tool_observation.action, payload=tool_observation.payload),
                             tool_observation.result,
                         )
-                        observation = tool_observation.to_message().content
-                        append_observation(observations, observation, self.config.max_output_chars)
+                        observation = tool_observation.result.as_observation()
+                        model_observation = tool_observation.result.as_observation(self.config.model_observation_output_chars)
+                        append_observation(model_observations, model_observation, self.config.max_output_chars)
                         yield LoopEvent(type=LoopEventTypes.TOOL_CALL_RESULT, data={LoopEventData.OBSERVATION: observation})
 
-            combined_observation = "\n\n".join(observations)
+            combined_observation = "\n\n".join(model_observations)
             messages.append(Message(role="user", content=combined_observation))
             supplemental_input = read_supplemental_input(options)
             if supplemental_input:

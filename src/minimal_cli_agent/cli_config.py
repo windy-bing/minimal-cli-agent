@@ -36,6 +36,7 @@ CONFIG_KEYS = frozenset(
         "max_read_only_tool_calls_per_turn",
         "max_steps",
         "max_tool_calls_per_turn",
+        "model_observation_output_chars",
         "mcp_config",
         "model",
         "model_circuit_cooldown",
@@ -147,6 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--context-tail-messages", type=int, default=int(os.getenv("AGENT_CONTEXT_TAIL_MESSAGES", Defaults.CONTEXT_TAIL_MESSAGES)), help="Number of latest messages to keep after context compaction.")
     parser.add_argument("--max-tool-calls-per-turn", type=int, default=int(os.getenv("AGENT_MAX_TOOL_CALLS_PER_TURN", Defaults.MAX_TOOL_CALLS_PER_TURN)), help="Maximum tool calls the runtime will execute or repair in a single turn.")
     parser.add_argument("--max-read-only-tool-calls-per-turn", type=int, default=int(os.getenv("AGENT_MAX_READ_ONLY_TOOL_CALLS_PER_TURN", Defaults.MAX_READ_ONLY_TOOL_CALLS_PER_TURN)), help="Maximum read-only tool calls the runtime will execute or repair in a single turn.")
+    parser.add_argument("--model-observation-output-chars", type=int, default=int(os.getenv("AGENT_MODEL_OBSERVATION_OUTPUT_CHARS", Defaults.MODEL_OBSERVATION_OUTPUT_CHARS)), help="Maximum output characters from each tool observation written back to model context. UI events still show the full tool observation.")
     parser.add_argument("--show-config", action="store_true", help="Print resolved provider/model/base URL without secrets.")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logs for diagnostics.")
     parser.add_argument("--quiet", action="store_true", help="Only show error logs; CLI output is unchanged.")
@@ -379,6 +381,7 @@ def detect_explicit_options(argv: list[str]) -> set[str]:
         "--max-context-chars": "max_context_chars",
         "--max-tool-calls-per-turn": "max_tool_calls_per_turn",
         "--max-read-only-tool-calls-per-turn": "max_read_only_tool_calls_per_turn",
+        "--model-observation-output-chars": "model_observation_output_chars",
         "--timeout": "timeout",
         "--shell": "shell",
         "--sandbox": "sandbox",

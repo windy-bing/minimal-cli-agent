@@ -319,6 +319,8 @@ class CliTest(unittest.TestCase):
             "--max-tool-calls-per-turn=9",
             "--max-read-only-tool-calls-per-turn",
             "3",
+            "--model-observation-output-chars",
+            "800",
             "--ollama-options",
             '{"num_ctx":4096,"think":false}',
             "--base-url",
@@ -339,6 +341,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("context_tail_messages", explicit)
         self.assertIn("max_tool_calls_per_turn", explicit)
         self.assertIn("max_read_only_tool_calls_per_turn", explicit)
+        self.assertIn("model_observation_output_chars", explicit)
         self.assertIn("ollama_options", explicit)
         self.assertIn("base_url", explicit)
         self.assertIn("no_session", explicit)
@@ -357,7 +360,7 @@ class CliTest(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / ".minimal-agent.json").write_text(
-                '{"provider":"openai-compatible","model":"configured-model","base_url":"http://configured","permission":"plan","max_context_chars":12000,"context_tail_messages":4,"max_tool_calls_per_turn":9,"max_read_only_tool_calls_per_turn":3,"ollama_options":{"num_ctx":4096}}',
+                '{"provider":"openai-compatible","model":"configured-model","base_url":"http://configured","permission":"plan","max_context_chars":12000,"context_tail_messages":4,"max_tool_calls_per_turn":9,"max_read_only_tool_calls_per_turn":3,"model_observation_output_chars":800,"ollama_options":{"num_ctx":4096}}',
                 encoding="utf-8",
             )
 
@@ -373,6 +376,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("context_tail_messages: 4", printed)
         self.assertIn("max_tool_calls_per_turn: 9", printed)
         self.assertIn("max_read_only_tool_calls_per_turn: 3", printed)
+        self.assertIn("model_observation_output_chars: 800", printed)
         self.assertIn("summarize_context: False", printed)
         self.assertIn(f"session: {(root / '.agent' / 'session.json').resolve()}", printed)
 

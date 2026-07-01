@@ -112,6 +112,7 @@ class AgentConfig:
     max_context_chars: int = 16000
     max_tool_calls_per_turn: int = int(Defaults.MAX_TOOL_CALLS_PER_TURN)
     max_read_only_tool_calls_per_turn: int = int(Defaults.MAX_READ_ONLY_TOOL_CALLS_PER_TURN)
+    model_observation_output_chars: int = int(Defaults.MODEL_OBSERVATION_OUTPUT_CHARS)
     model_context_tokens: int | None = None
     context_compression_ratio: float = float(Defaults.CONTEXT_COMPRESSION_RATIO)
     model_fallbacks: tuple[ModelRoute, ...] = field(default_factory=tuple)
@@ -200,21 +201,26 @@ class CommandResult:
     skipped: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def as_observation(self) -> str:
+    def as_observation(self, output_limit: int | None = None) -> str:
         status = "skipped" if self.skipped else "success" if self.exit_code == 0 else "failed"
         if self.skipped:
             header = "Command skipped:"
         else:
             header = f"Command finished with exit code {self.exit_code}:"
+        output = compact_output_for_observation(self.output, output_limit)
+        output_metadata = ""
+        if output != self.output:
+            output_metadata = "model_output_truncated: true\n"
         return redact_text(
             f"{header}\n"
             f"status: {status}\n"
             f"exit_code: {self.exit_code}\n"
             f"{format_metadata(self.metadata)}"
+            f"{output_metadata}"
             "command:\n"
             f"```text\n{self.command}\n```\n"
             "output:\n"
-            f"```text\n{self.output}\n```"
+            f"```text\n{output}\n```"
         )
 
 
@@ -226,3 +232,15 @@ def format_metadata(metadata: dict[str, Any]) -> str:
         value = str(metadata[key])
         lines.append(f"- {key}: {value}")
     return "\n".join(lines) + "\n"
+
+
+def compact_output_for_observation(output: str, output_limit: int | None) -> str:
+    if output_limit is None or output_limit <= 0 or len(output) <= output_limit:
+        return output
+    marker = "\n...[truncated for model context]...\n"
+    if output_limit <= len(marker) + 20:
+        return output[:output_limit]
+    available = output_limit - len(marker)
+    head = max(1, available // 2)
+    tail = max(1, available - head)
+    return output[:head] + marker + output[-tail:]
