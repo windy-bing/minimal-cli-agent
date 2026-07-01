@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import json
+import re
 import time
 from typing import cast
 
@@ -33,6 +34,7 @@ from minimal_cli_agent.model_gateway import ModelGateway, UsageRecord
 from minimal_cli_agent.mcp_tools import load_mcp_config, register_mcp_tools
 from minimal_cli_agent.policy import ConfirmationHandler, ShellPermissionPolicy
 from minimal_cli_agent.plugins import load_plugin_mcp_configs
+from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.tool_pipeline import ToolExecutionPipeline
 from minimal_cli_agent.tool_registry import ToolRegistry, ToolSpec
 from minimal_cli_agent.types import AgentConfig, CommandResult, EventRecord, Message, ToolCall
@@ -262,6 +264,30 @@ class AgentHarness:
     def execute_tool(self, call: ToolCall) -> Observation:
         return Observation(action=call.name, payload=call.payload, result=self.tool_pipeline.execute(call), call_id=call.call_id)
 
+    def save_tool_observation_artifact(self, call_id: str | None, result: CommandResult, output_limit: int | None) -> str | None:
+        if not should_write_observation_artifact(result.output, output_limit):
+            return None
+        safe_call_id = sanitize_artifact_name(call_id or "tool-call")
+        artifact_dir = self.config.cwd / ".agent" / "artifacts"
+        artifact_path = artifact_dir / f"{safe_call_id}.json"
+        status = "skipped" if result.skipped else "success" if result.exit_code == 0 else "failed"
+        payload = {
+            "schema": "minimal_cli_agent.tool_observation_artifact.v1",
+            "call_id": call_id,
+            "status": status,
+            "exit_code": result.exit_code,
+            "skipped": result.skipped,
+            "command": redact_text(result.command),
+            "metadata": result.metadata,
+            "output": redact_text(result.output),
+        }
+        try:
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+            artifact_path.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2, default=str), encoding="utf-8")
+            return str(artifact_path.relative_to(self.config.cwd))
+        except OSError:
+            return None
+
     def execute_tools(self, calls: list[ToolCall]) -> list[Observation]:
         observations: list[Observation] = []
         for batch in bucket_tool_calls(calls, self.is_parallel_safe):
@@ -370,3 +396,12 @@ def canonical_payload(payload: str) -> str:
     except json.JSONDecodeError:
         return payload
     return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def should_write_observation_artifact(output: str, output_limit: int | None) -> bool:
+    return output_limit is not None and output_limit > 0 and len(output) > output_limit
+
+
+def sanitize_artifact_name(value: str) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip(".-")
+    return sanitized[:120] or "tool-call"

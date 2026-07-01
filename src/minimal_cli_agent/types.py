@@ -230,6 +230,7 @@ class CommandResult:
         output_limit: int | None = None,
         call_id: str | None = None,
         requester: str = "model",
+        output_artifact: str | None = None,
     ) -> str:
         status = "skipped" if self.skipped else "success" if self.exit_code == 0 else "failed"
         output = compact_output_for_observation(self.output, output_limit)
@@ -243,6 +244,7 @@ class CommandResult:
             "command": self.command,
             "metadata": self.metadata,
             "output_truncated_for_model": output != self.output,
+            "output_artifact": output_artifact,
             "output": output,
         }
         return redact_text(

@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from minimal_cli_agent.constants import EventKinds, Tools
-from minimal_cli_agent.harness import AgentHarness, Observation, bucket_tool_calls, canonical_payload
+from minimal_cli_agent.harness import AgentHarness, Observation, bucket_tool_calls, canonical_payload, sanitize_artifact_name
 from minimal_cli_agent.memory import JsonSessionStore
 from minimal_cli_agent.types import AgentConfig, CommandResult, Message, ToolCall
 
@@ -108,6 +108,36 @@ class HarnessTest(unittest.TestCase):
         self.assertEqual(data["max_context_chars"], 100)
         self.assertIn("chars_remaining", data)
         self.assertIn("estimated_tokens_remaining", data)
+
+    def test_save_tool_observation_artifact_writes_redacted_full_output_when_truncated(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="plan"))
+            result = CommandResult("printf secret", 0, "token=super-secret-token\n" + ("x" * 80))
+
+            artifact = harness.save_tool_observation_artifact("call/1", result, output_limit=20)
+
+            self.assertEqual(artifact, ".agent/artifacts/call-1.json")
+            if artifact is None:
+                self.fail("expected artifact path")
+            data = json.loads((root / artifact).read_text(encoding="utf-8"))
+            self.assertEqual(data["schema"], "minimal_cli_agent.tool_observation_artifact.v1")
+            self.assertEqual(data["call_id"], "call/1")
+            self.assertIn("<redacted", data["output"])
+            self.assertNotIn("super-secret-token", data["output"])
+
+    def test_save_tool_observation_artifact_skips_short_output(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            harness = AgentHarness(AgentConfig(cwd=root, permission_mode="plan"))
+
+            artifact = harness.save_tool_observation_artifact("call-1", CommandResult("echo ok", 0, "ok"), output_limit=20)
+
+            self.assertIsNone(artifact)
+            self.assertFalse((root / ".agent" / "artifacts").exists())
+
+    def test_sanitize_artifact_name_keeps_paths_under_artifact_dir(self) -> None:
+        self.assertEqual(sanitize_artifact_name("../bad/call:1"), "bad-call-1")
 
     def test_bucket_tool_calls_groups_reads_around_write_barriers(self) -> None:
         calls = [

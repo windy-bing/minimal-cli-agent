@@ -101,9 +101,15 @@ class Agent:
                     )
                 for skipped in skipped_calls:
                     observation = skipped.result.as_observation()
+                    output_artifact = self.harness.save_tool_observation_artifact(
+                        skipped.call.call_id,
+                        skipped.result,
+                        self.config.model_observation_output_chars,
+                    )
                     model_observation = skipped.result.as_model_observation(
                         self.config.model_observation_output_chars,
                         call_id=skipped.call.call_id,
+                        output_artifact=output_artifact,
                     )
                     append_observation(model_observations, model_observation, self.config.max_output_chars)
                     yield LoopEvent(
@@ -123,9 +129,15 @@ class Agent:
                             tool_observation.result,
                         )
                         observation = tool_observation.result.as_observation()
+                        output_artifact = self.harness.save_tool_observation_artifact(
+                            tool_observation.call_id,
+                            tool_observation.result,
+                            self.config.model_observation_output_chars,
+                        )
                         model_observation = tool_observation.result.as_model_observation(
                             self.config.model_observation_output_chars,
                             call_id=tool_observation.call_id,
+                            output_artifact=output_artifact,
                         )
                         append_observation(model_observations, model_observation, self.config.max_output_chars)
                         yield LoopEvent(
