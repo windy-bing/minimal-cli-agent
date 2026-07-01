@@ -1,6 +1,6 @@
 import unittest
 
-from minimal_cli_agent.context import CompactingContextManager
+from minimal_cli_agent.context import CompactingContextManager, RUNTIME_CONTEXT_OPEN, is_runtime_context_message
 from minimal_cli_agent.types import AgentConfig, Message
 
 
@@ -27,7 +27,8 @@ class ContextTest(unittest.TestCase):
 
         self.assertEqual(model.calls, 0)
         self.assertLess(sum(len(message.content) for message in prepared), sum(len(message.content) for message in messages))
-        self.assertIn("Context was compacted locally", prepared[1].content)
+        self.assertTrue(is_runtime_context_message(prepared[1]))
+        self.assertTrue(any("Context was compacted locally" in message.content for message in prepared))
 
     def test_model_summary_context_is_opt_in(self) -> None:
         model = SummaryModel()
@@ -37,7 +38,7 @@ class ContextTest(unittest.TestCase):
         prepared = manager.prepare(build_messages())
 
         self.assertEqual(model.calls, 0)
-        self.assertIn("Context was compacted locally", prepared[1].content)
+        self.assertTrue(any("Context was compacted locally" in message.content for message in prepared))
 
     def test_model_summary_context_keeps_system_summary_and_tail(self) -> None:
         model = SummaryModel()
@@ -48,8 +49,9 @@ class ContextTest(unittest.TestCase):
 
         self.assertEqual(model.calls, 1)
         self.assertEqual(prepared[0].role, "system")
-        self.assertIn("Context summary from earlier messages", prepared[1].content)
-        self.assertIn("tests kept green", prepared[1].content)
+        self.assertTrue(is_runtime_context_message(prepared[1]))
+        self.assertIn("Context summary from earlier messages", prepared[2].content)
+        self.assertIn("tests kept green", prepared[2].content)
         self.assertEqual([message.content for message in prepared[-2:]], ["recent user", "recent assistant"])
         self.assertIn("Summarize this prior transcript", model.last_messages[-1].content)
 
@@ -68,8 +70,9 @@ class ContextTest(unittest.TestCase):
 
         prepared = manager.prepare(messages)
 
-        self.assertIn("Initial user goal:\nreal task", prepared[1].content)
-        self.assertNotIn("old nested summary", prepared[1].content)
+        summary = next(message.content for message in prepared if "Context summary from earlier messages" in message.content)
+        self.assertIn("Initial user goal:\nreal task", summary)
+        self.assertNotIn("old nested summary", summary)
 
     def test_model_summary_context_uses_cache_for_same_older_messages(self) -> None:
         model = SummaryModel()
@@ -105,7 +108,9 @@ class ContextTest(unittest.TestCase):
 
         prepared = manager.prepare(build_messages())
 
-        self.assertEqual(prepared, build_messages())
+        self.assertEqual(prepared[0], build_messages()[0])
+        self.assertTrue(is_runtime_context_message(prepared[1]))
+        self.assertEqual(prepared[2:], build_messages()[1:])
         self.assertEqual(model.calls, 0)
 
     def test_context_compacts_when_model_token_threshold_is_reached(self) -> None:
@@ -122,8 +127,49 @@ class ContextTest(unittest.TestCase):
         prepared = manager.prepare(build_messages())
 
         self.assertEqual(model.calls, 1)
-        self.assertIn("Initial user goal:", prepared[1].content)
-        self.assertIn("old user", prepared[1].content)
+        summary = next(message.content for message in prepared if "Context summary from earlier messages" in message.content)
+        self.assertIn("Initial user goal:", summary)
+        self.assertIn("old user", summary)
+
+    def test_runtime_context_is_inserted_after_system(self) -> None:
+        manager = CompactingContextManager(AgentConfig(model="demo-model", permission_mode="plan"))
+
+        prepared = manager.prepare([Message(role="system", content="system"), Message(role="user", content="task")])
+
+        self.assertEqual(prepared[0].content, "system")
+        self.assertTrue(is_runtime_context_message(prepared[1]))
+        self.assertIn('"model": "demo-model"', prepared[1].content)
+        self.assertIn('"permission": "plan"', prepared[1].content)
+        self.assertEqual(prepared[2].content, "task")
+
+    def test_runtime_context_is_replaced_not_duplicated(self) -> None:
+        first = CompactingContextManager(AgentConfig(model="first", permission_mode="plan"))
+        prepared = first.prepare([Message(role="system", content="system"), Message(role="user", content="task")])
+        second = CompactingContextManager(AgentConfig(model="second", permission_mode="autoEdit"))
+
+        prepared_again = second.prepare(prepared)
+
+        runtime_contexts = [message for message in prepared_again if is_runtime_context_message(message)]
+        self.assertEqual(len(runtime_contexts), 1)
+        self.assertIn('"model": "second"', runtime_contexts[0].content)
+        self.assertNotIn('"model": "first"', runtime_contexts[0].content)
+        self.assertEqual([message.content for message in prepared_again if message.content == "task"], ["task"])
+
+    def test_runtime_context_is_not_used_as_initial_goal(self) -> None:
+        manager = CompactingContextManager(AgentConfig(max_context_chars=10, summarize_context=True, context_tail_messages=2), summarizer=SummaryModel())
+        messages = [
+            Message(role="system", content="system prompt"),
+            Message(role="user", content=f"{RUNTIME_CONTEXT_OPEN}\nstale\n</minimal_agent_runtime_context>"),
+            Message(role="user", content="real task"),
+            Message(role="assistant", content="old assistant " * 10),
+            Message(role="user", content="recent user"),
+            Message(role="assistant", content="recent assistant"),
+        ]
+
+        prepared = manager.prepare(messages)
+
+        summary = next(message.content for message in prepared if "Context summary from earlier messages" in message.content)
+        self.assertIn("Initial user goal:\nreal task", summary)
 
 
 def build_messages() -> list[Message]:
