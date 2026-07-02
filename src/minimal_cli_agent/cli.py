@@ -70,7 +70,7 @@ from minimal_cli_agent.profiles import resolve_profile
 from minimal_cli_agent.redaction import redact_text
 from minimal_cli_agent.skills import build_system_prompt, discover_skill_paths, resolve_skill_path, resolve_skill_paths
 from minimal_cli_agent.subagent import SUBAGENT_ROLES, SubAgentRunner
-from minimal_cli_agent.types import AgentConfig, ChatContext, LoopEvent, LoopOptions, Message, ToolCall, ToolDecision
+from minimal_cli_agent.types import AgentConfig, ChatContext, EventRecord, LoopEvent, LoopOptions, Message, ToolCall, ToolDecision
 from minimal_cli_agent.workflow import (
     WORKFLOW_METADATA_KEY,
     WorkflowArtifact,
@@ -1470,6 +1470,16 @@ def handle_events_command(session: InteractiveSession, argument: str) -> None:
     except ValueError as exc:
         print(str(exc))
         return
+    if query["mode"] == "trace":
+        events = collect_trace_events(session, str(query["call_id"]), int(query["limit"]))
+        if not events:
+            print(f"no trace events for call_id={query['call_id']}")
+            return
+        if query["format"] == "json":
+            print(json.dumps(format_trace_report(str(query["call_id"]), events), ensure_ascii=False, indent=2, sort_keys=True))
+            return
+        print_trace_report(str(query["call_id"]), events)
+        return
     events = session.session_store.query_events(kind=query["kind"] or None, limit=query["limit"], offset=query["offset"])
     if not events:
         print("no events")
@@ -1479,6 +1489,85 @@ def handle_events_command(session: InteractiveSession, argument: str) -> None:
         return
     for index, event in enumerate(events, start=1):
         print(f"{index}: {event.timestamp} {event.kind} {json.dumps(event.data, ensure_ascii=False, sort_keys=True)}")
+
+
+TRACE_EVENT_KINDS = {
+    EventKinds.TOOL_DISPATCH,
+    EventKinds.SANDBOX_ATTEMPT,
+    EventKinds.TOOL_EXECUTION,
+    EventKinds.TOOL_DECISION,
+    EventKinds.TOOL_DECISION_CONFLICT,
+    EventKinds.PERMISSION_DECISION,
+}
+
+
+def collect_trace_events(session: InteractiveSession, call_id: str, limit: int = 100) -> list[EventRecord]:
+    if session.session_store is None:
+        return []
+    events = session.session_store.query_events(limit=max(limit, 100))
+    matched = [
+        event
+        for event in events
+        if event.kind in TRACE_EVENT_KINDS and (event.data.get("call_id") == call_id or event.data.get("payload") == call_id)
+    ]
+    return matched[-limit:]
+
+
+def format_trace_report(call_id: str, events: list[EventRecord]) -> dict[str, Any]:
+    return {
+        "call_id": call_id,
+        "events": [event.to_dict() for event in events],
+        "summary": summarize_trace_events(events),
+    }
+
+
+def summarize_trace_events(events: list[EventRecord]) -> dict[str, Any]:
+    dispatch_results = [event for event in events if event.kind == EventKinds.TOOL_DISPATCH and event.data.get("phase") == "result"]
+    attempts = [event for event in events if event.kind == EventKinds.SANDBOX_ATTEMPT and event.data.get("phase") == "attempt"]
+    execution = next((event for event in reversed(events) if event.kind == EventKinds.TOOL_EXECUTION), None)
+    final = dispatch_results[-1] if dispatch_results else execution
+    return {
+        "tool": first_event_value(events, "tool") or first_event_value(events, "action"),
+        "status": final.data.get("status") if final else None,
+        "exit_code": final.data.get("exit_code") if final else None,
+        "attempts": len(attempts),
+        "artifact": final.data.get("output_artifact") if final else None,
+    }
+
+
+def first_event_value(events: list[EventRecord], key: str) -> object | None:
+    for event in events:
+        value = event.data.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def print_trace_report(call_id: str, events: list[EventRecord]) -> None:
+    summary = summarize_trace_events(events)
+    print(
+        "trace "
+        f"call_id={call_id} "
+        f"tool={summary['tool'] or '<unknown>'} "
+        f"status={summary['status'] or '<unknown>'} "
+        f"exit_code={summary['exit_code']} "
+        f"attempts={summary['attempts']}"
+    )
+    if summary.get("artifact"):
+        print(f"artifact: {summary['artifact']}")
+    for index, event in enumerate(events, start=1):
+        phase = event.data.get("phase") or event.kind
+        status = event.data.get("status") or event.data.get("decision") or ""
+        attempt = event.data.get("attempt")
+        details = compact_trace_details(event)
+        attempt_text = f" attempt={attempt}" if attempt is not None else ""
+        print(f"{index}: {event.timestamp} {event.kind} phase={phase}{attempt_text} status={status} {details}".rstrip())
+
+
+def compact_trace_details(event: EventRecord) -> str:
+    keys = ("tool", "action", "decision", "sandbox_kind", "network", "permission_mode", "exit_code", "duration_ms", "error_class", "output_artifact")
+    details = {key: event.data[key] for key in keys if key in event.data and event.data[key] is not None}
+    return json.dumps(details, ensure_ascii=False, sort_keys=True)
 
 
 def handle_metrics_command(session: InteractiveSession, argument: str) -> None:

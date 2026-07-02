@@ -7,7 +7,7 @@ from minimal_cli_agent.constants import InteractiveCommands
 
 
 def parse_events_query(argument: str) -> dict[str, Any]:
-    query: dict[str, Any] = {"kind": "", "limit": 20, "offset": 0, "format": "text"}
+    query: dict[str, Any] = {"kind": "", "limit": 20, "offset": 0, "format": "text", "mode": "list", "call_id": ""}
     positional: list[str] = []
     try:
         tokens = shlex.split(argument)
@@ -30,6 +30,9 @@ def parse_events_query(argument: str) -> dict[str, Any]:
             if value not in {"text", "json"}:
                 raise ValueError(events_usage())
             query["format"] = value
+        elif key == "call_id":
+            query["call_id"] = value
+            query["mode"] = "trace"
         else:
             raise ValueError(f"Unknown events option: {key}")
     apply_positional_events_query(query, positional)
@@ -37,6 +40,16 @@ def parse_events_query(argument: str) -> dict[str, Any]:
 
 
 def apply_positional_events_query(query: dict[str, Any], positional: list[str]) -> None:
+    if positional and positional[0] == "trace":
+        query["mode"] = "trace"
+        if len(positional) < 2:
+            raise ValueError(events_usage())
+        query["call_id"] = positional[1]
+        if len(positional) >= 3:
+            query["limit"] = parse_non_negative_int(positional[2], "limit", minimum=1)
+        if len(positional) > 3:
+            raise ValueError(events_usage())
+        return
     if positional:
         if positional[0].isdigit():
             query["limit"] = parse_non_negative_int(positional[0], "limit", minimum=1)
@@ -63,4 +76,4 @@ def parse_non_negative_int(value: str, field: str, minimum: int = 0) -> int:
 
 
 def events_usage() -> str:
-    return f"Usage: {InteractiveCommands.EVENTS} [kind] [limit] [offset] [format=json]"
+    return f"Usage: {InteractiveCommands.EVENTS} [kind] [limit] [offset] [format=json] | trace <call_id> [format=json]"

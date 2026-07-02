@@ -396,7 +396,7 @@ class InteractiveCommands:
         DOCTOR: "Run local health checks for config, workspace, session, policy, MCP, and plugins. Usage: /doctor [json]",
         DEBUG: "Inspect diagnostics. Usage: /debug prompt [message]|bundle [path]",
         HISTORY: "Show or replay user prompt history. Usage: /history [number]",
-        EVENTS: "Show persisted session events. Usage: /events [kind] [limit] [offset] [format=json]",
+        EVENTS: "Show persisted session events. Usage: /events [kind] [limit] [offset] [format=json] or /events trace <call_id>",
         SESSION: "Export, import, or inspect session state. Usage: /session stats|export [path]|import <path>",
         PLAN: "Create, show, or clear an isolated plan. Usage: /plan <goal>|show|clear",
         WORKFLOW: "Manage typed workflow state. Usage: /workflow create <goal>|step <text>|schedule|done <number>|merge|verify|wait|show|clear",

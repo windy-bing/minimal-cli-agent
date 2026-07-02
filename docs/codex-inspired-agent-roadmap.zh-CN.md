@@ -21,6 +21,7 @@
 - [x] Sandbox attempt trace：权限、skip/deny、retry attempt、最终执行结果会写入 `sandbox_attempt` event。
 - [x] Context window lifecycle：支持 `new_context_window` 工具和 `/context new`，用结构化摘要开启新窗口。
 - [x] Integration traces：新增 TraceAsserter 与跨 agent/tool/context 的端到端 trace 测试。
+- [x] Trace UI：`/events trace <call_id>` 可聚合查看 tool dispatch、sandbox attempt 和 execution 事件。
 
 ## Codex 对照
 
@@ -35,7 +36,7 @@
 
 - [ ] Context fragments v3：继续把 base system prompt 中的 identity/tool protocol 拆为独立 typed fragments。
 - [ ] History normalization：清理孤儿 observation、重复 context fragment、旧窗口遗留事件。
-- [ ] Trace UI：为 `/events` 增加按 `call_id` 聚合查看 tool dispatch + sandbox attempt 的格式化视图。
+- [ ] Tool trace export：按 `trace_id` 导出完整 turn 的 model route、tool dispatch、sandbox attempt、artifact 索引。
 
 ## 设计原则
 

@@ -356,6 +356,12 @@ class CliTest(unittest.TestCase):
             parse_events_query("kind=tool_execution offset=1 limit=3 format=json"),
         )
 
+    def test_parse_events_query_supports_trace_mode(self) -> None:
+        self.assertEqual(
+            parse_events_query("trace call-1 format=json"),
+            {"kind": "", "limit": 20, "offset": 0, "format": "json", "mode": "trace", "call_id": "call-1"},
+        )
+
     def test_main_reads_project_config_and_defaults_session(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -757,6 +763,42 @@ class CliTest(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertEqual(exit_code, 0)
         self.assertIn(EventKinds.PERMISSION_DECISION, printed)
+
+    def test_run_interactive_events_trace_groups_call_events(self) -> None:
+        model = CountingModel()
+        with TemporaryDirectory() as tmp:
+            store = JsonSessionStore(Path(tmp) / "session.json")
+            store.append_event(EventRecord(kind=EventKinds.TOOL_DISPATCH, data={"call_id": "call-1", "tool": "read_file", "phase": "start"}))
+            store.append_event(
+                EventRecord(
+                    kind=EventKinds.SANDBOX_ATTEMPT,
+                    data={"call_id": "call-1", "tool": "read_file", "phase": "attempt", "attempt": 1, "status": "success", "exit_code": 0},
+                )
+            )
+            store.append_event(
+                EventRecord(
+                    kind=EventKinds.TOOL_EXECUTION,
+                    data={"call_id": "call-1", "action": "read_file", "status": "success", "exit_code": 0},
+                )
+            )
+            store.append_event(
+                EventRecord(
+                    kind=EventKinds.TOOL_DISPATCH,
+                    data={"call_id": "call-1", "tool": "read_file", "phase": "result", "status": "success", "exit_code": 0},
+                )
+            )
+            config = AgentConfig(permission_mode="plan")
+            agent = Agent(config=config, harness=AgentHarness(config=config, model=model, session_store=store))
+
+            with patch("builtins.input", side_effect=["/events trace call-1", "/events trace call-1 format=json", "/quit"]), patch("builtins.print") as print_mock:
+                exit_code = run_interactive(agent, ChatContext(), session_store=store)
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("trace call_id=call-1 tool=read_file status=success exit_code=0 attempts=1", printed)
+        self.assertIn(EventKinds.SANDBOX_ATTEMPT, printed)
+        self.assertIn('"summary"', printed)
+        self.assertIn('"call_id": "call-1"', printed)
 
     def test_run_interactive_metrics_summarizes_session_events(self) -> None:
         model = CountingModel()
